@@ -1,29 +1,21 @@
 <script>
+    import fs from "fs";
+    import toml from "toml";
     import Card from "../components/Card.svelte";
     import Category from "../components/Category.svelte";
+
+    const settings = fs.readFileSync("./settings.toml", "utf-8");
+
+    const parsedSettings = toml.parse(settings);
+    const categories = Object.keys(parsedSettings);
 </script>
 
 <div class="container flex justify-start flex-row h-1/2 flex-wrap">
-    <Category columns={2} name="Media">
-        <Card
-            title="Jellyfin"
-            href="http://jellyfin.veirt.moe"
-            imgSrc="logo/jellyfin.svg"
-        />
-        <Card
-            title="Sonarr"
-            href="http://sonarr.veirt.moe"
-            imgSrc="logo/sonarr.png"
-        />
-        <Card
-            title="Prowlarr"
-            href="http://prowlarr.veirt.moe"
-            imgSrc="logo/prowlarr.png"
-        />
-        <Card
-            title="QBittorrent"
-            href="https://qbittorrent.veirt.moe"
-            imgSrc="logo/qbittorrent.svg"
-        />
-    </Category>
+    {#each categories as category}
+        <Category {...parsedSettings[category]}>
+            {#each Object.values(parsedSettings[category]).splice(2) as serviceProps}
+                <Card {...serviceProps} />
+            {/each}
+        </Category>
+    {/each}
 </div>

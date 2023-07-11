@@ -20,6 +20,6 @@
     target="_blank"
 >
     <!-- svelte-ignore a11y-missing-attribute -->
-    <img class="w-8 my-5" src={imgSrc} />
-    <p>{title}</p>
+    <img class="max-w-[2rem] min-h-[2rem] object-contain my-5" src={imgSrc} />
+    <p class="text-center">{title}</p>
 </a>

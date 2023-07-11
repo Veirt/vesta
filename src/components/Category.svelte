@@ -13,8 +13,8 @@
     const width = categoryClass[columns].width;
 </script>
 
-<div class="container mt-5 {width}">
-    <p class="ml-5 font-bold block">{name}</p>
+<div class="container m-5 {width}">
+    <p class=" ml-4 font-bold block">{name}</p>
     <div class="grid {columnNum}">
         <slot />
     </div>
