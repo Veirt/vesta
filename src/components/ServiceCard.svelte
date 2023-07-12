@@ -4,7 +4,8 @@
     export let imgSrc = "";
     export let title = "";
     export let href: string;
-    export let width: number;
+    export let width: ServiceWidth;
+    export let height: ServiceHeight;
 </script>
 
 <Card
@@ -13,6 +14,7 @@
     column
     animation
     {width}
+    {height}
     attributes={{ href, target: "_blank" }}
 >
     <!-- svelte-ignore a11y-missing-attribute -->
