@@ -1,19 +1,16 @@
 import fs from "fs";
 import toml from "toml";
-import type { PageLoad } from "./$types";
+import type { PageServerLoad } from "./$types";
 
 interface Service {
     title: string;
     href: string;
     imgSrc: string;
-    widget?: {
-        type: "sonarr";
-        key: string;
-    };
+    width: 1 | 2 | 3 | 4;
 }
 
 interface VestaConfig {
-    [category: string]: {
+    [group: string]: {
         name: string;
         columns: 1 | 2 | 3 | 4;
         services: Service[];
@@ -26,4 +23,4 @@ export const load = (() => {
     const parsedConfig: VestaConfig = toml.parse(config);
 
     return { config: parsedConfig };
-}) satisfies PageLoad;
+}) satisfies PageServerLoad;
