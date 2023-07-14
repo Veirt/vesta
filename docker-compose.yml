@@ -1,0 +1,9 @@
+version: '3.0'
+
+services:
+  vesta:
+    build: .
+    ports: 
+      - 8450:3000
+    volumes:
+        - ./config.toml:/app/config.toml

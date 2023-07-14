@@ -1,0 +1,12 @@
+node_modules
+build
+.svelte-kit
+/package
+.env
+.env.*
+.git*
+README.md
+.dockerignore
+Dockerfile
+vite.config.ts.timestamp-*
+config.toml
