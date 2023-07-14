@@ -1,11 +1,20 @@
-import fs from "fs";
-import toml from "toml";
 import type { PageServerLoad } from "./$types";
 
+import { config } from "$lib/server/secrets.js";
+
 export const load = (() => {
-    const config = fs.readFileSync("./config.toml", "utf-8");
+    const newConfig: VestaConfig = JSON.parse(JSON.stringify(config)); // hacky deep copy
 
-    const parsedConfig: VestaConfig = toml.parse(config);
+    // remove secret stuffs from config
+    for (const group of Object.keys(newConfig)) {
+        newConfig[group]["services"].forEach((service) => {
+            if (service?.widget?.name) {
+                service.widget = { name: service.widget.name };
+            }
 
-    return { config: parsedConfig };
+            return service;
+        });
+    }
+
+    return { config: newConfig };
 }) satisfies PageServerLoad;
