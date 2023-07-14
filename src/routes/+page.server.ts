@@ -1,8 +1,8 @@
 import type { PageServerLoad } from "./$types";
+const { getConfig } = await import("$lib/server/secrets");
 
-import { config } from "$lib/server/secrets.js";
-
-export const load = (() => {
+export const load = (async () => {
+    const config = getConfig();
     const newConfig: VestaConfig = JSON.parse(JSON.stringify(config)); // hacky deep copy
 
     // remove secret stuffs from config
