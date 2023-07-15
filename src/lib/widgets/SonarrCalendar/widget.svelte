@@ -62,6 +62,18 @@
         return `${season}x${formattedEpisode}`;
     }
 
+    function formatSeriesUrl(title: string) {
+        let newTitle = title
+            .toLowerCase()
+            .replaceAll(/\:|\?/g, "") // remove all ":" and "?"
+            .replaceAll("&", "and") // replace "&" to "and"
+            .replaceAll(" ", "-"); // replace spaces to "-"
+
+        const url = new URL(widget.url!);
+        url.pathname = `series/${newTitle}`;
+        return url.toString();
+    }
+
     async function fetchCalendar() {
         const calendar = await axios.get<Calendar>("/api/sonarr", {
             params: { group, title },
@@ -99,9 +111,12 @@
                     class:onAir={onAir(calendarEntry)}
                     class:missing={missing(calendarEntry)}
                 >
-                    <p class="line-clamp-1">
+                    <a
+                        href={formatSeriesUrl(calendarEntry.series.title)}
+                        class="line-clamp-1 hover:brightness-125"
+                    >
                         {calendarEntry.series.title}
-                    </p>
+                    </a>
                     <span class="text-xs block text-slate-400">
                         {formatEpisode(calendarEntry)}
                     </span>

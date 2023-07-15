@@ -9,7 +9,7 @@ export const load = (async () => {
     for (const group of Object.keys(newConfig)) {
         newConfig[group]["services"].forEach((service) => {
             if (service?.widget?.name) {
-                service.widget = { name: service.widget.name };
+                delete service.widget.key;
             }
 
             return service;
