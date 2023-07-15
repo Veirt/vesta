@@ -1,11 +1,12 @@
 <script lang="ts">
-    import Card from "./shared/Card.svelte";
+    import type { CardWidth, CardHeight } from "$lib/components/Card/types";
+    import Card from "$lib/components/Card/component.svelte";
 
     export let imgSrc = "";
     export let title = "";
     export let href: string;
-    export let width: ServiceWidth;
-    export let height: ServiceHeight;
+    export let width: CardWidth = 1;
+    export let height: CardHeight = 1;
 </script>
 
 <Card

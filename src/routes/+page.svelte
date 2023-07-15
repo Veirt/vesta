@@ -1,16 +1,17 @@
 <script lang="ts">
     import type { PageData } from "./$types";
-    import Group from "../components/Group.svelte";
+    import Group from "$lib/components/Group/component.svelte";
+    import Card from "$lib/components/Card/component.svelte";
     import ServiceCard from "../components/ServiceCard.svelte";
-    import Card from "../components/shared/Card.svelte";
     import Loading from "../components/shared/Loading.svelte";
 
     export let data: PageData;
+
     const config = data.config;
     const groups = Object.keys(config);
 
     async function loadWidget(name: string) {
-        const component = await import(`../components/widgets/${name}.svelte`);
+        const component = await import(`$lib/widgets/${name}/widget.svelte`);
         return component.default;
     }
 </script>

@@ -1,5 +1,5 @@
-type ServiceWidth = 1 | 2 | 3 | 4;
-type ServiceHeight = 1 | 2 | 3 | 4;
+type CardWidth = import("$lib/components/Card").CardWidth;
+type CardHeight = import("$lib/components/Card").CardHeight;
 
 interface ServiceWidget {
     name: string;
@@ -11,8 +11,8 @@ interface Service {
     title: string;
     href: string;
     imgSrc: string;
-    width: ServiceWidth;
-    height: ServiceHeight;
+    width: CardWidth;
+    height: CardHeight;
     widget?: ServiceWidget;
 }
 

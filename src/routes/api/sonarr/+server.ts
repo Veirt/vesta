@@ -2,7 +2,7 @@ import { config } from "$lib/server/secrets";
 import { json } from "@sveltejs/kit";
 import type { RequestHandler } from "./$types";
 import axios from "axios";
-import type { SonarrCalendarParams } from "$lib/widgets/sonarr";
+import type { SonarrCalendarParams } from "$lib/widgets/SonarrCalendar/types";
 import { addDays, formatYYYY_MM_DD } from "$lib/utils/date";
 
 const currentDate = new Date();

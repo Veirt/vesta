@@ -1,13 +1,17 @@
 <script lang="ts">
     import axios from "axios";
     import { addMinutes, formatTime, formatYYYY_MM_DD } from "$lib/utils/date";
-    import type { CalendarEntry, Calendar } from "$lib/widgets/sonarr";
-    import Card from "../shared/Card.svelte";
+    import type {
+        CalendarEntry,
+        Calendar,
+    } from "$lib/widgets/SonarrCalendar/types";
+    import Card from "$lib/components/Card/component.svelte";
 
     export let group: string;
     export let title: string;
-    export let width: ServiceWidth;
-    export let height: ServiceWidth;
+    export let width: CardWidth;
+    export let height: CardHeight;
+    export let widget: ServiceWidget;
 
     const currentDate = new Date();
 
