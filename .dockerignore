@@ -5,6 +5,7 @@ build
 .env
 .env.*
 .git*
+/docs/
 README.md
 .dockerignore
 Dockerfile
