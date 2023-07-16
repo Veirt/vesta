@@ -66,7 +66,7 @@
     function formatSeriesUrl(title: string) {
         let newTitle = title
             .toLowerCase()
-            .replaceAll(/\:|\?/g, "") // remove all ":" and "?"
+            .replaceAll(/\:|\?|\'|\"/g, "") // remove all ":", "?", and quotes
             .replaceAll("&", "and") // replace "&" to "and"
             .replaceAll(" ", "-"); // replace spaces to "-"
 
