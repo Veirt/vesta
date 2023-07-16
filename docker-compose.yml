@@ -2,6 +2,7 @@ version: '3.0'
 
 services:
   vesta:
+    container_name: vesta
     build: .
     ports: 
       - 8450:3000
