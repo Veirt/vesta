@@ -6,6 +6,7 @@
         Calendar,
     } from "$lib/widgets/SonarrCalendar/types";
     import Card from "$lib/components/Card/component.svelte";
+    import { onMount } from "svelte";
 
     export let group: string;
     export let title: string;
@@ -13,7 +14,7 @@
     export let height: CardHeight;
     export let widget: ServiceWidget;
 
-    const currentDate = new Date();
+    let currentDate: Date;
 
     function unaired(calendarEntry: CalendarEntry) {
         return currentDate < new Date(calendarEntry.airDateUtc);
@@ -93,6 +94,10 @@
 
         return calendarGroupedByDate;
     }
+
+    onMount(() => {
+        currentDate = new Date();
+    });
 </script>
 
 <Card tag="div" column {width} {height} class="no-scrollbar overflow-y-auto ">
