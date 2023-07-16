@@ -6,4 +6,4 @@ services:
     ports: 
       - 8450:3000
     volumes:
-        - ./config.toml:/app/config.toml
+        - ./config:/app/config
