@@ -5,10 +5,6 @@ import axios from "axios";
 import type { SonarrCalendarParams } from "$lib/widgets/SonarrCalendar/types";
 import { addDays, formatYYYY_MM_DD } from "$lib/utils/date";
 
-const currentDate = new Date();
-const start = currentDate;
-const end = addDays(new Date(), 2);
-
 function getWidgetInfo(group: string, title: string): Service {
     return config[group]["services"].find(
         (service) => service.title === title
@@ -51,6 +47,10 @@ export const GET = (async ({ url }) => {
             error: "url or key is undefined",
         });
     }
+
+    const currentDate = new Date();
+    const start = currentDate;
+    const end = addDays(new Date(), 2);
 
     const params: SonarrCalendarParams = {
         unmonitored: false,
