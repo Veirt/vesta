@@ -16,6 +16,7 @@ export const calendarEntrySchema = z.object({
     monitored: z.boolean(),
     series: z.object({
         title: z.string(),
+        titleSlug: z.string(),
         runtime: z.number(),
     }),
 });

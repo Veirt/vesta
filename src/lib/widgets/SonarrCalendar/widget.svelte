@@ -63,15 +63,9 @@
         return `${season}x${formattedEpisode}`;
     }
 
-    function formatSeriesUrl(title: string) {
-        let newTitle = title
-            .toLowerCase()
-            .replaceAll(/\:|\?|\'|\"/g, "") // remove all ":", "?", and quotes
-            .replaceAll("&", "and") // replace "&" to "and"
-            .replaceAll(" ", "-"); // replace spaces to "-"
-
+    function formatSeriesUrl(titleSlug: string) {
         const url = new URL(widget.url!);
-        url.pathname = `series/${newTitle}`;
+        url.pathname = `series/${titleSlug}`;
         return url.toString();
     }
 
@@ -117,7 +111,7 @@
                     class:missing={missing(calendarEntry)}
                 >
                     <a
-                        href={formatSeriesUrl(calendarEntry.series.title)}
+                        href={formatSeriesUrl(calendarEntry.series.titleSlug)}
                         class="line-clamp-1 hover:brightness-125"
                     >
                         {calendarEntry.series.title}
