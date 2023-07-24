@@ -4,7 +4,7 @@
 
     export let name: string;
     export let columns: GroupColumn = 1;
-    export let services: Service[];
+    // export let services: Service[];
 
     const columnNum = groupColumn[columns].column;
     const width = groupColumn[columns].width;
