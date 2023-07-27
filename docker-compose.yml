@@ -1,10 +1,11 @@
-version: '3.0'
+version: "3.0"
 
 services:
   vesta:
     container_name: vesta
     build: .
-    ports: 
+    ports:
       - 8450:3000
     volumes:
-        - ./config:/app/config
+      - ./config:/app/config
+    restart: unless-stopped
