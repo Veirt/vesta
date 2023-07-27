@@ -2,8 +2,8 @@
     import type { PageData } from "./$types";
     import Group from "$lib/components/Group/component.svelte";
     import Card from "$lib/components/Card/component.svelte";
-    import ServiceCard from "../components/ServiceCard.svelte";
-    import Loading from "../components/shared/Loading.svelte";
+    import ServiceCard from "$lib/components/ServiceCard.svelte";
+    import Loading from "$lib/components/shared/Loading.svelte";
 
     export let data: PageData;
 

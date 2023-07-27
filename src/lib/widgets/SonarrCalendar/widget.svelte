@@ -6,6 +6,7 @@
         Calendar,
     } from "$lib/widgets/SonarrCalendar/types";
     import Card from "$lib/components/Card/component.svelte";
+    import Error from "$lib/components/shared/Error.svelte";
     import { onMount } from "svelte";
 
     export let group: string;
@@ -125,8 +126,8 @@
                 </div>
             {/each}
         {/each}
-    {:catch}
-        <p>Error</p>
+    {:catch err}
+        <Error details={err} />
     {/await}
 </Card>
 
