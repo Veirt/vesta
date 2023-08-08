@@ -23,7 +23,7 @@
         <Group {...config[group]}>
             {#each config[group].services as serviceProps (serviceProps.title)}
                 {#if !serviceProps.widget}
-                    <ServiceCard {...serviceProps} />
+                    <ServiceCard {...serviceProps} {group} />
                 {:else}
                     {#await loadWidget(serviceProps.widget.name)}
                         <Card {...serviceProps} flex="center">

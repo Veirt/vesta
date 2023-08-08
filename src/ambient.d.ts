@@ -14,6 +14,7 @@ interface Service {
     width: CardWidth;
     height: CardHeight;
     widget?: ServiceWidget;
+    ping?: { url: string };
 }
 
 interface VestaConfig {

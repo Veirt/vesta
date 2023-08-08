@@ -1,15 +1,9 @@
-import { config } from "$lib/server/secrets";
-import { json } from "@sveltejs/kit";
-import type { RequestHandler } from "./$types";
-import axios from "axios";
-import type { SonarrCalendarParams } from "$lib/widgets/SonarrCalendar/types";
 import { addDays, formatYYYY_MM_DD } from "$lib/utils/date";
-
-function getWidgetInfo(group: string, title: string): Service {
-    return config[group]["services"].find(
-        (service) => service.title === title
-    )!;
-}
+import { getWidgetInfo } from "$lib/utils/widget";
+import type { SonarrCalendarParams } from "$lib/widgets/SonarrCalendar/types";
+import { json } from "@sveltejs/kit";
+import axios from "axios";
+import type { RequestHandler } from "./$types";
 
 function fetchCalendar(params: SonarrCalendarParams, url: string, key: string) {
     return new Promise(async (resolve, reject) => {
@@ -28,7 +22,7 @@ function fetchCalendar(params: SonarrCalendarParams, url: string, key: string) {
             return resolve(calendarRes.data);
         } catch (error) {
             console.error(
-                `Failed fetching Sonarr's calendar. Details: ${error}`
+                `Failed to fetch Sonarr's calendar. Details: ${error}`
             );
 
             return reject({ error });

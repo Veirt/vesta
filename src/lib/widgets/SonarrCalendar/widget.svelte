@@ -127,7 +127,7 @@
             {/each}
         {/each}
     {:catch err}
-        <Error details={err} />
+        <Error type="Widget" details={err} />
     {/await}
 </Card>
 
