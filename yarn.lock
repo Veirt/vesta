@@ -238,10 +238,10 @@
     "@rollup/plugin-node-resolve" "^15.0.1"
     rollup "^3.7.0"
 
-"@sveltejs/kit@^1.22.4":
-  version "1.22.4"
-  resolved "https://registry.yarnpkg.com/@sveltejs/kit/-/kit-1.22.4.tgz#466e8521d96ea9e3a55d36b0fb843b635ba384d7"
-  integrity sha512-Opkqw1QXk4Cc25b/heJP2D7mX+OUBFAq4MXKfET58svTTxdeiHFKzmnuRsSF3nmxESqrLjqPAgHpib+knNGzRw==
+"@sveltejs/kit@^1.22.5":
+  version "1.22.5"
+  resolved "https://registry.yarnpkg.com/@sveltejs/kit/-/kit-1.22.5.tgz#e666067439c94f36352b954f67960c5a0a62a047"
+  integrity sha512-LHq+ECucoT6c6/tkrxIQtD8KVNhPFV4QQ+xOKTwBAs/Qdtff8P5gAzsIZiwEaaO6J6sYZoy5RP2VR6m8PSCgLA==
   dependencies:
     "@sveltejs/vite-plugin-svelte" "^2.4.1"
     "@types/cookie" "^0.5.1"
@@ -254,7 +254,7 @@
     sade "^1.8.1"
     set-cookie-parser "^2.6.0"
     sirv "^2.0.2"
-    undici "~5.22.0"
+    undici "~5.23.0"
 
 "@sveltejs/vite-plugin-svelte-inspector@^1.0.3":
   version "1.0.3"
@@ -1332,10 +1332,10 @@ typescript@^5.0.0, typescript@^5.0.3:
   resolved "https://registry.yarnpkg.com/typescript/-/typescript-5.1.6.tgz#02f8ac202b6dad2c0dd5e0913745b47a37998274"
   integrity sha512-zaWCozRZ6DLEWAWFrVDz1H6FVXzUSfTy5FUMWsQlU8Ym5JP9eO4xkTIROFCQvhQf61z6O/G6ugw3SgAnvvm+HA==
 
-undici@~5.22.0:
-  version "5.22.1"
-  resolved "https://registry.yarnpkg.com/undici/-/undici-5.22.1.tgz#877d512effef2ac8be65e695f3586922e1a57d7b"
-  integrity sha512-Ji2IJhFXZY0x/0tVBXeQwgPlLWw13GVzpsWPQ3rV50IFMMof2I55PZZxtm4P6iNq+L5znYN9nSTAq0ZyE6lSJw==
+undici@~5.23.0:
+  version "5.23.0"
+  resolved "https://registry.yarnpkg.com/undici/-/undici-5.23.0.tgz#e7bdb0ed42cebe7b7aca87ced53e6eaafb8f8ca0"
+  integrity sha512-1D7w+fvRsqlQ9GscLBwcAJinqcZGHUKjbOmXdlE/v8BvEGXjeWAax+341q44EuTcHXXnfyKNbKRq4Lg7OzhMmg==
   dependencies:
     busboy "^1.6.0"
 
