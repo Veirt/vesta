@@ -17,7 +17,7 @@
 {#await fetchPing()}
     <div class="w-2 h-2 visibility-hidden" />
 {:then data}
-    {#if data.statusCode < 403}
+    {#if data.statusCode < 500}
         <div class="rounded-full w-2 h-2 bg-green-500 self-end mr-4" />
     {:else}
         <div class="rounded-full w-2 h-2 bg-red-500 self-end mr-4" />
