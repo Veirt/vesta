@@ -85,15 +85,14 @@ export const GET = (async ({ url }) => {
     };
 
     const calendar = await fetchCalendar(params, apiUrl, key);
-    const downloadQueue = await fetchDownloadQueue(apiUrl, key);
 
-    calendar.map((cal) => {
-        cal.downloading = false;
-        for (const record of downloadQueue.records) {
-            if (cal.seriesId === record.seriesId) {
-                cal.downloading = true;
-            }
-        }
+    // check download queue (downloading indicator)
+    const downloadQueue = await fetchDownloadQueue(apiUrl, key);
+    const downloadQueueIds = new Set(
+        downloadQueue.records.map((record) => record.seriesId),
+    );
+    calendar.forEach((cal) => {
+        cal.downloading = downloadQueueIds.has(cal.seriesId);
     });
 
     return json(calendar);
