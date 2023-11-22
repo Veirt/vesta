@@ -44,6 +44,10 @@
         return calendarEntry.hasFile;
     }
 
+    function downloading(calendarEntry: CalendarEntry) {
+        return calendarEntry.downloading;
+    }
+
     function formatAirTime(calendarEntry: CalendarEntry) {
         const airDate = formatTime(calendarEntry.airDateUtc);
         const airedDate = formatTime(
@@ -107,6 +111,7 @@
                 <div
                     class="px-2 my-1"
                     class:unaired={unaired(calendarEntry)}
+                    class:downloading={downloading(calendarEntry)}
                     class:downloaded={downloaded(calendarEntry)}
                     class:onAir={onAir(calendarEntry)}
                     class:missing={missing(calendarEntry)}
@@ -146,5 +151,9 @@
 
     .downloaded {
         @apply border-l-2 border-l-green-700;
+    }
+
+    .downloading {
+        @apply border-l-2 border-l-violet-900;
     }
 </style>
