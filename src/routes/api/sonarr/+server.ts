@@ -73,8 +73,7 @@ export const GET = (async ({ url }) => {
         });
     }
 
-    // change later
-    const currentDate = addDays(new Date(), -1);
+    const currentDate = new Date();
     const start = currentDate;
     const end = addDays(new Date(), 2);
 
