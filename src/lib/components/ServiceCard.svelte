@@ -19,7 +19,7 @@
     animation
     {width}
     {height}
-    attributes={{ href, target: "_blank" }}
+    attributes={{ href, target: "_blank", rel: "noreferrer" }}
 >
     {#if ping}
         <Indicator {title} {group} />
