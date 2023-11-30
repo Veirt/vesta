@@ -79,17 +79,15 @@
             params: { group, title },
         });
 
-        const calendarGroupedByDate = calendar.data.reduce((prev, curr) => {
-            const date = new Date(curr.airDateUtc);
-            const formattedDate = formatYYYY_MM_DD(date);
-            if (formattedDate in prev) {
-                prev[formattedDate].push(curr);
-            } else {
-                prev[formattedDate] = [curr];
-            }
+        const calendarGroupedByDate = Object.groupBy(
+            calendar.data,
+            (data: CalendarEntry) => {
+                const date = new Date(data.airDateUtc);
+                const formattedDate = formatYYYY_MM_DD(date);
 
-            return prev;
-        }, {} as Record<string, CalendarEntry[]>);
+                return formattedDate;
+            }
+        );
 
         return calendarGroupedByDate;
     }
