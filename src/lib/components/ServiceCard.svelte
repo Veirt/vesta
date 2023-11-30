@@ -25,10 +25,6 @@
         <Indicator {title} {group} />
     {/if}
     <!-- svelte-ignore a11y-missing-attribute -->
-    <img
-        class="w-[2rem] h-[2rem] object-contain my-3"
-        src={imgSrc}
-        alt={title}
-    />
+    <img class="w-[2rem] h-[2rem] object-contain my-3" src={imgSrc} alt={title} />
     <p class="text-center">{title}</p>
 </Card>

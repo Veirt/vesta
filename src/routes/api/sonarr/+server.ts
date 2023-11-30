@@ -1,19 +1,11 @@
 import { addDays, formatYYYY_MM_DD } from "$lib/utils/date";
 import { getWidgetInfo } from "$lib/utils/widget";
-import type {
-    Calendar,
-    DownloadQueue,
-    SonarrCalendarParams,
-} from "$lib/widgets/SonarrCalendar/types";
+import type { Calendar, DownloadQueue, SonarrCalendarParams } from "$lib/widgets/SonarrCalendar/types";
 import { json } from "@sveltejs/kit";
 import axios from "axios";
 import type { RequestHandler } from "./$types";
 
-function fetchCalendar(
-    params: SonarrCalendarParams,
-    url: string,
-    key: string,
-): Promise<Calendar> {
+function fetchCalendar(params: SonarrCalendarParams, url: string, key: string): Promise<Calendar> {
     return new Promise(async (resolve, reject) => {
         try {
             // https://sonarr.tv/docs/api/#/Calendar/get_api_v3_calendar
@@ -29,9 +21,7 @@ function fetchCalendar(
 
             return resolve(calendarRes.data);
         } catch (error) {
-            console.error(
-                `Failed to fetch Sonarr's calendar. Details: ${error}`,
-            );
+            console.error(`Failed to fetch Sonarr's calendar. Details: ${error}`);
 
             return reject({ error });
         }
@@ -52,9 +42,7 @@ function fetchDownloadQueue(url: string, key: string): Promise<DownloadQueue> {
 
             return resolve(downloadQueueRes.data);
         } catch (error) {
-            console.error(
-                `Failed to fetch Sonarr's download queue. Details: ${error}`,
-            );
+            console.error(`Failed to fetch Sonarr's download queue. Details: ${error}`);
 
             return reject({ error });
         }
@@ -88,9 +76,7 @@ export const GET = (async ({ url }) => {
 
     // check download queue (downloading indicator)
     const downloadQueue = await fetchDownloadQueue(apiUrl, key);
-    const downloadQueueIds = new Set(
-        downloadQueue.records.map((record) => record.seriesId),
-    );
+    const downloadQueueIds = new Set(downloadQueue.records.map((record) => record.seriesId));
     calendar.forEach((cal) => {
         cal.downloading = downloadQueueIds.has(cal.seriesId);
     });

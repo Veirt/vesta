@@ -16,9 +16,7 @@
     }
 </script>
 
-<div
-    class="container flex justify-center sm:justify-start flex-row h-screen flex-wrap"
->
+<div class="container flex justify-center sm:justify-start flex-row h-screen flex-wrap">
     {#each groups as group}
         <Group {...config[group]}>
             {#each config[group].services as serviceProps (serviceProps.title)}
@@ -30,11 +28,7 @@
                             <Loading />
                         </Card>
                     {:then widget}
-                        <svelte:component
-                            this={widget}
-                            {...serviceProps}
-                            {group}
-                        />
+                        <svelte:component this={widget} {...serviceProps} {group} />
                     {/await}
                 {/if}
             {/each}

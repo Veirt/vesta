@@ -10,9 +10,7 @@
         <p>Error</p>
     </div>
 {:else if type === "Widget"}
-    <div
-        class="m-auto text-center bg-red-700 text-slate-50 text-xl p-5 rounded-xl"
-    >
+    <div class="m-auto text-center bg-red-700 text-slate-50 text-xl p-5 rounded-xl">
         <p>Error Details:</p>
         <p>{details}</p>
     </div>

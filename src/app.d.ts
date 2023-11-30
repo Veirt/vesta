@@ -16,11 +16,8 @@ declare global {
     }
 
     interface MapConstructor {
-        groupBy<Item, Key>(
-            items: Iterable<Item>,
-            keySelector: (item: Item, index: number) => Key,
-        ): Map<Key, Item[]>;
+        groupBy<Item, Key>(items: Iterable<Item>, keySelector: (item: Item, index: number) => Key): Map<Key, Item[]>;
     }
 }
 
-export { };
+export {};

@@ -1,10 +1,7 @@
 <script lang="ts">
     import axios from "axios";
     import { addMinutes, formatTime, formatYYYY_MM_DD } from "$lib/utils/date";
-    import type {
-        CalendarEntry,
-        Calendar,
-    } from "$lib/widgets/SonarrCalendar/types";
+    import type { CalendarEntry, Calendar } from "$lib/widgets/SonarrCalendar/types";
     import Card from "$lib/components/Card/component.svelte";
     import Error from "$lib/components/shared/Error.svelte";
     import { onMount } from "svelte";
@@ -23,19 +20,13 @@
 
     function onAir(calendarEntry: CalendarEntry) {
         const airDate = new Date(calendarEntry.airDateUtc);
-        const airedDate = addMinutes(
-            new Date(calendarEntry.airDateUtc),
-            calendarEntry.series.runtime
-        );
+        const airedDate = addMinutes(new Date(calendarEntry.airDateUtc), calendarEntry.series.runtime);
 
         return currentDate >= airDate && currentDate <= airedDate;
     }
 
     function missing(calendarEntry: CalendarEntry) {
-        const airedDate = addMinutes(
-            new Date(calendarEntry.airDateUtc),
-            calendarEntry.series.runtime
-        );
+        const airedDate = addMinutes(new Date(calendarEntry.airDateUtc), calendarEntry.series.runtime);
 
         return !calendarEntry.hasFile && currentDate > airedDate;
     }
@@ -50,12 +41,7 @@
 
     function formatAirTime(calendarEntry: CalendarEntry) {
         const airDate = formatTime(calendarEntry.airDateUtc);
-        const airedDate = formatTime(
-            addMinutes(
-                new Date(calendarEntry.airDateUtc),
-                calendarEntry.series.runtime
-            )
-        );
+        const airedDate = formatTime(addMinutes(new Date(calendarEntry.airDateUtc), calendarEntry.series.runtime));
 
         return `${airDate} - ${airedDate}`;
     }
@@ -79,15 +65,12 @@
             params: { group, title },
         });
 
-        const calendarGroupedByDate = Object.groupBy(
-            calendar.data,
-            (data: CalendarEntry) => {
-                const date = new Date(data.airDateUtc);
-                const formattedDate = formatYYYY_MM_DD(date);
+        const calendarGroupedByDate = Object.groupBy(calendar.data, (data: CalendarEntry) => {
+            const date = new Date(data.airDateUtc);
+            const formattedDate = formatYYYY_MM_DD(date);
 
-                return formattedDate;
-            }
-        );
+            return formattedDate;
+        });
 
         return calendarGroupedByDate;
     }
@@ -100,9 +83,7 @@
 <Card tag="div" column {width} {height} class="no-scrollbar overflow-y-auto ">
     {#await fetchCalendar() then calendar}
         {#each Object.keys(calendar) as date}
-            <p
-                class="text-center font-semibold rounded bg-accent min-w-full py-2 my-2"
-            >
+            <p class="text-center font-semibold rounded bg-accent min-w-full py-2 my-2">
                 {date}
             </p>
             {#each calendar[date] as calendarEntry}
@@ -114,10 +95,7 @@
                     class:onAir={onAir(calendarEntry)}
                     class:missing={missing(calendarEntry)}
                 >
-                    <a
-                        href={formatSeriesUrl(calendarEntry.series.titleSlug)}
-                        class="line-clamp-1 hover:brightness-125"
-                    >
+                    <a href={formatSeriesUrl(calendarEntry.series.titleSlug)} class="line-clamp-1 hover:brightness-125">
                         {calendarEntry.series.title}
                     </a>
                     <span class="text-xs block text-slate-400">
