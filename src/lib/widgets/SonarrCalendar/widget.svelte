@@ -80,12 +80,14 @@
     });
 </script>
 
-<Card tag="div" column {width} {height} class="no-scrollbar overflow-y-auto ">
+<Card tag="div" column {width} {height} class="no-scrollbar overflow-y-auto">
     {#await fetchCalendar() then calendar}
         {#each Object.keys(calendar) as date}
-            <p class="text-center font-semibold rounded bg-accent min-w-full py-2 my-2">
-                {date}
-            </p>
+            <div class="flex justify-center min-w-full bg-accent rounded py-2 my-2">
+                <a href={`${widget.url}/calendar`} class="text-center font-semibold">
+                    {date}
+                </a>
+            </div>
             {#each calendar[date] as calendarEntry}
                 <div
                     class="px-2 my-1"
