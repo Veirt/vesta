@@ -1,17 +1,22 @@
-# https://github.com/nodejs/docker-node/issues/1912
-FROM node:21-alpine3.18 AS builder
-
+FROM node:21-alpine3.18 AS base
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
+COPY . /app
 WORKDIR /app
-COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile 
-COPY . .
-RUN yarn build && yarn install --production
+
+FROM base AS prod-deps
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prod --frozen-lockfile
+
+FROM base AS build
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+RUN pnpm run build
 
 
+
+
+FROM base
 ENV NODE_ENV=production
-FROM node:21-alpine3.18
-WORKDIR /app
-COPY --from=builder /app/build build/
-COPY --from=builder /app/node_modules node_modules/
-COPY package.json .
-CMD ["node", "build"]
+COPY --from=prod-deps /app/node_modules /app/node_modules
+COPY --from=build /app/build /app/build
+CMD ["node", "/app/build"]
