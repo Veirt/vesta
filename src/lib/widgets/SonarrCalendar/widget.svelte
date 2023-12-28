@@ -82,6 +82,9 @@
 
 <Card tag="div" column {width} {height} class="no-scrollbar overflow-y-auto">
     {#await fetchCalendar() then calendar}
+        {#if Object.keys(calendar).length === 0}
+            <div class="flex justify-center items-center min-h-full min-w-full font-bold text-xl">No entry</div>
+        {/if}
         {#each Object.keys(calendar) as date}
             <div class="flex justify-center min-w-full bg-accent rounded py-2 my-2">
                 <a href={`${widget.url}/calendar`} class="text-center font-semibold">
