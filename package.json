@@ -11,7 +11,7 @@
         "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
     },
     "dependencies": {
-        "axios": "^1.6.2",
+        "axios": "^1.6.5",
         "toml": "^3.0.0",
         "zod": "^3.22.4"
     },
