@@ -3,6 +3,16 @@ import { json, type RequestHandler } from "@sveltejs/kit";
 import axios, { isAxiosError } from "axios";
 import https from "https";
 
+const httpsAgent = new https.Agent({
+    rejectUnauthorized: false,
+});
+const instance = axios.create({
+    httpsAgent,
+    validateStatus() {
+        return true;
+    },
+});
+
 export const GET = (async ({ url }) => {
     const group = url.searchParams.get("group")!;
     const title = url.searchParams.get("title")!;
@@ -15,28 +25,14 @@ export const GET = (async ({ url }) => {
         });
     }
 
-    const httpsAgent = new https.Agent({
-        rejectUnauthorized: false,
-    });
-
     let statusCode;
     try {
         let res;
-        res = await axios.head(pingUrl, {
-            httpsAgent,
-            validateStatus() {
-                return true;
-            },
-        });
+        res = await instance.head(pingUrl);
 
         // use GET instead of HEAD when HEAD is not implemented
         if (res.status === 501) {
-            res = await axios.get(pingUrl, {
-                httpsAgent,
-                validateStatus() {
-                    return true;
-                },
-            });
+            res = await instance.get(pingUrl);
         }
         statusCode = res.status;
     } catch (error) {
