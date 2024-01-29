@@ -11,7 +11,7 @@
 </script>
 
 <div class="container m-5 {width}">
-    <p class=" ml-4 font-bold block">{name}</p>
+    <p class="block ml-4 font-bold">{name}</p>
     <div class="grid {columnNum}">
         <slot />
     </div>

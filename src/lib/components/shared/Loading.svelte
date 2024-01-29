@@ -1,1 +1,1 @@
-<div class="border border-accent w-4 h-4 animate-spin" />
+<div class="w-4 h-4 border animate-spin border-accent" />

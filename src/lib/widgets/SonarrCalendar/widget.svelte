@@ -80,14 +80,14 @@
     });
 </script>
 
-<Card tag="div" column {width} {height} class="no-scrollbar overflow-y-auto">
+<Card tag="div" column {width} {height} class="overflow-y-auto no-scrollbar">
     {#await fetchCalendar() then calendar}
         {#if Object.keys(calendar).length === 0}
-            <div class="flex justify-center items-center min-h-full min-w-full font-bold text-xl">No entry</div>
+            <div class="flex justify-center items-center min-w-full min-h-full text-xl font-bold">No entry</div>
         {/if}
         {#each Object.keys(calendar) as date}
-            <div class="flex justify-center min-w-full bg-accent rounded py-2 my-2">
-                <a href={`${widget.url}/calendar`} class="text-center font-semibold">
+            <div class="flex justify-center py-2 my-2 min-w-full rounded bg-accent">
+                <a href={`${widget.url}/calendar`} class="font-semibold text-center">
                     {date}
                 </a>
             </div>
@@ -103,7 +103,7 @@
                     <a href={formatSeriesUrl(calendarEntry.series.titleSlug)} class="line-clamp-1 hover:brightness-125">
                         {calendarEntry.series.title}
                     </a>
-                    <span class="text-xs block text-slate-400">
+                    <span class="block text-xs text-slate-400">
                         {formatEpisode(calendarEntry)}
                     </span>
                     <span class="text-xs text-slate-500">

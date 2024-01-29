@@ -16,7 +16,7 @@
     }
 </script>
 
-<div class="container flex justify-center sm:justify-start flex-row h-screen flex-wrap">
+<div class="container flex flex-row flex-wrap justify-center h-screen sm:justify-start">
     {#each groups as group}
         <Group {...config[group]}>
             {#each config[group].services as serviceProps (serviceProps.title)}

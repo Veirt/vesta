@@ -18,9 +18,9 @@
     <div class="w-2 h-2 visibility-hidden" />
 {:then data}
     {#if data.statusCode < 500}
-        <div class="rounded-full w-2 h-2 bg-green-500 self-end mr-4" />
+        <div class="self-end mr-4 w-2 h-2 bg-green-500 rounded-full" />
     {:else}
-        <div class="rounded-full w-2 h-2 bg-red-500 self-end mr-4" />
+        <div class="self-end mr-4 w-2 h-2 bg-red-500 rounded-full" />
     {/if}
 {:catch error}
     <Error type="Service" details={error} />

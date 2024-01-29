@@ -6,11 +6,11 @@
 </script>
 
 {#if type === "Service"}
-    <div class="m-auto text-center text-red-500 text-sm">
+    <div class="m-auto text-sm text-center text-red-500">
         <p>Error</p>
     </div>
 {:else if type === "Widget"}
-    <div class="m-auto text-center bg-red-700 text-slate-50 text-xl p-5 rounded-xl">
+    <div class="p-5 m-auto text-xl text-center bg-red-700 rounded-xl text-slate-50">
         <p>Error Details:</p>
         <p>{details}</p>
     </div>
