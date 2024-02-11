@@ -1,3 +1,40 @@
 # Vesta
 
-![Screenshot](docs/images/screenshot.png) 
+Vesta (named after the Roman goddess of the hearth) is a simple home server dashboard.
+It is designed to be simple, and easy to configure.
+
+I make this for my own use, but if you find it useful, feel free to use it.
+
+## Screenshot
+
+![Screenshot](docs/screenshot.png)
+
+Configuration that is used in the screenshot is available in [docs/vesta.toml](docs/vesta.toml).
+
+## Deployment
+
+Docker is the recommended way to deploy Vesta.
+
+```bash
+docker run -p 8450:3000 -v /path/to/config/directory:/app/config --name vesta ghcr.io/veirt/vesta:latest
+```
+
+Or with docker-compose:
+
+```yaml
+version: "3.0"
+
+services:
+  vesta:
+    container_name: vesta
+    image: ghcr.io/veirt/vesta:latest
+    ports:
+      - 8450:3000
+    volumes:
+      - /path/to/config/directory:/app/config
+    restart: unless-stopped
+```
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.

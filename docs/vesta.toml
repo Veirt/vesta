@@ -1,0 +1,116 @@
+[media]
+name = "Media"
+columns = 2
+
+[[media.services]]
+title = "Jellyfin"
+href = "http://jellyfin.veirt.moe"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/jellyfin.svg"
+ping = { url = "http://jellyfin.veirt.moe" }
+[[media.services]]
+title = "Sonarr"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/sonarr.svg"
+href = "http://sonarr.veirt.moe"
+ping = { url = "http://sonarr.veirt.moe" }
+[[media.services]]
+title = "Prowlarr"
+href = "http://prowlarr.veirt.moe"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/prowlarr.svg"
+ping = { url = "http://prowlarr.veirt.moe" }
+[[media.services]]
+title = "QBittorrent"
+href = "https://qb.veirt.moe"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/qbittorrent.svg"
+ping = { url = "http://qb.veirt.moe" }
+[[media.services]]
+title = "ShokoServer"
+href = "http://shoko.veirt.moe"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/shoko.svg"
+ping = { url = "http://shoko.veirt.moe" }
+[[media.services]]
+title = "MeTube"
+href = "http://metube.veirt.moe"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/metube.svg"
+ping = { url = "http://metube.veirt.moe" }
+
+
+[applications]
+name = "Applications"
+columns = 3
+
+[[applications.services]]
+title = "Syncthing"
+href = "http://syncthing.veirt.moe"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/syncthing.svg"
+ping = { url = "http://syncthing.veirt.moe" }
+[[applications.services]]
+title = "Memos"
+href = "http://memo.veirt.moe"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/memos.png"
+ping = { url = "http://memo.veirt.moe" }
+[[applications.services]]
+title = "Vikunja"
+href = "http://vikunja.veirt.moe"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/vikunja.png"
+ping = { url = "http://vikunja.veirt.moe" }
+[[applications.services]]
+title = "VaultWarden"
+href = "http://vw.veirt-home.duckdns.org"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/vaultwarden.svg"
+ping = { url = "http://vw.veirt-home.duckdns.org" }
+[[applications.services]]
+title = "Duplicati"
+href = "http://duplicati.veirt.moe"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/duplicati.svg"
+ping = { url = "http://duplicati.veirt.moe" }
+[[applications.services]]
+title = "Wakapi"
+href = "http://wakapi.veirt.moe"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/wakapi.png"
+ping = { url = "http://wakapi.veirt.moe" }
+[[applications.services]]
+title = "n8n"
+href = "http://n8n.veirt.moe"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/n8n.svg"
+ping = { url = "http://n8n.veirt.moe" }
+[[applications.services]]
+title = "2FAuth"
+href = "http://2fauth.veirt.moe"
+imgSrc = "https://docs.2fauth.app/static/2fauth_light.png"
+ping = { url = "http://2fauth.veirt.moe" }
+
+
+[calendar]
+name = "Sonarr"
+columns = 5
+[[calendar.services]]
+title = "Sonarr Calendar"
+widget = { name = "SonarrCalendar", url = "http://sonarr.veirt.moe", key = "sonarr_api_key" }
+width = 6
+height = 3
+
+
+[managements]
+name = "Managements"
+columns = 2
+
+[[managements.services]]
+title = "Nginx Proxy Manager"
+href = "http://npm.veirt.moe"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/nginx-proxy-manager.svg"
+ping = { url = "http://npm.veirt.moe" }
+[[managements.services]]
+title = "Proxmox (Rhea)"
+href = "https://pve.veirt.moe"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/proxmox.svg"
+ping = { url = "https://pve.veirt.moe" }
+[[managements.services]]
+title = "Scrutiny"
+href = "http://scrutiny.veirt.moe"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/scrutiny.svg"
+ping = { url = "http://scrutiny.veirt.moe" }
+[[managements.services]]
+title = "AdGuard Home"
+href = "http://adguard.veirt.moe"
+imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/adguard-home.svg"
+ping = { url = "http://adguard.veirt.moe" }
