@@ -35,6 +35,12 @@ services:
     restart: unless-stopped
 ```
 
-## License
+## Credits
+
+- [walkxcode/dashboard-icons](https://github.com/walkxcode/dashboard-icons): as source of the icons.
+
+## Legal
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+
+All product names, logos, and brands that are shown or mentioned in this project are property of their respective owners.
