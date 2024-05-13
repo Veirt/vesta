@@ -23,8 +23,8 @@ devDependencies:
     specifier: ^1.30.4
     version: 1.30.4(svelte@4.2.12)(vite@4.5.3)
   '@types/node':
-    specifier: ^20.11.30
-    version: 20.11.30
+    specifier: ^20.12.11
+    version: 20.12.11
   autoprefixer:
     specifier: ^10.4.18
     version: 10.4.18(postcss@8.4.33)
@@ -48,7 +48,7 @@ devDependencies:
     version: 5.4.3
   vite:
     specifier: ^4.5.3
-    version: 4.5.3(@types/node@20.11.30)
+    version: 4.5.3(@types/node@20.12.11)
   vite-plugin-compression2:
     specifier: ^1.0.0
     version: 1.0.0
@@ -444,7 +444,7 @@ packages:
       svelte: 4.2.12
       tiny-glob: 0.2.9
       undici: 5.28.4
-      vite: 4.5.3(@types/node@20.11.30)
+      vite: 4.5.3(@types/node@20.12.11)
     transitivePeerDependencies:
       - supports-color
     dev: true
@@ -460,7 +460,7 @@ packages:
       '@sveltejs/vite-plugin-svelte': 2.5.3(svelte@4.2.12)(vite@4.5.3)
       debug: 4.3.4
       svelte: 4.2.12
-      vite: 4.5.3(@types/node@20.11.30)
+      vite: 4.5.3(@types/node@20.12.11)
     transitivePeerDependencies:
       - supports-color
     dev: true
@@ -479,7 +479,7 @@ packages:
       magic-string: 0.30.5
       svelte: 4.2.12
       svelte-hmr: 0.15.3(svelte@4.2.12)
-      vite: 4.5.3(@types/node@20.11.30)
+      vite: 4.5.3(@types/node@20.12.11)
       vitefu: 0.2.5(vite@4.5.3)
     transitivePeerDependencies:
       - supports-color
@@ -493,8 +493,8 @@ packages:
     resolution: {integrity: sha512-/kYRxGDLWzHOB7q+wtSUQlFrtcdUccpfy+X+9iMBpHK8QLLhx2wIPYuS5DYtR9Wa/YlZAbIovy7qVdB1Aq6Lyw==}
     dev: true
 
-  /@types/node@20.11.30:
-    resolution: {integrity: sha512-dHM6ZxwlmuZaRmUPfv1p+KrdD1Dci04FbdEm/9wEMouFqxYoFl5aMkt0VMAUtYRQDyYvD41WJLukhq/ha3YuTw==}
+  /@types/node@20.12.11:
+    resolution: {integrity: sha512-vDg9PZ/zi+Nqp6boSOT7plNuthRugEKixDv5sFTIpkE89MmNtEArAShI4mxuX2+UrLEe9pxC1vm2cjm9YlWbJw==}
     dependencies:
       undici-types: 5.26.5
     dev: true
@@ -1926,7 +1926,7 @@ packages:
       - rollup
     dev: true
 
-  /vite@4.5.3(@types/node@20.11.30):
+  /vite@4.5.3(@types/node@20.12.11):
     resolution: {integrity: sha512-kQL23kMeX92v3ph7IauVkXkikdDRsYMGTVl5KY2E9OY4ONLvkHf04MDTbnfo6NKxZiDLWzVpP5oTa8hQD8U3dg==}
     engines: {node: ^14.18.0 || >=16.0.0}
     hasBin: true
@@ -1954,7 +1954,7 @@ packages:
       terser:
         optional: true
     dependencies:
-      '@types/node': 20.11.30
+      '@types/node': 20.12.11
       esbuild: 0.18.20
       postcss: 8.4.33
       rollup: 3.29.4
@@ -1970,7 +1970,7 @@ packages:
       vite:
         optional: true
     dependencies:
-      vite: 4.5.3(@types/node@20.11.30)
+      vite: 4.5.3(@types/node@20.12.11)
     dev: true
 
   /which@2.0.2:
