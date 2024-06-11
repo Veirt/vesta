@@ -1,5 +1,3 @@
-version: "3.0"
-
 services:
   vesta:
     container_name: vesta
