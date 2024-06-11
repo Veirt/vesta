@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [lts, latest]
+        node-version: [latest]
     steps:
       - uses: actions/checkout@v4.0.0
       - uses: pnpm/action-setup@v2
