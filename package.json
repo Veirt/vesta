@@ -12,13 +12,14 @@
     },
     "dependencies": {
         "axios": "^1.7.2",
+        "is-reachable": "^5.2.1",
         "toml": "^3.0.0",
         "zod": "^3.23.8"
     },
     "devDependencies": {
         "@sveltejs/adapter-node": "^5.0.1",
-        "@sveltejs/vite-plugin-svelte": "^3.1.1",
         "@sveltejs/kit": "^2.5.10",
+        "@sveltejs/vite-plugin-svelte": "^3.1.1",
         "@types/node": "^20.14.2",
         "autoprefixer": "^10.4.19",
         "postcss": "^8.4.38",
