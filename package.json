@@ -17,7 +17,7 @@
         "zod": "^3.23.8"
     },
     "devDependencies": {
-        "@sveltejs/adapter-node": "^5.1.1",
+        "@sveltejs/adapter-node": "^5.2.0",
         "@sveltejs/kit": "^2.5.10",
         "@sveltejs/vite-plugin-svelte": "^3.1.1",
         "@types/node": "^20.14.2",
