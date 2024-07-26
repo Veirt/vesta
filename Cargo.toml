@@ -1,0 +1,9 @@
+[package]
+name = "vesta"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+askama = "0.12.1"
+axum = "0.7.5"
+tokio = { version = "1.39.1", features = ["rt-multi-thread"] }
