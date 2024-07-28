@@ -1,8 +1,9 @@
-use std::{process::exit, sync::Arc};
+use lazy_static::lazy_static;
+use std::{collections::HashMap, process::exit, sync::Arc};
 
 use axum::{routing::get, Extension, Router};
 use indexmap::IndexMap;
-use maud::{html, Markup};
+use maud::{html, Markup, DOCTYPE};
 use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -59,9 +60,43 @@ struct AppState {
     config: VestaConfig,
 }
 
-fn group(group_config: &GroupConfig) -> Markup {
+lazy_static! {
+    static ref COLUMN_CSS_MAPPING: HashMap<u8, &'static str> = HashMap::from([
+        (1, "grid-cols-1 w-[8rem]"),
+        (2, "grid-cols-2 w-[16rem]"),
+        (3, "grid-cols-3 w-[24rem]"),
+        (4, "grid-cols-4 w-[32rem]"),
+        (5, "grid-cols-5 w-[40rem]"),
+        (6, "grid-cols-6 w-[48rem]"),
+    ]);
+}
+
+fn head() -> Markup {
     html! {
-        div.container."mt-5" {
+        (DOCTYPE)
+        html lang="en"
+        head {
+            meta charset="utf-8";
+            meta name="viewport" content="width=device-width, initial-scale=1.0";
+            link rel="stylesheet" type="text/css" href="/style.css";
+            title { "Vesta" }
+        }
+    }
+}
+
+fn group(group_config: &GroupConfig) -> Markup {
+    let column_class = COLUMN_CSS_MAPPING
+        .get(&group_config.columns)
+        .unwrap_or_else(|| {
+            eprintln!(
+                "Group '{}' column value is not valid.",
+                group_config.columns
+            );
+            exit(1);
+        });
+
+    html! {
+        div.container."mt-5".(column_class) {
             p { (group_config.name) }
         }
     }
@@ -69,6 +104,7 @@ fn group(group_config: &GroupConfig) -> Markup {
 
 async fn dashboard(Extension(state): Extension<Arc<AppState>>) -> Markup {
     html! {
+        (head())
         ul {
             @for group_config in state.config.groups.values() {
                 (group(group_config))

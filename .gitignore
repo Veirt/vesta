@@ -1,3 +1,4 @@
 /target
 config/vesta.toml
 !config/.gitkeep
+node_modules
