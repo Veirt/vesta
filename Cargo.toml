@@ -11,3 +11,4 @@ maud = { version = "0.26.0", features = ["axum"] }
 serde = { version = "1.0.204", features = ["derive"] }
 tokio = { version = "1.39.1", features = ["rt-multi-thread"] }
 toml = { version = "0.8.16", features = ["preserve_order"] }
+tower-http = { version = "0.5.2", features = ["fs"] }
