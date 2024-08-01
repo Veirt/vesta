@@ -45,6 +45,7 @@ pub struct Widget {
 pub struct Service {
     pub title: String,
     pub href: Option<String>,
+    #[serde(alias = "imgSrc")]
     pub img_src: Option<String>,
     pub width: Option<u8>,
     pub height: Option<u8>,
