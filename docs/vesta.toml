@@ -85,7 +85,7 @@ name = "Sonarr"
 columns = 5
 [[calendar.services]]
 title = "Sonarr Calendar"
-widget = { name = "SonarrCalendar", url = "http://sonarr.veirt.moe", key = "sonarr_api_key" }
+widget = { name = "SonarrCalendar", config = {url = "http://sonarr.veirt.moe", key = "sonarr_api_key" }}
 width = 6
 height = 3
 

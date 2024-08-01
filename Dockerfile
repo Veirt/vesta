@@ -1,19 +1,22 @@
-FROM node:alpine AS base
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable
-COPY . /app
+FROM rust:1.80 AS build
+
+WORKDIR /usr/src
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends musl-tools && \
+    rustup target add x86_64-unknown-linux-musl
+
+
+RUN USER=root cargo new --bin vesta
+WORKDIR /usr/src/vesta
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+RUN cargo install --target x86_64-unknown-linux-musl --path .
+
+
+FROM scratch
+
 WORKDIR /app
+COPY ./static static
+COPY --from=build /usr/src/vesta/target/x86_64-unknown-linux-musl/release/vesta .
 
-FROM base AS prod-deps
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prod --frozen-lockfile
-
-FROM base AS build
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
-RUN pnpm run build
-
-FROM base
-ENV NODE_ENV=production
-COPY --from=prod-deps /app/node_modules /app/node_modules
-COPY --from=build /app/build /app/build
-CMD ["node", "/app/build"]
+CMD ["/app/vesta"]
