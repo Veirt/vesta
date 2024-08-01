@@ -176,7 +176,14 @@ pub async fn sonarr_calendar_handler(
     Extension(state): Extension<Arc<AppState>>,
     Query(params): Query<QueryParams>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let widget_info = get_widget_info(&state.config, &params.group, &params.title);
+    let widget_info =
+        get_widget_info(&state.config, &params.group, &params.title).ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(json!({"status": "fail", "message": "Widget info not found"})),
+            )
+        })?;
+
     let (url, key) = get_widget_credentials(widget_info).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
@@ -261,9 +268,7 @@ pub fn render_sonarr_calendar_widget(group_id: &str, service_info: &Service) -> 
                     hx-get=(format!("/api/sonarr-calendar?group={}&title={}", group_id, service_info.title))
                     hx-trigger="load"
                     hx-swap="innerHTML"
-                {
-                    "Loading..."
-                }
+                { }
             }
         }
     }

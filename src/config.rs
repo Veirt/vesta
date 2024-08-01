@@ -9,18 +9,14 @@ pub fn load_config(path: &str) -> Result<Dashboard, Box<dyn std::error::Error>> 
     Ok(parsed)
 }
 
-pub fn get_widget_info<'a>(config: &'a Dashboard, group: &str, title: &str) -> &'a Widget {
-    config
-        .groups
-        .get(group)
-        .and_then(|group| {
-            group
-                .services
-                .iter()
-                .find(|service| service.title == title)
-                .and_then(|service| service.widget.as_ref())
-        })
-        .expect("Expected a valid widget")
+pub fn get_widget_info<'a>(config: &'a Dashboard, group: &str, title: &str) -> Option<&'a Widget> {
+    config.groups.get(group).and_then(|group| {
+        group
+            .services
+            .iter()
+            .find(|service| service.title == title)
+            .and_then(|service| service.widget.as_ref())
+    })
 }
 
 #[derive(Clone, Debug, Deserialize)]
