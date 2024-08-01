@@ -1,0 +1,40 @@
+# Rust build artifacts
+target/
+
+# Node.js dependencies
+node_modules/
+
+# Git files
+.git
+.gitignore
+
+# Documentation
+docs/
+
+# Editor-specific files
+.vscode/
+.idea/
+
+# Log files
+*.log
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+*.env
+
+# Test files
+tests/
+
+# Backup files
+*.bak
+*.swp
+*~
+
+# Docker files (optional, depending on your workflow)
+Dockerfile
+docker-compose.yml
+
