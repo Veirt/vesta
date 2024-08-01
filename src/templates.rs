@@ -1,4 +1,5 @@
 use crate::config::{Group, Service, Widget};
+use crate::ping::render_service_indicator;
 use crate::{widgets, AppState};
 use axum::Extension;
 use maud::{html, Markup, DOCTYPE};
@@ -29,16 +30,20 @@ fn render_widget_card(group_id: &str, service: &Service, widget: &Widget) -> Mar
     }
 }
 
-fn render_service_card(config: &Service) -> Markup {
-    let img_src = config.img_src.as_deref().unwrap_or_default();
-    let href = config.href.as_deref().unwrap_or_default();
-    let width = &config.width.unwrap_or(1);
-    let height = &config.height.unwrap_or(1);
+fn render_service_card(group_id: &str, service_info: &Service) -> Markup {
+    let img_src = service_info.img_src.as_deref().unwrap_or_default();
+    let href = service_info.href.as_deref().unwrap_or_default();
+    let width = &service_info.width.unwrap_or(1);
+    let height = &service_info.height.unwrap_or(1);
 
     html! {
         a data-width=(width) data-height=(height) href=(href) class="flex flex-col justify-center items-center text-xs bg-black-2 rounded-xl py-2 m-2 hover:scale-105 duration-150" {
-            img class="object-contain my-3 w-[2rem] h-[2rem]" src=(img_src) alt=(config.title);
-            p class="text-center" { (config.title) }
+            @if service_info.ping.is_some() {
+                (render_service_indicator(group_id, &service_info.title))
+            }
+
+            img class="object-contain my-3 w-[2rem] h-[2rem]" src=(img_src) alt=(service_info.title);
+            p class="text-center" { (service_info.title) }
         }
     }
 }
@@ -52,7 +57,7 @@ fn group(group_id: &str, config: &Group) -> Markup {
                     @if let Some(widget) = &service.widget {
                         (render_widget_card(group_id, service, widget))
                     } @else {
-                        (render_service_card(service))
+                        (render_service_card(group_id, service))
                     }
                 }
             }

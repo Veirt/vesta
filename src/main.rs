@@ -1,4 +1,5 @@
 use config::{load_config, Dashboard};
+use ping::ping_handler;
 use std::{process::exit, sync::Arc};
 use templates::dashboard;
 use widgets::sonarr_calendar::sonarr_calendar_handler;
@@ -7,6 +8,7 @@ use axum::{routing::get, Extension, Router};
 use tower_http::services::ServeDir;
 
 mod config;
+mod ping;
 mod templates;
 mod widgets;
 
@@ -31,6 +33,7 @@ async fn main() {
     // build our application with a single route
     let app = Router::new()
         .route("/api/sonarr-calendar", get(sonarr_calendar_handler))
+        .route("/api/ping", get(ping_handler))
         .route("/", get(dashboard))
         .nest_service("/static", ServeDir::new("static"))
         .layer(Extension(state));
