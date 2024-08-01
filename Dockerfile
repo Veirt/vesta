@@ -1,22 +1,19 @@
-FROM rust:1.80 AS build
+FROM --platform=$TARGETPLATFORM rust:1.80-alpine AS build
+ARG TARGETPLATFORM
+
+RUN apk add musl-dev --no-cache
 
 WORKDIR /usr/src
-RUN apt-get update -y && \
-    apt-get install -y --no-install-recommends musl-tools && \
-    rustup target add x86_64-unknown-linux-musl
-
-
 RUN USER=root cargo new --bin vesta
 WORKDIR /usr/src/vesta
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-RUN cargo install --target x86_64-unknown-linux-musl --path .
-
+RUN cargo build --release
 
 FROM scratch
 
 WORKDIR /app
 COPY ./static static
-COPY --from=build /usr/src/vesta/target/x86_64-unknown-linux-musl/release/vesta .
+COPY --from=build /usr/src/vesta/target/release/vesta /app/vesta
 
 CMD ["/app/vesta"]
