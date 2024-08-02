@@ -134,10 +134,7 @@ fn add_minutes(date: &DateTime<Utc>, minutes: i64) -> DateTime<Utc> {
 
 fn format_air_time(entry: &CalendarEntry) -> String {
     let air_date = format_time(&entry.air_date_utc);
-    let aired_date = format_time(&add_minutes(
-        &entry.air_date_utc,
-        entry.series.runtime as i64,
-    ));
+    let aired_date = format_time(&add_minutes(&entry.air_date_utc, entry.series.runtime));
     format!("{} - {}", air_date, aired_date)
 }
 
@@ -150,7 +147,7 @@ fn format_series_url(sonarr_url: &str, title_slug: &str) -> String {
 }
 
 fn get_entry_class(entry: &CalendarEntry, current_date: &DateTime<Utc>) -> &'static str {
-    let aired_date = add_minutes(&entry.air_date_utc, entry.series.runtime as i64);
+    let aired_date = add_minutes(&entry.air_date_utc, entry.series.runtime);
 
     if *current_date < entry.air_date_utc {
         "unaired"
