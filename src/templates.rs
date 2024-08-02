@@ -50,7 +50,7 @@ fn render_service_card(group_id: &str, service_info: &Service) -> Markup {
 
 fn group(group_id: &str, config: &Group) -> Markup {
     html! {
-        div class="m-5" {
+        div class="container mx-0 lg:mx-5 my-3" data-columns=(&config.columns) {
             p class="block ml-4 font-bold" { (config.name) }
             div.grid data-columns=(&config.columns) {
                 @for service in &config.services {
@@ -69,7 +69,7 @@ pub async fn dashboard(Extension(state): Extension<Arc<AppState>>) -> Markup {
     html! {
         (head())
         body class="flex justify-center items-center min-h-screen text-white bg-black" {
-            div class="container flex flex-row flex-wrap justify-center h-screen sm:justify-start"    {
+            div class="container flex flex-row flex-wrap justify-center h-screen lg:justify-start"    {
                 @for (id, group_config) in &state.config.groups {
                     (group(id, group_config))
                 }
