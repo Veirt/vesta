@@ -38,3 +38,4 @@ tests/
 Dockerfile
 docker-compose.yml
 
+static/style.css

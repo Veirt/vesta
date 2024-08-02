@@ -2,3 +2,4 @@
 config/vesta.toml
 !config/.gitkeep
 node_modules
+static/style.css
