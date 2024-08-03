@@ -37,7 +37,7 @@ fn render_service_card(group_id: &str, service_info: &Service) -> Markup {
     let height = &service_info.height.unwrap_or(1);
 
     html! {
-        a data-width=(width) data-height=(height) href=(href) class="flex flex-col justify-center items-center text-xs bg-black-2 rounded-xl py-2 m-2 hover:scale-105 duration-150" {
+        a data-width=(width) data-height=(height) href=(href) target="_blank" rel="noreferrer" class="flex flex-col justify-center items-center text-xs bg-black-2 rounded-xl py-2 m-2 hover:scale-105 duration-150" {
             @if service_info.ping.is_some() {
                 (render_service_indicator(group_id, &service_info.title))
             }
