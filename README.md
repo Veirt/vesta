@@ -22,8 +22,6 @@ docker run -p 8450:3000 -v /path/to/config/directory:/app/config --name vesta gh
 Or with docker-compose:
 
 ```yaml
-version: "3.0"
-
 services:
   vesta:
     container_name: vesta
