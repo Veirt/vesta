@@ -3,7 +3,7 @@ WORKDIR /temp
 COPY package.json bun.lockb ./
 RUN bun install --frozen-lockfile
 
-COPY tailwind.config.js .
+COPY gridPlugin.js tailwind.config.js ./
 COPY src ./src
 RUN bunx tailwindcss -i ./src/style.css -o ./out.css --minify
 
