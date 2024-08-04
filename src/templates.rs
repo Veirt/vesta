@@ -66,11 +66,18 @@ fn group(group_id: &str, config: &Group) -> Markup {
 }
 
 pub async fn dashboard(Extension(state): Extension<Arc<AppState>>) -> Markup {
+    // Reload config
+    if let Err(e) = state.reload_config() {
+        eprintln!("Error reloading config: {}", e);
+    }
+
+    // Get the latest config
+    let config = state.get_config();
     html! {
         (head())
         body class="flex justify-center items-center min-h-screen text-white bg-black" {
             div class="container flex flex-row flex-wrap justify-center h-screen lg:justify-start"    {
-                @for (id, group_config) in &state.config.groups {
+                @for (id, group_config) in &config.groups {
                     (group(id, group_config))
                 }
             }

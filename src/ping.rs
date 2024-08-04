@@ -6,7 +6,7 @@ use reqwest::{Client, StatusCode};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{config::get_service_info, AppState};
+use crate::AppState;
 
 #[derive(Deserialize)]
 pub struct QueryParams {
@@ -17,8 +17,10 @@ pub async fn ping_handler(
     Extension(state): Extension<Arc<AppState>>,
     Query(params): Query<QueryParams>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let service_info =
-        get_service_info(&state.config, &params.group, &params.title).ok_or_else(|| {
+    let config = &state.get_config();
+    let service_info = config
+        .get_service(&params.group, &params.title)
+        .ok_or_else(|| {
             (
                 StatusCode::NOT_FOUND,
                 Json(json!({"status": "fail", "message": "Service info not found"})),

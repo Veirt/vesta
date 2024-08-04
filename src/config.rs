@@ -1,11 +1,19 @@
 use indexmap::IndexMap;
 use serde::Deserialize;
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, path::Path};
+use thiserror::Error;
 
-pub fn load_config(path: &str) -> Result<Dashboard, Box<dyn std::error::Error>> {
+#[derive(Error, Debug)]
+pub enum ConfigError {
+    #[error("Failed to read config file: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Failed to parse TOML: {0}")]
+    TomlError(#[from] toml::de::Error),
+}
+
+pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Dashboard, ConfigError> {
     let contents = fs::read_to_string(path)?;
     let parsed: Dashboard = toml::from_str(&contents)?;
-
     Ok(parsed)
 }
 
@@ -64,4 +72,14 @@ pub struct Group {
 pub struct Dashboard {
     #[serde(flatten)]
     pub groups: IndexMap<String, Group>,
+}
+
+impl Dashboard {
+    pub fn get_service(&self, group: &str, title: &str) -> Option<&Service> {
+        get_service_info(self, group, title)
+    }
+
+    pub fn get_widget(&self, group: &str, title: &str) -> Option<&Widget> {
+        get_widget_info(self, group, title)
+    }
 }

@@ -10,7 +10,7 @@ use serde_json::json;
 use thiserror::Error;
 
 use crate::{
-    config::{get_widget_info, Service, Widget},
+    config::{Service, Widget},
     AppState,
 };
 
@@ -173,8 +173,10 @@ pub async fn sonarr_calendar_handler(
     Extension(state): Extension<Arc<AppState>>,
     Query(params): Query<QueryParams>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let widget_info =
-        get_widget_info(&state.config, &params.group, &params.title).ok_or_else(|| {
+    let config = &state.get_config();
+    let widget_info = config
+        .get_widget(&params.group, &params.title)
+        .ok_or_else(|| {
             (
                 StatusCode::NOT_FOUND,
                 Json(json!({"status": "fail", "message": "Widget info not found"})),
