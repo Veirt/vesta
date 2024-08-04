@@ -1,0 +1,37 @@
+FROM --platform=$BUILDPLATFORM oven/bun:1-alpine AS css-builder
+WORKDIR /temp
+COPY package.json bun.lockb ./
+RUN bun install --frozen-lockfile
+
+COPY gridPlugin.js tailwind.config.js ./
+COPY src ./src
+RUN bunx tailwindcss -i ./src/style.css -o ./out.css --minify
+
+FROM --platform=$BUILDPLATFORM rust:1.80-alpine AS build
+
+RUN apk add --no-cache \
+    musl-dev \
+    build-base \
+    llvm \
+    clang
+
+RUN rustup target add aarch64-unknown-linux-musl
+
+ENV CC_aarch64_unknown_linux_musl=clang \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=clang
+
+WORKDIR /usr/src
+RUN USER=root cargo new --bin vesta
+WORKDIR /usr/src/vesta
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+RUN cargo build --release --target=aarch64-unknown-linux-musl
+
+FROM scratch
+
+WORKDIR /app
+COPY ./static static
+COPY --from=css-builder /temp/out.css ./static/style.css
+COPY --from=build /usr/src/vesta/target/aarch64-unknown-linux-musl/release/vesta /app/vesta
+
+CMD ["/app/vesta"]

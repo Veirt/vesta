@@ -7,8 +7,7 @@ COPY tailwind.config.js .
 COPY src ./src
 RUN bunx tailwindcss -i ./src/style.css -o ./out.css --minify
 
-FROM --platform=$TARGETPLATFORM rust:1.80-alpine AS build
-ARG TARGETPLATFORM
+FROM rust:1.80-alpine AS build
 
 RUN apk add musl-dev --no-cache
 
