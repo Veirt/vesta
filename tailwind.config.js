@@ -1,4 +1,6 @@
 /** @type {import('tailwindcss').Config} */
+const gridPlugin = require("./gridPlugin");
+
 module.exports = {
   content: ["./src/**/*.rs"],
   theme: {
@@ -13,5 +15,5 @@ module.exports = {
       },
     },
   },
-  plugins: [],
+  plugins: [gridPlugin],
 };
