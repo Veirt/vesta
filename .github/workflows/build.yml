@@ -46,26 +46,14 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha
 
-      - name: Build and push x86_64
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.x86_64
+          file: Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
-          platforms: linux/amd64
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Build and push aarch64
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.aarch64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          platforms: linux/arm64
+          platforms: linux/amd64,linux/arm64
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
