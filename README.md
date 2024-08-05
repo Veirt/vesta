@@ -16,7 +16,7 @@ Configuration that is used in the screenshot is available in [docs/vesta.toml](d
 Docker is the recommended way to deploy Vesta.
 
 ```bash
-docker run -p 8450:3000 -v /path/to/config/directory:/app/config --name vesta ghcr.io/veirt/vesta:latest
+docker run -p 8450:3000 -v /path/to/config/directory:/app/config -v /etc/localtime:/etc/localtime:ro --name vesta ghcr.io/veirt/vesta:latest
 ```
 
 Or with docker-compose:
@@ -30,6 +30,7 @@ services:
       - 8450:3000
     volumes:
       - /path/to/config/directory:/app/config
+      - /etc/localtime:/etc/localtime:ro # to get timezone from host machine
     restart: unless-stopped
 ```
 
