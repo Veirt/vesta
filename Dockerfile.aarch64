@@ -7,18 +7,17 @@ COPY gridPlugin.js tailwind.config.js ./
 COPY src ./src
 RUN bunx tailwindcss -i ./src/style.css -o ./out.css --minify
 
-FROM --platform=$BUILDPLATFORM rust:1.80-alpine AS build
+FROM --platform=$BUILDPLATFORM rust:1.80 AS build
 
-RUN apk add --no-cache \
-    musl-dev \
-    build-base \
-    llvm \
-    clang
+RUN apt-get update && apt-get install -y \
+    musl-tools \
+    gcc-aarch64-linux-gnu \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN rustup target add aarch64-unknown-linux-musl
 
-ENV CC_aarch64_unknown_linux_musl=clang \
-    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=clang
+ENV CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc
 
 WORKDIR /usr/src
 RUN USER=root cargo new --bin vesta
