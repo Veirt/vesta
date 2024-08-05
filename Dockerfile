@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl 
-RUN apt-get update && apt-get install --no-install-recommends -y \
+RUN apt-get update && apt-get install -y \
     gcc-aarch64-linux-gnu \
     && rm -rf /var/lib/apt/lists/*
 
@@ -27,6 +27,7 @@ COPY src ./src
 
 COPY docker/installer/linux linux
 RUN ./$TARGETPLATFORM.sh
+
 
 FROM scratch
 WORKDIR /app
