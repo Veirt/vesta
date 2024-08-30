@@ -2,17 +2,23 @@ use std::sync::Arc;
 
 use axum::{extract::Query, response::IntoResponse, Extension, Json};
 use maud::{html, Markup};
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, Error, StatusCode};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::AppState;
+use crate::{config::PingConfig, AppState};
 
 #[derive(Deserialize)]
 pub struct QueryParams {
     group: String,
     title: String,
 }
+
+async fn is_service_up(client: &reqwest::Client, ping_config: &PingConfig) -> Result<bool, Error> {
+    let response = client.get(&ping_config.url).send().await?;
+    Ok(response.status().is_success())
+}
+
 pub async fn ping_handler(
     Extension(state): Extension<Arc<AppState>>,
     Query(params): Query<QueryParams>,
@@ -47,7 +53,7 @@ pub async fn ping_handler(
             )
         })?;
 
-    let is_service_up = client.get(&ping_config.url).send().await.is_ok();
+    let is_service_up = is_service_up(&client, ping_config).await.unwrap_or(false);
 
     if is_service_up {
         Ok(html!(
