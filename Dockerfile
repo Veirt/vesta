@@ -18,11 +18,12 @@ RUN apt-get update && apt-get install -y \
     gcc-aarch64-linux-gnu \
     && rm -rf /var/lib/apt/lists/*
 
-# Set up the build environment
 WORKDIR /usr/src
 RUN USER=root cargo new --bin vesta
 WORKDIR /usr/src/vesta
 COPY Cargo.toml Cargo.lock ./
+RUN cargo build --release
+
 COPY src ./src
 
 COPY docker/installer/linux linux
