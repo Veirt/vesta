@@ -6,7 +6,7 @@ COPY gridPlugin.js tailwind.config.js ./
 COPY src ./src
 RUN bunx tailwindcss -i ./src/style.css -o ./out.css --minify
 
-FROM --platform=$BUILDPLATFORM rust:1.80-slim-bullseye AS build
+FROM --platform=$BUILDPLATFORM rust:1.86-slim-bullseye AS build
 ARG TARGETPLATFORM
 
 RUN apt-get update && apt-get install --no-install-recommends -y \
