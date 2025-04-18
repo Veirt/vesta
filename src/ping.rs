@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use axum::{extract::Query, response::IntoResponse, Extension, Json};
 use maud::{html, Markup};
@@ -15,7 +15,11 @@ pub struct QueryParams {
 }
 
 async fn is_service_up(client: &reqwest::Client, ping_config: &PingConfig) -> Result<bool, Error> {
-    let response = client.get(&ping_config.url).send().await?;
+    let response = client
+        .get(&ping_config.url)
+        .timeout(Duration::new(1, 0))
+        .send()
+        .await?;
     Ok(response.status().is_success())
 }
 
