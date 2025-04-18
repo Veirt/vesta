@@ -52,7 +52,6 @@ async fn main() {
         }
     };
 
-    // build our application with a single route
     let app = Router::new()
         .route("/api/sonarr-calendar", get(sonarr_calendar_handler))
         .route("/api/ping", get(ping_handler))
@@ -60,7 +59,9 @@ async fn main() {
         .nest_service("/static", ServeDir::new("static"))
         .layer(Extension(state));
 
-    // run our app with hyper, listening globally on port 3000
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let address = "0.0.0.0:3000";
+
+    println!("Listening on http://{address}");
+    let listener = tokio::net::TcpListener::bind(address).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
