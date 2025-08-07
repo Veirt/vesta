@@ -1,6 +1,8 @@
 use config::{load_config, Dashboard};
 use error::{VestaError, VestaResult};
+use http_client::create_default_client;
 use ping::ping_handler;
+use reqwest::Client;
 use std::{
     process::exit,
     sync::{Arc, RwLock},
@@ -13,6 +15,7 @@ use tower_http::services::ServeDir;
 
 mod config;
 mod error;
+mod http_client;
 mod ping;
 mod templates;
 mod widgets;
@@ -20,14 +23,19 @@ mod widgets;
 pub struct AppState {
     config: RwLock<Dashboard>,
     config_path: String,
+    http_client: Client,
 }
 
 impl AppState {
     pub fn new(config_path: &str) -> VestaResult<Arc<Self>> {
         let config = load_config(config_path)?;
+
+        let http_client = create_default_client()?;
+
         Ok(Arc::new(Self {
             config: RwLock::new(config),
             config_path: config_path.to_string(),
+            http_client,
         }))
     }
 
@@ -46,6 +54,10 @@ impl AppState {
             .read()
             .map_err(|e| VestaError::Internal(format!("Failed to acquire read lock: {}", e)))
             .map(|config| config.clone())
+    }
+
+    pub fn get_http_client(&self) -> &Client {
+        &self.http_client
     }
 }
 

@@ -2,10 +2,13 @@ use std::{sync::Arc, time::Duration};
 
 use axum::{extract::Query, response::IntoResponse, Extension};
 use maud::{html, Markup};
-use reqwest::Client;
 use serde::Deserialize;
 
-use crate::{config::PingConfig, error::{VestaError, VestaResult}, AppState};
+use crate::{
+    config::PingConfig,
+    error::{VestaError, VestaResult},
+    AppState,
+};
 
 #[derive(Deserialize)]
 pub struct QueryParams {
@@ -34,18 +37,16 @@ pub async fn ping_handler(
             title: params.title.clone(),
         })?;
 
-    let ping_config = service_info.ping.as_ref().ok_or_else(|| {
-        VestaError::MissingWidgetConfig {
-            service: service_info.title.clone(),
-        }
-    })?;
+    let ping_config =
+        service_info
+            .ping
+            .as_ref()
+            .ok_or_else(|| VestaError::MissingWidgetConfig {
+                service: service_info.title.clone(),
+            })?;
 
-    let client = Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .map_err(|e| VestaError::Internal(format!("Failed to create HTTP client: {}", e)))?;
-
-    let is_service_up = is_service_up(&client, ping_config).await.unwrap_or(false);
+    let client = state.get_http_client();
+    let is_service_up = is_service_up(client, ping_config).await.unwrap_or(false);
 
     if is_service_up {
         Ok(html!(
@@ -61,7 +62,7 @@ pub async fn ping_handler(
 pub fn render_service_indicator(group_id: &str, title: &str) -> Markup {
     html! {
         div
-            class="w-2 h-2 visibility-hidden"
+            class="w-2 h-2 mr-4 bg-slate-900"
             hx-get=(format!("/api/ping?group={}&title={}", group_id, title))
             hx-trigger="load"
             hx-swap="outerHTML" { }

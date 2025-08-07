@@ -59,8 +59,7 @@ struct DownloadQueue {
     records: Vec<DownloadRecord>,
 }
 
-async fn fetch_download_queue(url: &str, key: &str) -> VestaResult<DownloadQueue> {
-    let client = Client::new();
+async fn fetch_download_queue(client: &Client, url: &str, key: &str) -> VestaResult<DownloadQueue> {
     let response = client
         .get(format!("{}/api/v3/queue", url))
         .header("X-Api-Key", key)
@@ -78,7 +77,7 @@ async fn fetch_download_queue(url: &str, key: &str) -> VestaResult<DownloadQueue
     Ok(download_queue)
 }
 
-async fn fetch_calendar(url: &str, key: &str) -> VestaResult<Calendar> {
+async fn fetch_calendar(client: &Client, url: &str, key: &str) -> VestaResult<Calendar> {
     let today = Utc::now();
     let day_after_tomorrow = today + Duration::days(2);
     let params = [
@@ -88,7 +87,6 @@ async fn fetch_calendar(url: &str, key: &str) -> VestaResult<Calendar> {
         ("end", &day_after_tomorrow.format("%Y-%m-%d").to_string()),
     ];
 
-    let client = Client::new();
     let response = client
         .get(format!("{}/api/v3/calendar", url))
         .query(&params)
@@ -180,9 +178,10 @@ pub async fn sonarr_calendar_handler(
 
     let (url, key) = get_widget_credentials(widget_info)?;
 
-    let mut calendar = fetch_calendar(url, key).await?;
-
-    let download_queue = fetch_download_queue(url, key).await?;
+    // Use the shared HTTP client from AppState
+    let client = state.get_http_client();
+    let mut calendar = fetch_calendar(client, url, key).await?;
+    let download_queue = fetch_download_queue(client, url, key).await?;
 
     let download_queue_ids: HashSet<u32> = download_queue
         .records
