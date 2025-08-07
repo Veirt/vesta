@@ -1,3 +1,4 @@
+use serde::Serialize;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 use tokio::sync::broadcast;
 
@@ -128,7 +129,7 @@ impl ConfigManager {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ConfigStats {
     pub total_groups: usize,
     pub total_services: usize,

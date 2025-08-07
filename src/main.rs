@@ -4,27 +4,26 @@ use error::{VestaError, VestaResult};
 use http_client::create_default_client;
 use ping::ping_handler;
 use reqwest::Client;
-use std::{
-    process::exit,
-    sync::Arc,
-};
+use std::{process::exit, sync::Arc};
 use templates::dashboard;
 use widget_system::WidgetRegistry;
 use widgets::sonarr_calendar_widget::SonarrCalendarWidget;
 
 use axum::{
-    extract::{Path, Query},
+    extract::{Extension, Path, Query},
     response::IntoResponse,
-    routing::get, 
-    Extension, Router
+    routing::{get, post},
+    Router,
 };
 use tower_http::services::ServeDir;
 
+mod api;
 mod config;
 mod config_manager;
 mod error;
 mod http_client;
 mod ping;
+mod response;
 mod templates;
 mod widget_system;
 mod widgets;
@@ -37,10 +36,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(config_path: &str) -> VestaResult<Arc<Self>> {
-        let widget_registry = Arc::new(
-            WidgetRegistry::new()
-                .register(SonarrCalendarWidget::new())
-        );
+        let widget_registry = Arc::new(WidgetRegistry::new().register(SonarrCalendarWidget::new()));
 
         let config_manager = Arc::new(ConfigManager::new(config_path, widget_registry.clone())?);
         let http_client = create_default_client()?;
@@ -79,7 +75,10 @@ async fn widget_handler(
     Extension(state): Extension<Arc<AppState>>,
 ) -> Result<impl IntoResponse, VestaError> {
     let state_clone = Arc::clone(&state);
-    state.widget_registry.handle_widget_request(&widget_name, state_clone, query).await
+    state
+        .widget_registry
+        .handle_widget_request(&widget_name, state_clone, query)
+        .await
 }
 
 #[tokio::main]
@@ -96,6 +95,12 @@ async fn main() {
     let app = Router::new()
         .route("/api/widgets/:widget_name", get(widget_handler))
         .route("/api/ping", get(ping_handler))
+        .route("/api/health", get(api::health))
+        .route("/api/services", get(api::list_services))
+        .route("/api/service", get(api::get_service))
+        .route("/api/widget", get(api::get_widget))
+        .route("/api/config/validate", get(api::validate_config))
+        .route("/api/config/reload", post(api::reload_config))
         .route("/", get(dashboard))
         .nest_service("/static", ServeDir::new("static"))
         .layer(Extension(state));

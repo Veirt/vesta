@@ -23,7 +23,12 @@ fn head() -> Markup {
     }
 }
 
-fn render_widget_card(group_id: &str, service: &Service, widget: &Widget, widget_registry: &crate::widget_system::WidgetRegistry) -> Markup {
+fn render_widget_card(
+    group_id: &str,
+    service: &Service,
+    widget: &Widget,
+    widget_registry: &crate::widget_system::WidgetRegistry,
+) -> Markup {
     widget_registry.render_widget(group_id, service, widget)
 }
 
@@ -46,7 +51,11 @@ fn render_service_card(group_id: &str, service_info: &Service) -> Markup {
     }
 }
 
-fn group(group_id: &str, config: &Group, widget_registry: &crate::widget_system::WidgetRegistry) -> Markup {
+fn group(
+    group_id: &str,
+    config: &Group,
+    widget_registry: &crate::widget_system::WidgetRegistry,
+) -> Markup {
     html! {
         div id=(group_id) class="container scroll-mt-6"  {
             h2 class="text-sky-400 block font-bold text-lg my-2" { (config.name) }

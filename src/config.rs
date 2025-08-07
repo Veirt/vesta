@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fs, path::Path};
 
 use crate::error::ConfigError;
@@ -31,18 +31,18 @@ pub fn get_widget_info<'a>(config: &'a Dashboard, group: &str, title: &str) -> O
     })
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PingConfig {
     pub url: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Widget {
     pub name: String,
     pub config: Option<HashMap<String, String>>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Service {
     pub title: String,
     pub href: Option<String>,
@@ -54,14 +54,14 @@ pub struct Service {
     pub ping: Option<PingConfig>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Group {
     pub name: String,
     pub columns: u8,
     pub services: Vec<Service>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct Dashboard {
     #[serde(flatten)]
     pub groups: IndexMap<String, Group>,
