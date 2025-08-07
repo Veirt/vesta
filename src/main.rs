@@ -1,4 +1,5 @@
 use config::{load_config, Dashboard};
+use error::{VestaError, VestaResult};
 use ping::ping_handler;
 use std::{
     process::exit,
@@ -11,6 +12,7 @@ use axum::{routing::get, Extension, Router};
 use tower_http::services::ServeDir;
 
 mod config;
+mod error;
 mod ping;
 mod templates;
 mod widgets;
@@ -21,7 +23,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(config_path: &str) -> Result<Arc<Self>, Box<dyn std::error::Error>> {
+    pub fn new(config_path: &str) -> VestaResult<Arc<Self>> {
         let config = load_config(config_path)?;
         Ok(Arc::new(Self {
             config: RwLock::new(config),
@@ -29,15 +31,21 @@ impl AppState {
         }))
     }
 
-    pub fn reload_config(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn reload_config(&self) -> VestaResult<()> {
         let new_config = load_config(&self.config_path)?;
-        let mut config = self.config.write().unwrap();
+        let mut config = self
+            .config
+            .write()
+            .map_err(|e| VestaError::Internal(format!("Failed to acquire write lock: {}", e)))?;
         *config = new_config;
         Ok(())
     }
 
-    pub fn get_config(&self) -> Dashboard {
-        self.config.read().unwrap().clone()
+    pub fn get_config(&self) -> Result<Dashboard, VestaError> {
+        self.config
+            .read()
+            .map_err(|e| VestaError::Internal(format!("Failed to acquire read lock: {}", e)))
+            .map(|config| config.clone())
     }
 }
 

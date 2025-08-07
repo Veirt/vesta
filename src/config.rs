@@ -1,15 +1,8 @@
 use indexmap::IndexMap;
 use serde::Deserialize;
 use std::{collections::HashMap, fs, path::Path};
-use thiserror::Error;
 
-#[derive(Error, Debug)]
-pub enum ConfigError {
-    #[error("Failed to read config file: {0}")]
-    IoError(#[from] std::io::Error),
-    #[error("Failed to parse TOML: {0}")]
-    TomlError(#[from] toml::de::Error),
-}
+use crate::error::ConfigError;
 
 pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Dashboard, ConfigError> {
     let contents = fs::read_to_string(path)?;

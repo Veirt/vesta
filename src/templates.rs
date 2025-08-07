@@ -75,7 +75,22 @@ pub async fn dashboard(Extension(state): Extension<Arc<AppState>>) -> Markup {
     }
 
     // Get the latest config
-    let config = state.get_config();
+    let config = match state.get_config() {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("Error getting config: {}", e);
+            // Return a simple error page
+            return html! {
+                (head())
+                body class="min-h-full text-white bg-slate-950 flex items-center justify-center" {
+                    div class="text-center" {
+                        h1 class="text-2xl font-bold mb-4" { "Configuration Error" }
+                        p class="text-red-400" { (e.to_string()) }
+                    }
+                }
+            };
+        }
+    };
     html! {
         (head())
         body class="min-h-full text-white bg-slate-950 flex" {

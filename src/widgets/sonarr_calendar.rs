@@ -1,28 +1,17 @@
 use std::{collections::HashSet, sync::Arc};
 
-use axum::{extract::Query, response::IntoResponse, Extension, Json};
+use axum::{extract::Query, response::IntoResponse, Extension};
 use chrono::{DateTime, Duration, Local, Utc};
 use indexmap::IndexMap;
 use maud::{html, Markup};
-use reqwest::{Client, StatusCode};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-use thiserror::Error;
 
 use crate::{
     config::{Service, Widget},
+    error::{VestaError, VestaResult},
     AppState,
 };
-
-#[derive(Error, Debug)]
-enum SonarrError {
-    #[error("Failed to send request: {0}")]
-    RequestFailed(#[from] reqwest::Error),
-    #[error("API returned non-success status code: {0}")]
-    ApiError(StatusCode),
-    #[error("Missing URL or API key")]
-    MissingCredentials,
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Series {
@@ -70,7 +59,7 @@ struct DownloadQueue {
     records: Vec<DownloadRecord>,
 }
 
-async fn fetch_download_queue(url: &str, key: &str) -> Result<DownloadQueue, SonarrError> {
+async fn fetch_download_queue(url: &str, key: &str) -> VestaResult<DownloadQueue> {
     let client = Client::new();
     let response = client
         .get(format!("{}/api/v3/queue", url))
@@ -79,14 +68,17 @@ async fn fetch_download_queue(url: &str, key: &str) -> Result<DownloadQueue, Son
         .await?;
 
     if !response.status().is_success() {
-        return Err(SonarrError::ApiError(response.status()));
+        return Err(VestaError::ApiError {
+            status: response.status(),
+            message: "Failed to fetch download queue".to_string(),
+        });
     }
 
     let download_queue = response.json::<DownloadQueue>().await?;
     Ok(download_queue)
 }
 
-async fn fetch_calendar(url: &str, key: &str) -> Result<Calendar, SonarrError> {
+async fn fetch_calendar(url: &str, key: &str) -> VestaResult<Calendar> {
     let today = Utc::now();
     let day_after_tomorrow = today + Duration::days(2);
     let params = [
@@ -105,14 +97,17 @@ async fn fetch_calendar(url: &str, key: &str) -> Result<Calendar, SonarrError> {
         .await?;
 
     if !response.status().is_success() {
-        return Err(SonarrError::ApiError(response.status()));
+        return Err(VestaError::ApiError {
+            status: response.status(),
+            message: "Failed to fetch calendar".to_string(),
+        });
     }
 
     let calendar = response.json::<Calendar>().await?;
     Ok(calendar)
 }
 
-fn get_widget_credentials(widget_info: &Widget) -> Result<(&str, &str), SonarrError> {
+fn get_widget_credentials(widget_info: &Widget) -> VestaResult<(&str, &str)> {
     widget_info
         .config
         .as_ref()
@@ -121,7 +116,9 @@ fn get_widget_credentials(widget_info: &Widget) -> Result<(&str, &str), SonarrEr
             let key = config.get("key")?;
             Some((url.as_str(), key.as_str()))
         })
-        .ok_or_else(|| SonarrError::MissingCredentials)
+        .ok_or_else(|| VestaError::MissingCredentials {
+            field: "url or key".to_string(),
+        })
 }
 
 fn format_time(date: &DateTime<Utc>) -> String {
@@ -172,37 +169,20 @@ pub struct QueryParams {
 pub async fn sonarr_calendar_handler(
     Extension(state): Extension<Arc<AppState>>,
     Query(params): Query<QueryParams>,
-) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let config = &state.get_config();
+) -> Result<impl IntoResponse, VestaError> {
+    let config = state.get_config()?;
     let widget_info = config
         .get_widget(&params.group, &params.title)
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(json!({"status": "fail", "message": "Widget info not found"})),
-            )
+        .ok_or_else(|| VestaError::WidgetNotFound {
+            group: params.group.clone(),
+            title: params.title.clone(),
         })?;
 
-    let (url, key) = get_widget_credentials(widget_info).map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"status": "fail", "message": e.to_string(), "data": format!("{:?}", e)})),
-        )
-    })?;
+    let (url, key) = get_widget_credentials(widget_info)?;
 
-    let mut calendar = fetch_calendar(url, key).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"status": "error", "message": e.to_string(), "data": format!("{:?}", e)})),
-        )
-    })?;
+    let mut calendar = fetch_calendar(url, key).await?;
 
-    let download_queue = fetch_download_queue(url, key).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"status": "error", "message": e.to_string(), "data": format!("{:?}", e)})),
-        )
-    })?;
+    let download_queue = fetch_download_queue(url, key).await?;
 
     let download_queue_ids: HashSet<u32> = download_queue
         .records

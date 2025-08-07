@@ -1,12 +1,11 @@
 use std::{sync::Arc, time::Duration};
 
-use axum::{extract::Query, response::IntoResponse, Extension, Json};
+use axum::{extract::Query, response::IntoResponse, Extension};
 use maud::{html, Markup};
-use reqwest::{Client, Error, StatusCode};
+use reqwest::Client;
 use serde::Deserialize;
-use serde_json::json;
 
-use crate::{config::PingConfig, AppState};
+use crate::{config::PingConfig, error::{VestaError, VestaResult}, AppState};
 
 #[derive(Deserialize)]
 pub struct QueryParams {
@@ -14,7 +13,7 @@ pub struct QueryParams {
     title: String,
 }
 
-async fn is_service_up(client: &reqwest::Client, ping_config: &PingConfig) -> Result<bool, Error> {
+async fn is_service_up(client: &reqwest::Client, ping_config: &PingConfig) -> VestaResult<bool> {
     let response = client
         .get(&ping_config.url)
         .timeout(Duration::new(5, 0))
@@ -26,36 +25,25 @@ async fn is_service_up(client: &reqwest::Client, ping_config: &PingConfig) -> Re
 pub async fn ping_handler(
     Extension(state): Extension<Arc<AppState>>,
     Query(params): Query<QueryParams>,
-) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    let config = &state.get_config();
+) -> Result<impl IntoResponse, VestaError> {
+    let config = state.get_config()?;
     let service_info = config
         .get_service(&params.group, &params.title)
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                Json(json!({"status": "fail", "message": "Service info not found"})),
-            )
+        .ok_or_else(|| VestaError::ServiceNotFound {
+            group: params.group.clone(),
+            title: params.title.clone(),
         })?;
 
     let ping_config = service_info.ping.as_ref().ok_or_else(|| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({
-                "status": "error",
-                "message": format!("Cannot get ping config of service '{}'", &service_info.title)
-            })),
-        )
+        VestaError::MissingWidgetConfig {
+            service: service_info.title.clone(),
+        }
     })?;
 
     let client = Client::builder()
         .danger_accept_invalid_certs(true)
         .build()
-        .map_err(|_| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"status": "error", "message": "Failed to create HTTP client"})),
-            )
-        })?;
+        .map_err(|e| VestaError::Internal(format!("Failed to create HTTP client: {}", e)))?;
 
     let is_service_up = is_service_up(&client, ping_config).await.unwrap_or(false);
 
