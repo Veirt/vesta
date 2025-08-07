@@ -260,8 +260,11 @@ pub fn render_sonarr_calendar_widget(group_id: &str, service_info: &Service) -> 
     let width = service_info.width.unwrap_or(1);
     let height = service_info.height.unwrap_or(1);
 
+    let container_height = (height * 6) + (height - 1);
+
     html! {
         div class=(format!("overflow-y-auto text-xs bg-slate-900 border border-slate-800 rounded-xl py-2 flex flex-col col-span-{} row-span-{}", width, height))
+            style=(format!("height: {}rem;", container_height))
             hx-get=(format!("/api/sonarr-calendar?group={}&title={}", group_id, service_info.title))
             hx-trigger="load"
             hx-swap="innerHTML"
