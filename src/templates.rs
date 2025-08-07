@@ -48,6 +48,7 @@ fn sidebar_logo() -> Markup {
         div class="flex items-center gap-3 mx-4 my-4 pb-4 border-b border-slate-700" {
             img src="/static/logo-white.png" alt="Vesta" class="w-8 h-8";
             h1."text-2xl font-bold" { "Vesta" }
+
         }
     }
 }
@@ -130,10 +131,19 @@ fn sidebar(config: &Dashboard) -> Markup {
 
 fn main_header() -> Markup {
     html! {
-        header."container" {
-            section {
-                h2."text-2xl font-bold" { "Services" }
-                p."text-stone-400" { "Your self-hosted applications" }
+        header class="mb-8" {
+            div class="flex items-center justify-between" {
+                div {
+                    h1 class="text-4xl font-bold bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent mb-2" {
+                        "Services"
+                    }
+                    p class="text-slate-400 text-lg font-medium flex items-center gap-2" {
+                        svg class="w-5 h-5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" {
+                            path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" {}
+                        }
+                        "Your self-hosted applications"
+                    }
+                }
             }
         }
     }
@@ -215,7 +225,11 @@ fn render_service_card(group_id: &str, service_info: &Service) -> Markup {
 
 fn group_header(group_name: &str) -> Markup {
     html! {
-        h2 class="text-sky-400 block font-bold text-lg my-2" { (group_name) }
+        div class="mb-6 flex items-center gap-3" {
+            div class="w-1 h-8 bg-gradient-to-b from-sky-400 to-blue-500 rounded-full" {}
+            h2 class="text-xl font-bold text-white" { (group_name) }
+            div class="flex-1 h-px bg-gradient-to-r from-slate-700 to-transparent" {}
+        }
     }
 }
 
