@@ -185,7 +185,7 @@ impl WidgetHandler for SonarrCalendarWidget {
         let width = service.width.unwrap_or(1);
         let height = service.height.unwrap_or(1);
 
-        let container_height = (height * 6) + (height - 1);
+        let container_height = height * 5;
 
         html! {
             div class=(format!("overflow-y-auto text-xs bg-slate-900 border border-slate-800 rounded-xl py-2 flex flex-col col-span-{} row-span-{}", width, height))

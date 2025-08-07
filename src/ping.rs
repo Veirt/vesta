@@ -50,11 +50,11 @@ pub async fn ping_handler(
 
     if is_service_up {
         Ok(html!(
-            div class="mr-4 w-2 h-2 bg-green-500 rounded-full" {}
+            div class="w-2 h-2 bg-green-500 rounded-full" {}
         ))
     } else {
         Ok(html!(
-            div class="mr-4 w-2 h-2 bg-red-500 rounded-full" {}
+            div class="w-2 h-2 bg-red-500 rounded-full" {}
         ))
     }
 }
@@ -62,7 +62,7 @@ pub async fn ping_handler(
 pub fn render_service_indicator(group_id: &str, title: &str) -> Markup {
     html! {
         div
-            class="w-2 h-2 mr-4 bg-slate-900"
+            class="w-2 h-2 bg-slate-900"
             hx-get=(format!("/api/ping?group={}&title={}", group_id, title))
             hx-trigger="load"
             hx-swap="outerHTML" { }

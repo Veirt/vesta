@@ -5,7 +5,7 @@ use axum::Extension;
 use maud::{html, Markup, DOCTYPE};
 use std::sync::Arc;
 
-// HTML head component
+// HTML head component with mobile-first responsive design
 fn head() -> Markup {
     html! {
         (DOCTYPE)
@@ -15,9 +15,28 @@ fn head() -> Markup {
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
                 link rel="stylesheet" type="text/css" href="/static/style.css";
                 script src="static/htmx.min.js" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous" {}
+                script src="static/app.js" {}
                 title { "Vesta" }
                 style {
                     "html { scroll-behavior: smooth; }"
+                    ".mobile-menu-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 30; display: none; }"
+                    ".mobile-menu-open .mobile-menu-overlay { display: block; }"
+                    ".mobile-menu-open #sidebar { transform: translateX(0) !important; }"
+                }
+            }
+        }
+    }
+}
+
+// Mobile menu button component
+fn mobile_nav_toggle() -> Markup {
+    html! {
+        div class="md:hidden fixed top-4 left-4 z-50" {
+            button
+                id="mobile-menu-toggle"
+                class="bg-slate-800 text-white p-2 rounded-lg shadow-lg" {
+                svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" {
+                    path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" {}
                 }
             }
         }
@@ -87,8 +106,20 @@ fn sidebar_status(config: &Dashboard) -> Markup {
 
 fn sidebar(config: &Dashboard) -> Markup {
     html! {
-        aside."w-64 bg-slate-900 p-4 fixed h-full overflow-y-auto" {
+        aside
+            id="sidebar"
+            class="w-64 bg-slate-900 p-4 fixed h-full overflow-y-auto z-40 -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out" {
             div class="flex flex-col h-full" {
+                // Close button for mobile
+                div class="md:hidden flex justify-end mb-4" {
+                    button
+                        id="mobile-menu-close"
+                        class="p-2 text-slate-400 hover:text-white" {
+                        svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" {
+                            path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" {}
+                        }
+                    }
+                }
                 (sidebar_logo())
                 (sidebar_navigation(config))
                 (sidebar_status(config))
@@ -113,9 +144,9 @@ fn main_content(
     widget_registry: &crate::widget_system::WidgetRegistry,
 ) -> Markup {
     html! {
-        div."flex-1 ml-72 mr-8 my-4 min-h-full" {
+        div class="flex-1 ml-0 md:ml-64 px-4 md:px-8 py-4 min-h-full" {
             (main_header())
-            main class="container my-4 gap-2 flex flex-wrap justify-center h-full lg:justify-start" {
+            main class="container mx-auto my-4 gap-2 flex flex-wrap justify-center h-full lg:justify-start" {
                 @for (id, group_config) in &config.groups {
                     (group(id, group_config, widget_registry))
                 }
@@ -138,7 +169,7 @@ fn error_page(error_message: &str) -> Markup {
 
 fn service_card_image(img_src: &str, title: &str) -> Markup {
     html! {
-        img class="object-contain my-3 w-[2rem] h-[2rem]"
+        img class="object-contain w-6 h-6 md:w-8 md:h-8 mb-1 md:mb-0 md:my-3 !mt-0"
             src=(img_src)
             alt=(title);
     }
@@ -146,17 +177,7 @@ fn service_card_image(img_src: &str, title: &str) -> Markup {
 
 fn service_card_title(title: &str) -> Markup {
     html! {
-        p class="text-center" { (title) }
-    }
-}
-
-fn service_card_ping_indicator(group_id: &str, service_title: &str, has_ping: bool) -> Markup {
-    if has_ping {
-        html! {
-            (render_service_indicator(group_id, service_title))
-        }
-    } else {
-        html! {}
+        p class="text-center text-xs font-medium" { (title) }
     }
 }
 
@@ -180,10 +201,14 @@ fn render_service_card(group_id: &str, service_info: &Service) -> Markup {
         a href=(href)
           target="_blank"
           rel="noreferrer"
-          class=(format!("col-span-{} row-span-{} flex flex-row p-4 justify-between items-center text-xs bg-slate-900 border border-slate-800 rounded-xl hover:scale-105 duration-150", width, height)) {
+          class=(format!("relative col-span-1 md:col-span-{} row-span-1 md:row-span-{} flex flex-col  xl:flex-row  p-3 md:p-4 justify-center md:justify-between items-center text-xs bg-slate-900 border border-slate-800 rounded-xl hover:scale-105 duration-150 min-h-[80px] md:min-h-0", width, height)) {
             (service_card_image(img_src, &service_info.title))
             (service_card_title(&service_info.title))
-            (service_card_ping_indicator(group_id, &service_info.title, has_ping))
+            @if has_ping {
+                div class="absolute top-2 right-2 xl:static xl:top-auto xl:right-auto" {
+                    (render_service_indicator(group_id, &service_info.title))
+                }
+            }
         }
     }
 }
@@ -200,7 +225,7 @@ fn group_grid(
     widget_registry: &crate::widget_system::WidgetRegistry,
 ) -> Markup {
     html! {
-        div class=(format!("grid grid-cols-{} gap-4", &group_config.columns)) {
+        div class=(format!("grid grid-cols-2 sm:grid-cols-{} gap-4", &group_config.columns)) {
             @for service in &group_config.services {
                 (render_service_or_widget(group_id, service, widget_registry))
             }
@@ -255,6 +280,8 @@ pub async fn dashboard(Extension(state): Extension<Arc<AppState>>) -> Markup {
     html! {
         (head())
         body class="min-h-full text-white bg-slate-950 flex" {
+            div class="mobile-menu-overlay" {}
+            (mobile_nav_toggle())
             (sidebar(&config))
             (main_content(&config, state.get_widget_registry()))
         }
