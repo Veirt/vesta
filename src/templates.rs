@@ -1,6 +1,6 @@
 use crate::config::{Group, Service, Widget};
 use crate::ping::render_service_indicator;
-use crate::{widgets, AppState};
+use crate::AppState;
 use axum::Extension;
 use maud::{html, Markup, DOCTYPE};
 use std::sync::Arc;
@@ -23,13 +23,8 @@ fn head() -> Markup {
     }
 }
 
-fn render_widget_card(group_id: &str, service: &Service, widget: &Widget) -> Markup {
-    match widget.name.as_str() {
-        "SonarrCalendar" => {
-            widgets::sonarr_calendar::render_sonarr_calendar_widget(group_id, service)
-        }
-        _ => html!(),
-    }
+fn render_widget_card(group_id: &str, service: &Service, widget: &Widget, widget_registry: &crate::widget_system::WidgetRegistry) -> Markup {
+    widget_registry.render_widget(group_id, service, widget)
 }
 
 fn render_service_card(group_id: &str, service_info: &Service) -> Markup {
@@ -51,14 +46,14 @@ fn render_service_card(group_id: &str, service_info: &Service) -> Markup {
     }
 }
 
-fn group(group_id: &str, config: &Group) -> Markup {
+fn group(group_id: &str, config: &Group, widget_registry: &crate::widget_system::WidgetRegistry) -> Markup {
     html! {
         div id=(group_id) class="container scroll-mt-6"  {
             h2 class="text-sky-400 block font-bold text-lg my-2" { (config.name) }
             div class=(format!("grid grid-cols-{} gap-4", &config.columns)) {
                 @for service in &config.services {
                     @if let Some(widget) = &service.widget {
-                        (render_widget_card(group_id, service, widget))
+                        (render_widget_card(group_id, service, widget, widget_registry))
                     } @else {
                         (render_service_card(group_id, service))
                     }
@@ -69,17 +64,15 @@ fn group(group_id: &str, config: &Group) -> Markup {
 }
 
 pub async fn dashboard(Extension(state): Extension<Arc<AppState>>) -> Markup {
-    // Reload config
     if let Err(e) = state.reload_config() {
         eprintln!("Error reloading config: {}", e);
     }
 
-    // Get the latest config
-    let config = match state.get_config() {
+    let config_result = state.get_config_manager().read_config();
+    let config = match config_result {
         Ok(config) => config,
         Err(e) => {
             eprintln!("Error getting config: {}", e);
-            // Return a simple error page
             return html! {
                 (head())
                 body class="min-h-full text-white bg-slate-950 flex items-center justify-center" {
@@ -149,7 +142,7 @@ pub async fn dashboard(Extension(state): Extension<Arc<AppState>>) -> Markup {
 
                 main class="container my-4 gap-2 flex flex-wrap justify-center h-full lg:justify-start" {
                     @for (id, group_config) in &config.groups {
-                        (group(id, group_config))
+                        (group(id, group_config, state.get_widget_registry()))
                     }
                 }
             }

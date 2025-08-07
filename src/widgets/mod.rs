@@ -1,1 +1,1 @@
-pub mod sonarr_calendar;
+pub mod sonarr_calendar_widget;

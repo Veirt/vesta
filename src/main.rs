@@ -1,64 +1,85 @@
-use config::{load_config, Dashboard};
+use config::Dashboard;
+use config_manager::ConfigManager;
 use error::{VestaError, VestaResult};
 use http_client::create_default_client;
 use ping::ping_handler;
 use reqwest::Client;
 use std::{
     process::exit,
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 use templates::dashboard;
-use widgets::sonarr_calendar::sonarr_calendar_handler;
+use widget_system::WidgetRegistry;
+use widgets::sonarr_calendar_widget::SonarrCalendarWidget;
 
-use axum::{routing::get, Extension, Router};
+use axum::{
+    extract::{Path, Query},
+    response::IntoResponse,
+    routing::get, 
+    Extension, Router
+};
 use tower_http::services::ServeDir;
 
 mod config;
+mod config_manager;
 mod error;
 mod http_client;
 mod ping;
 mod templates;
+mod widget_system;
 mod widgets;
 
 pub struct AppState {
-    config: RwLock<Dashboard>,
-    config_path: String,
+    config_manager: Arc<ConfigManager>,
     http_client: Client,
+    widget_registry: Arc<WidgetRegistry>,
 }
 
 impl AppState {
     pub fn new(config_path: &str) -> VestaResult<Arc<Self>> {
-        let config = load_config(config_path)?;
+        let widget_registry = Arc::new(
+            WidgetRegistry::new()
+                .register(SonarrCalendarWidget::new())
+        );
 
+        let config_manager = Arc::new(ConfigManager::new(config_path, widget_registry.clone())?);
         let http_client = create_default_client()?;
 
         Ok(Arc::new(Self {
-            config: RwLock::new(config),
-            config_path: config_path.to_string(),
+            config_manager,
             http_client,
+            widget_registry,
         }))
     }
 
     pub fn reload_config(&self) -> VestaResult<()> {
-        let new_config = load_config(&self.config_path)?;
-        let mut config = self
-            .config
-            .write()
-            .map_err(|e| VestaError::Internal(format!("Failed to acquire write lock: {}", e)))?;
-        *config = new_config;
-        Ok(())
+        self.config_manager.reload_config()
     }
 
-    pub fn get_config(&self) -> Result<Dashboard, VestaError> {
-        self.config
-            .read()
-            .map_err(|e| VestaError::Internal(format!("Failed to acquire read lock: {}", e)))
-            .map(|config| config.clone())
+    pub fn get_config(&self) -> VestaResult<Dashboard> {
+        self.config_manager.get_config()
     }
 
     pub fn get_http_client(&self) -> &Client {
         &self.http_client
     }
+
+    pub fn get_widget_registry(&self) -> &WidgetRegistry {
+        &self.widget_registry
+    }
+
+    pub fn get_config_manager(&self) -> &ConfigManager {
+        &self.config_manager
+    }
+}
+
+async fn widget_handler(
+    Path(widget_name): Path<String>,
+    Query(query): Query<widget_system::WidgetQuery>,
+    Extension(state): Extension<Arc<AppState>>,
+) -> Result<impl IntoResponse, VestaError> {
+    let state_clone = Arc::clone(&state);
+    state.widget_registry.handle_widget_request(&widget_name, state_clone, query).await
 }
 
 #[tokio::main]
@@ -73,7 +94,7 @@ async fn main() {
     };
 
     let app = Router::new()
-        .route("/api/sonarr-calendar", get(sonarr_calendar_handler))
+        .route("/api/widgets/:widget_name", get(widget_handler))
         .route("/api/ping", get(ping_handler))
         .route("/", get(dashboard))
         .nest_service("/static", ServeDir::new("static"))
