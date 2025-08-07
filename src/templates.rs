@@ -1,10 +1,11 @@
-use crate::config::{Group, Service, Widget};
+use crate::config::{Dashboard, Group, Service, Widget};
 use crate::ping::render_service_indicator;
 use crate::AppState;
 use axum::Extension;
 use maud::{html, Markup, DOCTYPE};
 use std::sync::Arc;
 
+// HTML head component
 fn head() -> Markup {
     html! {
         (DOCTYPE)
@@ -23,6 +24,142 @@ fn head() -> Markup {
     }
 }
 
+fn sidebar_logo() -> Markup {
+    html! {
+        div class="flex items-center gap-3 mx-4 my-4 pb-4 border-b border-slate-700" {
+            img src="/static/logo-white.png" alt="Vesta" class="w-8 h-8";
+            h1."text-2xl font-bold" { "Vesta" }
+        }
+    }
+}
+
+fn sidebar_navigation(config: &Dashboard) -> Markup {
+    html! {
+        nav class="flex-1 mt-6" {
+            h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3 px-4" { "Groups" }
+            div class="space-y-1" {
+                @for (group_id, group_config) in &config.groups {
+                    a href=(format!("#{}", group_id))
+                      class="flex items-center px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white rounded-lg transition-colors group" {
+                        div class="w-2 h-2 bg-sky-400 rounded-full mr-3 group-hover:bg-sky-300" {}
+                        span { (group_config.name) }
+                        span class="ml-auto text-xs text-slate-500" { (group_config.services.len()) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn sidebar_status(config: &Dashboard) -> Markup {
+    let total_services = config
+        .groups
+        .values()
+        .map(|g| g.services.len())
+        .sum::<usize>();
+    let services_with_ping = config
+        .groups
+        .values()
+        .flat_map(|g| &g.services)
+        .filter(|s| s.ping.is_some())
+        .count();
+
+    html! {
+        div class="mt-auto pt-4 border-t border-slate-700" {
+            h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3 px-4" { "Status" }
+            div class="px-4 space-y-2" {
+                div class="flex justify-between text-sm" {
+                    span class="text-slate-400" { "Total Services" }
+                    span class="text-white font-medium" { (total_services) }
+                }
+                div class="flex justify-between text-sm" {
+                    span class="text-slate-400" { "Monitored" }
+                    span class="text-white font-medium" { (services_with_ping) }
+                }
+                div class="flex justify-between text-sm" {
+                    span class="text-slate-400" { "Groups" }
+                    span class="text-white font-medium" { (config.groups.len()) }
+                }
+            }
+        }
+    }
+}
+
+fn sidebar(config: &Dashboard) -> Markup {
+    html! {
+        aside."w-64 bg-slate-900 p-4 fixed h-full overflow-y-auto" {
+            div class="flex flex-col h-full" {
+                (sidebar_logo())
+                (sidebar_navigation(config))
+                (sidebar_status(config))
+            }
+        }
+    }
+}
+
+fn main_header() -> Markup {
+    html! {
+        header."container" {
+            section {
+                h2."text-2xl font-bold" { "Services" }
+                p."text-stone-400" { "Your self-hosted applications" }
+            }
+        }
+    }
+}
+
+fn main_content(
+    config: &Dashboard,
+    widget_registry: &crate::widget_system::WidgetRegistry,
+) -> Markup {
+    html! {
+        div."flex-1 ml-72 mr-8 my-4 min-h-full" {
+            (main_header())
+            main class="container my-4 gap-2 flex flex-wrap justify-center h-full lg:justify-start" {
+                @for (id, group_config) in &config.groups {
+                    (group(id, group_config, widget_registry))
+                }
+            }
+        }
+    }
+}
+
+fn error_page(error_message: &str) -> Markup {
+    html! {
+        (head())
+        body class="min-h-full text-white bg-slate-950 flex items-center justify-center" {
+            div class="text-center" {
+                h1 class="text-2xl font-bold mb-4" { "Configuration Error" }
+                p class="text-red-400" { (error_message) }
+            }
+        }
+    }
+}
+
+fn service_card_image(img_src: &str, title: &str) -> Markup {
+    html! {
+        img class="object-contain my-3 w-[2rem] h-[2rem]"
+            src=(img_src)
+            alt=(title);
+    }
+}
+
+fn service_card_title(title: &str) -> Markup {
+    html! {
+        p class="text-center" { (title) }
+    }
+}
+
+fn service_card_ping_indicator(group_id: &str, service_title: &str, has_ping: bool) -> Markup {
+    if has_ping {
+        html! {
+            (render_service_indicator(group_id, service_title))
+        }
+    } else {
+        html! {}
+    }
+}
+
 fn render_widget_card(
     group_id: &str,
     service: &Service,
@@ -37,17 +174,49 @@ fn render_service_card(group_id: &str, service_info: &Service) -> Markup {
     let href = service_info.href.as_deref().unwrap_or_default();
     let width = service_info.width.unwrap_or(1);
     let height = service_info.height.unwrap_or(1);
+    let has_ping = service_info.ping.is_some();
 
     html! {
-        a href=(href) target="_blank" rel="noreferrer" class=(format!("col-span-{} row-span-{} flex flex-row p-4 justify-between items-center text-xs bg-slate-900 border border-slate-800 rounded-xl hover:scale-105 duration-150", width, height)) {
-            img class="object-contain my-3 w-[2rem] h-[2rem]" src=(img_src) alt=(service_info.title);
+        a href=(href)
+          target="_blank"
+          rel="noreferrer"
+          class=(format!("col-span-{} row-span-{} flex flex-row p-4 justify-between items-center text-xs bg-slate-900 border border-slate-800 rounded-xl hover:scale-105 duration-150", width, height)) {
+            (service_card_image(img_src, &service_info.title))
+            (service_card_title(&service_info.title))
+            (service_card_ping_indicator(group_id, &service_info.title, has_ping))
+        }
+    }
+}
 
-            p class="text-center" { (service_info.title) }
+fn group_header(group_name: &str) -> Markup {
+    html! {
+        h2 class="text-sky-400 block font-bold text-lg my-2" { (group_name) }
+    }
+}
 
-            @if service_info.ping.is_some() {
-                (render_service_indicator(group_id, &service_info.title))
+fn group_grid(
+    group_id: &str,
+    group_config: &Group,
+    widget_registry: &crate::widget_system::WidgetRegistry,
+) -> Markup {
+    html! {
+        div class=(format!("grid grid-cols-{} gap-4", &group_config.columns)) {
+            @for service in &group_config.services {
+                (render_service_or_widget(group_id, service, widget_registry))
             }
         }
+    }
+}
+
+fn render_service_or_widget(
+    group_id: &str,
+    service: &Service,
+    widget_registry: &crate::widget_system::WidgetRegistry,
+) -> Markup {
+    if let Some(widget) = &service.widget {
+        render_widget_card(group_id, service, widget, widget_registry)
+    } else {
+        render_service_card(group_id, service)
     }
 }
 
@@ -57,104 +226,37 @@ fn group(
     widget_registry: &crate::widget_system::WidgetRegistry,
 ) -> Markup {
     html! {
-        div id=(group_id) class="container scroll-mt-6"  {
-            h2 class="text-sky-400 block font-bold text-lg my-2" { (config.name) }
-            div class=(format!("grid grid-cols-{} gap-4", &config.columns)) {
-                @for service in &config.services {
-                    @if let Some(widget) = &service.widget {
-                        (render_widget_card(group_id, service, widget, widget_registry))
-                    } @else {
-                        (render_service_card(group_id, service))
-                    }
-                }
-            }
+        div id=(group_id) class="container scroll-mt-6" {
+            (group_header(&config.name))
+            (group_grid(group_id, config, widget_registry))
         }
     }
 }
 
-pub async fn dashboard(Extension(state): Extension<Arc<AppState>>) -> Markup {
+fn load_dashboard_config(
+    state: &AppState,
+) -> Result<std::sync::RwLockReadGuard<Dashboard>, String> {
     if let Err(e) = state.reload_config() {
         eprintln!("Error reloading config: {}", e);
     }
 
-    let config_result = state.get_config_manager().read_config();
-    let config = match config_result {
+    state.get_config_manager().read_config().map_err(|e| {
+        eprintln!("Error getting config: {}", e);
+        e.to_string()
+    })
+}
+
+pub async fn dashboard(Extension(state): Extension<Arc<AppState>>) -> Markup {
+    let config = match load_dashboard_config(&state) {
         Ok(config) => config,
-        Err(e) => {
-            eprintln!("Error getting config: {}", e);
-            return html! {
-                (head())
-                body class="min-h-full text-white bg-slate-950 flex items-center justify-center" {
-                    div class="text-center" {
-                        h1 class="text-2xl font-bold mb-4" { "Configuration Error" }
-                        p class="text-red-400" { (e.to_string()) }
-                    }
-                }
-            };
-        }
+        Err(error_message) => return error_page(&error_message),
     };
+
     html! {
         (head())
         body class="min-h-full text-white bg-slate-950 flex" {
-
-            aside."w-64 bg-slate-900 p-4 fixed h-full overflow-y-auto" {
-                div class="flex flex-col h-full" {
-                    div class="flex items-center gap-3 mx-4 my-4 pb-4 border-b border-slate-700" {
-                        img src="/static/logo-white.png" alt="Vesta" class="w-8 h-8";
-                        h1."text-2xl font-bold" { "Vesta" }
-                    }
-
-                    nav class="flex-1 mt-6" {
-                        h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3 px-4" { "Groups" }
-                        div class="space-y-1" {
-                            @for (group_id, group_config) in &config.groups {
-                                a href=(format!("#{}", group_id))
-                                  class="flex items-center px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white rounded-lg transition-colors group" {
-                                    div class="w-2 h-2 bg-sky-400 rounded-full mr-3 group-hover:bg-sky-300" {}
-                                    span { (group_config.name) }
-                                    span class="ml-auto text-xs text-slate-500" { (group_config.services.len()) }
-                                }
-                            }
-                        }
-                    }
-
-                    div class="mt-auto pt-4 border-t border-slate-700" {
-                        h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3 px-4" { "Status" }
-                        div class="px-4 space-y-2" {
-                            @let total_services = config.groups.values().map(|g| g.services.len()).sum::<usize>();
-                            @let services_with_ping = config.groups.values().flat_map(|g| &g.services).filter(|s| s.ping.is_some()).count();
-
-                            div class="flex justify-between text-sm" {
-                                span class="text-slate-400" { "Total Services" }
-                                span class="text-white font-medium" { (total_services) }
-                            }
-                            div class="flex justify-between text-sm" {
-                                span class="text-slate-400" { "Monitored" }
-                                span class="text-white font-medium" { (services_with_ping) }
-                            }
-                            div class="flex justify-between text-sm" {
-                                span class="text-slate-400" { "Groups" }
-                                span class="text-white font-medium" { (config.groups.len()) }
-                            }
-                        }
-                    }
-                }
-            }
-
-            div."flex-1 ml-72 mr-8 my-4 min-h-full" {
-                header."container" {
-                    section {
-                        h2."text-2xl font-bold" { "Services" }
-                        p."text-stone-400" { "Your self-hosted applications" }
-                    }
-                }
-
-                main class="container my-4 gap-2 flex flex-wrap justify-center h-full lg:justify-start" {
-                    @for (id, group_config) in &config.groups {
-                        (group(id, group_config, state.get_widget_registry()))
-                    }
-                }
-            }
+            (sidebar(&config))
+            (main_content(&config, state.get_widget_registry()))
         }
     }
 }

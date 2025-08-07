@@ -212,7 +212,6 @@ impl WidgetHandler for SonarrCalendarWidget {
 
         let (url, key) = self.get_widget_credentials(widget_info)?;
 
-        // Use the shared HTTP client from AppState
         let client = state.get_http_client();
         let mut calendar = self.fetch_calendar(client, url, key).await?;
         let download_queue = self.fetch_download_queue(client, url, key).await?;
