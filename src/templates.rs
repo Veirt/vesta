@@ -33,26 +33,27 @@ fn render_widget_card(group_id: &str, service: &Service, widget: &Widget) -> Mar
 fn render_service_card(group_id: &str, service_info: &Service) -> Markup {
     let img_src = service_info.img_src.as_deref().unwrap_or_default();
     let href = service_info.href.as_deref().unwrap_or_default();
-    let width = &service_info.width.unwrap_or(1);
-    let height = &service_info.height.unwrap_or(1);
+    let width = service_info.width.unwrap_or(1);
+    let height = service_info.height.unwrap_or(1);
 
     html! {
-        a data-width=(width) data-height=(height) href=(href) target="_blank" rel="noreferrer" class="flex flex-col justify-center items-center text-xs bg-black-2 rounded-xl py-2 m-2 hover:scale-105 duration-150" {
+        a href=(href) target="_blank" rel="noreferrer" class=(format!("col-span-{} row-span-{} flex flex-row p-4 justify-between items-center text-xs bg-slate-900 border border-slate-800 rounded-xl hover:scale-105 duration-150", width, height)) {
+            img class="object-contain my-3 w-[2rem] h-[2rem]" src=(img_src) alt=(service_info.title);
+
+            p class="text-center" { (service_info.title) }
+
             @if service_info.ping.is_some() {
                 (render_service_indicator(group_id, &service_info.title))
             }
-
-            img class="object-contain my-3 w-[2rem] h-[2rem]" src=(img_src) alt=(service_info.title);
-            p class="text-center" { (service_info.title) }
         }
     }
 }
 
 fn group(group_id: &str, config: &Group) -> Markup {
     html! {
-        div class="container mx-0 lg:mx-5 my-3" data-columns=(&config.columns) {
-            p class="block ml-4 font-bold" { (config.name) }
-            div.grid data-columns=(&config.columns) {
+        div class="container"  {
+            h2 class="text-sky-400 block font-bold text-lg my-2" { (config.name) }
+            div class=(format!("grid grid-cols-{} gap-4", &config.columns)) {
                 @for service in &config.services {
                     @if let Some(widget) = &service.widget {
                         (render_widget_card(group_id, service, widget))
@@ -75,14 +76,26 @@ pub async fn dashboard(Extension(state): Extension<Arc<AppState>>) -> Markup {
     let config = state.get_config();
     html! {
         (head())
-        body class="flex justify-center items-center min-h-screen text-white bg-black" {
-            div class="container flex flex-row flex-wrap justify-center h-screen lg:justify-start"    {
-                @for (id, group_config) in &config.groups {
-                    (group(id, group_config))
-                }
+        body class="min-h-screen text-white bg-slate-950 flex" {
+
+            aside."w-64 bg-slate-900 p-4 fixed h-full" {
+                h1."text-2xl font-bold mx-4 my-4" { "Vesta" }
             }
 
+            div."flex-1 ml-72 mr-8 mt-4" {
+                header."container" {
+                    section {
+                        h2."text-2xl font-bold" { "Services" }
+                        p."text-stone-400" { "Your self-hosted applications" }
+                    }
+                }
 
+                main class="container my-4 !mb-[20px] gap-2 flex flex-wrap justify-center h-screen lg:justify-start" {
+                    @for (id, group_config) in &config.groups {
+                        (group(id, group_config))
+                    }
+                }
+            }
         }
     }
 }

@@ -1,12 +1,10 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 .unaired {
     @apply border-l-2 border-l-sky-800;
 }
 
-.onAir {
+.airing {
     @apply border-l-2 border-l-yellow-300;
 }
 

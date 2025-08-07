@@ -1,2 +1,2 @@
 tailwind-watch:
-	bunx tailwindcss -i ./src/style.css -o ./static/style.css --watch
+	bunx @tailwindcss/cli -i ./src/style.css -o ./static/style.css --watch

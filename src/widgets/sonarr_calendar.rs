@@ -156,7 +156,7 @@ fn get_entry_class(entry: &CalendarEntry, current_date: &DateTime<Utc>) -> &'sta
     } else if entry.has_file {
         "downloaded"
     } else if *current_date >= entry.air_date_utc && *current_date <= aired_date {
-        "onAir"
+        "airing"
     } else if !entry.has_file && *current_date > aired_date {
         "missing"
     } else {
@@ -233,7 +233,7 @@ pub async fn sonarr_calendar_handler(
             }
         } @else {
             @for (date, entries) in calendar_grouped {
-                div class="flex justify-center py-2 my-2 min-w-full rounded bg-accent" {
+                div class="flex justify-center py-2 my-2 min-w-full rounded bg-sky-400" {
                     a href=(format!("{}/calendar", url)) class="font-semibold text-center" {
                         (date)
                     }
@@ -261,14 +261,10 @@ pub fn render_sonarr_calendar_widget(group_id: &str, service_info: &Service) -> 
     let height = service_info.height.unwrap_or(1);
 
     html! {
-        div class="overflow-y-auto no-scrollbar text-xs bg-black-2 rounded-xl py-2 m-2 flex flex-col" data-width=(width) data-height=(height) {
-            div class="overflow-y-auto no-scrollbar" {
-                div
-                    hx-get=(format!("/api/sonarr-calendar?group={}&title={}", group_id, service_info.title))
-                    hx-trigger="load"
-                    hx-swap="innerHTML"
-                { }
-            }
-        }
+        div class=(format!("overflow-y-auto text-xs bg-slate-900 border border-slate-800 rounded-xl py-2 flex flex-col col-span-{} row-span-{}", width, height))
+            hx-get=(format!("/api/sonarr-calendar?group={}&title={}", group_id, service_info.title))
+            hx-trigger="load"
+            hx-swap="innerHTML"
+        { }
     }
 }

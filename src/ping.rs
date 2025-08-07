@@ -17,7 +17,7 @@ pub struct QueryParams {
 async fn is_service_up(client: &reqwest::Client, ping_config: &PingConfig) -> Result<bool, Error> {
     let response = client
         .get(&ping_config.url)
-        .timeout(Duration::new(1, 0))
+        .timeout(Duration::new(5, 0))
         .send()
         .await?;
     Ok(response.status().is_success())
@@ -61,18 +61,17 @@ pub async fn ping_handler(
 
     if is_service_up {
         Ok(html!(
-            div class="self-end mr-4 w-2 h-2 bg-green-500 rounded-full" {}
+            div class="mr-4 w-2 h-2 bg-green-500 rounded-full" {}
         ))
     } else {
         Ok(html!(
-            div class="self-end mr-4 w-2 h-2 bg-red-500 rounded-full" {}
+            div class="mr-4 w-2 h-2 bg-red-500 rounded-full" {}
         ))
     }
 }
 
 pub fn render_service_indicator(group_id: &str, title: &str) -> Markup {
     html! {
-
         div
             class="w-2 h-2 visibility-hidden"
             hx-get=(format!("/api/ping?group={}&title={}", group_id, title))
