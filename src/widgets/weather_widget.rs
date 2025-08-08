@@ -168,11 +168,9 @@ impl WidgetHandler for WeatherWidget {
         let width = service.width.unwrap_or(1);
         let height = service.height.unwrap_or(1);
 
-        let container_height = height * 5;
-
         html! {
-            div class=(format!("bg-slate-900 border border-slate-800 rounded-xl p-4 h-full col-span-{} row-span-{}", width, height))
-                style=(format!("height: {}rem;", container_height))
+            div class=(format!("bg-slate-900 border border-slate-800 rounded-xl p-4 h-full"))
+                style=(format!("grid-column: span {} / span {}; grid-row: span {} / span {};", width, width, height, height))
                  hx-get=(format!("/api/widgets/Weather?group={}&title={}", group_id, service.title))
                  hx-trigger=(format!("load, every {}s", refresh_interval))
                  hx-swap="innerHTML" {

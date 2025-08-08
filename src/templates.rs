@@ -209,9 +209,10 @@ fn render_service_card(group_id: &str, service_info: &Service) -> Markup {
 
     html! {
         a href=(href)
-          target="_blank"
-          rel="noreferrer"
-          class=(format!("relative col-span-1 md:col-span-{} row-span-1 md:row-span-{} flex flex-col  xl:flex-row  p-3 md:p-4 justify-center md:justify-between items-center text-xs bg-slate-900 border border-slate-800 rounded-xl hover:scale-105 duration-150 min-h-[80px] md:min-h-0", width, height)) {
+        target="_blank"
+        rel="noreferrer"
+        class=("relative h-full flex flex-col xl:flex-row p-3 md:p-4 justify-center md:justify-between items-center text-xs bg-slate-900 border border-slate-800 rounded-xl hover:scale-105 duration-150")
+        style=(format!("grid-column: span {} / span {}; grid-row: span {} / span {};", width, width, height, height)) {
             (service_card_image(img_src, &service_info.title))
             (service_card_title(&service_info.title))
             @if has_ping {
@@ -239,7 +240,7 @@ fn group_grid(
     widget_registry: &crate::widget_system::WidgetRegistry,
 ) -> Markup {
     html! {
-        div class=(format!("grid grid-cols-2 sm:grid-cols-{} gap-4", &group_config.columns)) {
+    div class=(format!("grid auto-rows-[5rem] grid-cols-2 sm:grid-cols-{} gap-4", &group_config.columns)) {
             @for service in &group_config.services {
                 (render_service_or_widget(group_id, service, widget_registry))
             }
