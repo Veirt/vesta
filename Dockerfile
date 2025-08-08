@@ -2,11 +2,10 @@ FROM --platform=$BUILDPLATFORM oven/bun:1-alpine AS css-builder
 WORKDIR /temp
 COPY package.json bun.lockb ./
 RUN bun install --frozen-lockfile
-COPY gridPlugin.js tailwind.config.js ./
 COPY src ./src
-RUN bunx tailwindcss -i ./src/style.css -o ./out.css --minify
+RUN bunx @tailwindcss/cli -i ./src/style.css -o ./out.css --minify
 
-FROM --platform=$BUILDPLATFORM rust:1.86-slim-bullseye AS build
+FROM --platform=$BUILDPLATFORM rust:1.89-slim-bullseye AS build
 ARG TARGETPLATFORM
 
 RUN apt-get update && apt-get install --no-install-recommends -y \
