@@ -207,12 +207,19 @@ fn render_service_card(group_id: &str, service_info: &Service) -> Markup {
     let height = service_info.height.unwrap_or(1);
     let has_ping = service_info.ping.is_some();
 
+    // Build a responsive class for column span only at >= sm breakpoint
+    let col_class = if width > 1 {
+        format!(" sm:col-span-{}", width)
+    } else {
+        String::new()
+    };
+
     html! {
-        a href=(href)
-        target="_blank"
-        rel="noreferrer"
-        class=("relative h-full flex flex-col xl:flex-row p-3 md:p-4 justify-center md:justify-between items-center text-xs bg-slate-900 border border-slate-800 rounded-xl hover:scale-105 duration-150")
-        style=(format!("grid-column: span {} / span {}; grid-row: span {} / span {};", width, width, height, height)) {
+                    a href=(href)
+                    target="_blank"
+                    rel="noreferrer"
+                        class=(format!("relative h-full flex flex-col xl:flex-row p-3 md:p-4 justify-center md:justify-between items-center text-xs bg-slate-900 border border-slate-800 rounded-xl hover:scale-105 duration-150{}", col_class))
+                        style=(format!("grid-row: span {} / span {};", height, height)) {
             (service_card_image(img_src, &service_info.title))
             (service_card_title(&service_info.title))
             @if has_ping {
@@ -239,8 +246,10 @@ fn group_grid(
     group_config: &Group,
     widget_registry: &crate::widget_system::WidgetRegistry,
 ) -> Markup {
+    let has_widget = group_config.services.iter().any(|s| s.widget.is_some());
+    let base_cols = if has_widget { 1 } else { 2 };
     html! {
-    div class=(format!("grid auto-rows-[5rem] grid-cols-2 sm:grid-cols-{} gap-4", &group_config.columns)) {
+    div class=(format!("grid auto-rows-[5rem] grid-cols-{} sm:grid-cols-{} gap-3 md:gap-4 items-stretch", base_cols, &group_config.columns)) {
             @for service in &group_config.services {
                 (render_service_or_widget(group_id, service, widget_registry))
             }

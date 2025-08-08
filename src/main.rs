@@ -7,11 +7,11 @@ use reqwest::Client;
 use std::{process::exit, sync::Arc};
 use templates::dashboard;
 use widget_system::WidgetRegistry;
+use widgets::clock_widget::ClockWidget;
+use widgets::quick_links_widget::QuickLinksWidget;
 use widgets::sonarr_calendar_widget::SonarrCalendarWidget;
 use widgets::system_stats_widget::SystemStatsWidget;
 use widgets::weather_widget::WeatherWidget;
-use widgets::clock_widget::ClockWidget;
-use widgets::quick_links_widget::QuickLinksWidget;
 
 use axum::{
     extract::{Extension, Path, Query},
@@ -46,7 +46,7 @@ impl AppState {
                 .register(SystemStatsWidget::new())
                 .register(WeatherWidget::new())
                 .register(ClockWidget::new())
-                .register(QuickLinksWidget::new())
+                .register(QuickLinksWidget::new()),
         );
 
         let config_manager = Arc::new(ConfigManager::new(config_path, widget_registry.clone())?);

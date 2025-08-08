@@ -28,9 +28,15 @@ impl WidgetHandler for ClockWidget {
         let width = service.width.unwrap_or(1);
         let height = service.height.unwrap_or(1);
 
+        let col_class = if width > 1 {
+            format!(" sm:col-span-{}", width)
+        } else {
+            String::new()
+        };
+
         html! {
-            div class=(format!("bg-slate-900 border border-slate-800 rounded-xl p-4 h-full flex flex-col justify-center"))
-                style=(format!("grid-column: span {} / span {}; grid-row: span {} / span {};", width, width, height, height))
+            div class=(format!("bg-slate-900 border border-slate-800 rounded-xl p-4 h-full flex flex-col justify-center{}", col_class))
+                style=(format!("grid-row: span {} / span {};", height, height))
                 hx-get=(format!("/api/widgets/Clock?group={}&title={}", group_id, service.title))
                 hx-trigger="load, every 1s"
                 hx-swap="innerHTML" {
