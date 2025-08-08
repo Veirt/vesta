@@ -104,7 +104,7 @@ async fn main() {
     };
 
     let app = Router::new()
-        .route("/api/widgets/:widget_name", get(widget_handler))
+        .route("/api/widgets/{widget_name}", get(widget_handler))
         .route("/api/ping", get(ping_handler))
         .route("/api/health", get(api::health))
         .route("/api/services", get(api::list_services))

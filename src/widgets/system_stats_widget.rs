@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use maud::{html, Markup};
 use serde::Deserialize;
 use std::sync::Arc;
-use sysinfo::{CpuExt, DiskExt, System, SystemExt};
+use sysinfo::{Disks, System};
 
 use crate::{
     config::{Service, Widget},
@@ -32,7 +32,7 @@ impl SystemStatsWidget {
         let mut sys = System::new_all();
         sys.refresh_all();
 
-        let cpu_usage = sys.global_cpu_info().cpu_usage();
+        let cpu_usage = sys.global_cpu_usage();
         let memory_used = sys.used_memory();
         let memory_total = sys.total_memory();
         let memory_usage = (memory_used as f64 / memory_total as f64) * 100.0;
@@ -42,7 +42,8 @@ impl SystemStatsWidget {
         let mut disk_total = 0;
         let mut disk_used = 0;
 
-        for disk in sys.disks() {
+        let disks = Disks::new_with_refreshed_list();
+        for disk in disks.list() {
             if disk.mount_point().to_str() == Some("/") {
                 disk_total = disk.total_space();
                 disk_used = disk_total - disk.available_space();
@@ -52,7 +53,7 @@ impl SystemStatsWidget {
         }
 
         // Get load average (Linux only)
-        let load_avg = sys.load_average();
+        let load_avg = System::load_average();
 
         Ok(SystemStats {
             cpu_usage,
