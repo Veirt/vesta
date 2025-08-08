@@ -7,6 +7,7 @@ use crate::{
     config::{Service, Widget},
     error::VestaResult,
     widget_system::{WidgetHandler, WidgetQuery},
+    widgets::widget_container,
     AppState,
 };
 
@@ -25,22 +26,14 @@ impl WidgetHandler for ClockWidget {
     }
 
     fn render(&self, _group_id: &str, service: &Service) -> Markup {
-        let width = service.width.unwrap_or(1);
-        let height = service.height.unwrap_or(1);
-
-        let col_class = if width > 1 {
-            format!(" sm:col-span-{}", width)
-        } else {
-            String::new()
-        };
-
-        // Render initial clock markup; client-side JS updates it every second.
         let now = Local::now();
         let utc_now = Utc::now();
 
-        html! {
-            div class=(format!("bg-slate-900 border border-slate-800 rounded-xl p-4 h-full flex flex-col justify-center{}", col_class))
-                style=(format!("grid-row: span {} / span {};", height, height)) {
+        widget_container(
+            service.width,
+            service.height,
+            "flex flex-col justify-center",
+            html! {
                 div data-clock class="text-center space-y-2" {
                     // Main time display
                     div data-clock-time class="text-4xl font-mono font-bold text-white" {
@@ -63,8 +56,8 @@ impl WidgetHandler for ClockWidget {
                         "UTC: " (utc_now.format("%H:%M:%S").to_string())
                     }
                 }
-            }
-        }
+            },
+        )
     }
 
     async fn handle_request(

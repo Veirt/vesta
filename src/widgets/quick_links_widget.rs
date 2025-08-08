@@ -7,6 +7,7 @@ use crate::{
     config::{Service, Widget},
     error::{VestaError, VestaResult},
     widget_system::{WidgetHandler, WidgetQuery},
+    widgets::widget_container,
     AppState,
 };
 
@@ -63,26 +64,22 @@ impl WidgetHandler for QuickLinksWidget {
     }
 
     fn render(&self, group_id: &str, service: &Service) -> Markup {
-        let width = service.width.unwrap_or(1);
-        let height = service.height.unwrap_or(1);
-
-        let col_class = if width > 1 {
-            format!(" sm:col-span-{}", width)
-        } else {
-            String::new()
-        };
-
-        html! {
-                div class=(format!("bg-slate-900 border border-slate-800 rounded-xl p-4 h-full overflow-y-auto{}", col_class))
-                 style=(format!("grid-row: span {} / span {};", height, height))
-                 hx-get=(format!("/api/widgets/QuickLinks?group={}&title={}", group_id, service.title))
-                 hx-trigger="load"
-                 hx-swap="innerHTML" {
-                div class="flex items-center justify-center h-full" {
-                    div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" {}
+        widget_container(
+            service.width,
+            service.height,
+            "overflow-y-auto",
+            html! {
+                div
+                    class="h-full"
+                    hx-get=(format!("/api/widgets/QuickLinks?group={}&title={}", group_id, service.title))
+                    hx-trigger="load"
+                    hx-swap="innerHTML" {
+                    div class="flex items-center justify-center h-full" {
+                        div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" {}
+                    }
                 }
-            }
-        }
+            },
+        )
     }
 
     async fn handle_request(
