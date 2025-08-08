@@ -14,7 +14,7 @@ fn head() -> Markup {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
                 link rel="stylesheet" type="text/css" href="/static/style.css";
-                script src="static/htmx.min.js" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous" {}
+                script src="static/htmx.min.js" {}
                 script src="static/app.js" {}
                 title { "Vesta" }
                 style {

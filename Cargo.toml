@@ -1,7 +1,9 @@
 [package]
 name = "vesta"
 version = "1.2.0"
-edition = "2021"
+edition = "2024"
+
+resolver = "2"
 
 [dependencies]
 async-trait = "0.1.83"

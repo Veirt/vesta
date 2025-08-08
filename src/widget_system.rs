@@ -5,9 +5,9 @@ use serde::Deserialize;
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
+    AppState,
     config::{Service, Widget},
     error::{VestaError, VestaResult},
-    AppState,
 };
 
 /// Query parameters for widget requests
@@ -28,7 +28,7 @@ pub trait WidgetHandler: Send + Sync {
 
     /// Handle API requests for this widget
     async fn handle_request(&self, state: Arc<AppState>, query: WidgetQuery)
-        -> VestaResult<Markup>;
+    -> VestaResult<Markup>;
 
     /// Validate widget configuration
     fn validate_config(&self, _widget: &Widget) -> VestaResult<()> {
@@ -109,7 +109,7 @@ impl WidgetRegistry {
         widget_name: &str,
         state: Arc<AppState>,
         query: WidgetQuery,
-    ) -> Result<impl IntoResponse, VestaError> {
+    ) -> Result<impl IntoResponse + use<>, VestaError> {
         if let Some(handler) = self.get(widget_name) {
             let markup = handler.handle_request(state, query).await?;
             Ok(markup)
