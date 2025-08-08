@@ -24,7 +24,7 @@ impl WidgetHandler for ClockWidget {
         "Clock"
     }
 
-    fn render(&self, group_id: &str, service: &Service) -> Markup {
+    fn render(&self, _group_id: &str, service: &Service) -> Markup {
         let width = service.width.unwrap_or(1);
         let height = service.height.unwrap_or(1);
 
@@ -34,15 +34,35 @@ impl WidgetHandler for ClockWidget {
             String::new()
         };
 
+        // Render initial clock markup; client-side JS updates it every second.
+        let now = Local::now();
+        let utc_now = Utc::now();
+
         html! {
             div class=(format!("bg-slate-900 border border-slate-800 rounded-xl p-4 h-full flex flex-col justify-center{}", col_class))
-                style=(format!("grid-row: span {} / span {};", height, height))
-                hx-get=(format!("/api/widgets/Clock?group={}&title={}", group_id, service.title))
-                hx-trigger="load, every 1s"
-                hx-swap="innerHTML" {
-                    div class="flex items-center justify-center" {
-                        div class="animate-pulse text-4xl font-mono text-blue-400" { }
+                style=(format!("grid-row: span {} / span {};", height, height)) {
+                div data-clock class="text-center space-y-2" {
+                    // Main time display
+                    div data-clock-time class="text-4xl font-mono font-bold text-white" {
+                        (now.format("%H:%M:%S").to_string())
                     }
+
+                    // Date display
+                    div data-clock-date class="text-lg text-gray-300" {
+                        (now.format("%A, %B %d").to_string())
+                    }
+
+                    // Year and timezone
+                    div class="text-sm text-gray-400 space-y-1" {
+                        div data-clock-year { (now.format("%Y").to_string()) }
+                        div data-clock-tz { (now.format("%Z").to_string()) }
+                    }
+
+                    // UTC time
+                    div data-clock-utc class="text-xs text-gray-500 pt-2 border-t border-slate-800" {
+                        "UTC: " (utc_now.format("%H:%M:%S").to_string())
+                    }
+                }
             }
         }
     }
