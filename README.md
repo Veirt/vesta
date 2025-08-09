@@ -34,6 +34,14 @@ services:
     restart: unless-stopped
 ```
 
+## Available Widgets
+
+- `QuickLinks`: a list of links that you can customize.
+- `Clock`: a simple clock that shows the current time.
+- `Weather`: shows the current weather (Open-Meteo).
+- `SystemStats`: shows system statistics (CPU, RAM, Disk).
+- `SonarrCalendar`: shows the upcoming episodes from Sonarr.
+
 ## Credits
 
 - [walkxcode/dashboard-icons](https://github.com/walkxcode/dashboard-icons): as source of the icons.
