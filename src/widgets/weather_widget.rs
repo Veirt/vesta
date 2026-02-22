@@ -1,15 +1,15 @@
 use async_trait::async_trait;
-use maud::{html, Markup};
+use maud::{Markup, html};
 use reqwest::Client;
 use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::{
+    AppState,
     config::{Service, Widget},
     error::{VestaError, VestaResult},
     widget_system::{WidgetHandler, WidgetQuery},
     widgets::widget_container,
-    AppState,
 };
 
 #[derive(Deserialize, Debug)]
@@ -18,23 +18,15 @@ pub struct WeatherConfig {
     pub longitude: f64,
     #[serde(default = "default_units")]
     pub units: String, // celsius, fahrenheit
-    #[serde(default = "default_refresh_interval")]
-    pub refresh_interval: u64, // in seconds
 }
 
 fn default_units() -> String {
     "celsius".to_string()
 }
 
-fn default_refresh_interval() -> u64 {
-    600 // 10 minutes
-}
-
 #[derive(Deserialize, Debug)]
 struct OpenMeteoResponse {
     current: CurrentWeather,
-    #[serde(rename = "current_units")]
-    current_units: CurrentUnits,
 }
 
 #[derive(Deserialize, Debug)]
@@ -45,11 +37,6 @@ struct CurrentWeather {
     weather_code: u32,
     wind_speed_10m: f64,
     wind_direction_10m: u32,
-}
-
-#[derive(Deserialize, Debug)]
-struct CurrentUnits {
-    temperature_2m: String,
 }
 
 pub struct WeatherWidget;
@@ -108,7 +95,7 @@ impl WeatherWidget {
             66 | 67 => "Freezing rain",
             71 | 73 | 75 => "Snow",
             77 => "Snow grains",
-            80 | 81 | 82 => "Rain showers",
+            80..=82 => "Rain showers",
             85 | 86 => "Snow showers",
             95 => "Thunderstorm",
             96 | 99 => "Thunderstorm with hail",
@@ -129,7 +116,7 @@ impl WeatherWidget {
             66 | 67 => "🌧️",
             71 | 73 | 75 => "🌨️",
             77 => "🌨️",
-            80 | 81 | 82 => "🌦️",
+            80..=82 => "🌦️",
             85 | 86 => "🌨️",
             95 => "⛈️",
             96 | 99 => "⛈️",
@@ -159,9 +146,10 @@ impl WidgetHandler for WeatherWidget {
     }
 
     fn render(&self, group_id: &str, service: &Service) -> Markup {
-        let config = service.widget.as_ref().and_then(|w| w.config.as_ref());
-
-        let refresh_interval = config
+        let refresh_interval = service
+            .widget
+            .as_ref()
+            .and_then(|w| w.config.as_ref())
             .and_then(|c| c.get("refresh_interval"))
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(600);
@@ -177,7 +165,7 @@ impl WidgetHandler for WeatherWidget {
                     hx-trigger=(format!("load, every {}s", refresh_interval))
                     hx-swap="innerHTML" {
                     div class="flex items-center justify-center h-full" {
-                        div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" {}
+                        div class="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500" {}
                     }
                 }
             },
@@ -217,10 +205,6 @@ impl WidgetHandler for WeatherWidget {
                 .get("units")
                 .unwrap_or(&"celsius".to_string())
                 .to_string(),
-            refresh_interval: widget_config
-                .get("refresh_interval")
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(600),
         };
 
         let weather_data = self
@@ -235,10 +219,10 @@ impl WidgetHandler for WeatherWidget {
             div class="space-y-4" {
                 // Header
                 div class="text-center" {
-                    h3 class="text-lg font-semibold text-white" {
+                    h3 class="text-sm font-semibold text-zinc-100" style="font-family: 'JetBrains Mono', monospace;" {
                         "Weather"
                     }
-                    div class="text-xs text-gray-400" {
+                    div class="text-xs text-zinc-500 font-mono" {
                         (format!("{}°, {}°", weather_config.latitude, weather_config.longitude))
                     }
                 }
@@ -246,31 +230,31 @@ impl WidgetHandler for WeatherWidget {
                 // Main weather display
                 div class="flex items-center justify-between" {
                     div class="flex-1" {
-                        div class="text-3xl font-bold text-white mb-1" {
+                        div class="text-3xl font-bold text-zinc-100 mb-1 font-mono" {
                             (format!("{:.0}{}", weather_data.current.temperature_2m, temp_unit))
                         }
-                        div class="text-sm text-gray-400" {
-                            "Feels like " (format!("{:.0}{}", weather_data.current.apparent_temperature, temp_unit))
+                        div class="text-xs text-zinc-500" {
+                            "Feels " (format!("{:.0}{}", weather_data.current.apparent_temperature, temp_unit))
                         }
-                        div class="text-sm text-gray-300 capitalize mt-2" {
+                        div class="text-sm text-zinc-400 capitalize mt-1" {
                             (weather_description)
                         }
                     }
-                    div class="flex-shrink-0 text-4xl" {
+                    div class="flex-shrink-0 text-3xl" {
                         (weather_icon)
                     }
                 }
 
                 // Additional details
-                div class="grid grid-cols-2 gap-4 pt-2 border-t border-gray-700" {
+                div class="grid grid-cols-2 gap-3 pt-3 border-t border-zinc-800" {
                     div class="text-center" {
-                        div class="text-xs text-gray-400" { "Humidity" }
-                        div class="text-sm font-semibold text-white" { (weather_data.current.relative_humidity_2m) "%" }
+                        div class="text-xs text-zinc-500 uppercase tracking-wide" { "Humidity" }
+                        div class="text-sm font-semibold text-zinc-200 font-mono" { (weather_data.current.relative_humidity_2m) "%" }
                     }
                     div class="text-center" {
-                        div class="text-xs text-gray-400" { "Wind" }
-                        div class="text-sm font-semibold text-white" {
-                            (format!("{:.0} km/h {}", weather_data.current.wind_speed_10m, wind_direction))
+                        div class="text-xs text-zinc-500 uppercase tracking-wide" { "Wind" }
+                        div class="text-sm font-semibold text-zinc-200 font-mono" {
+                            (format!("{:.0} {}", weather_data.current.wind_speed_10m, wind_direction))
                         }
                     }
                 }
@@ -284,7 +268,6 @@ impl WidgetHandler for WeatherWidget {
             .as_ref()
             .ok_or_else(|| VestaError::Internal("Weather widget requires config".to_string()))?;
 
-        // Validate required fields
         if config.get("latitude").is_none() {
             return Err(VestaError::Internal("latitude is required".to_string()));
         }
@@ -293,10 +276,9 @@ impl WidgetHandler for WeatherWidget {
             return Err(VestaError::Internal("longitude is required".to_string()));
         }
 
-        // Validate latitude
         if let Some(lat_str) = config.get("latitude") {
             if let Ok(lat) = lat_str.parse::<f64>() {
-                if lat < -90.0 || lat > 90.0 {
+                if !(-90.0..=90.0).contains(&lat) {
                     return Err(VestaError::Internal(
                         "latitude must be between -90 and 90".to_string(),
                     ));
@@ -308,10 +290,9 @@ impl WidgetHandler for WeatherWidget {
             }
         }
 
-        // Validate longitude
         if let Some(lon_str) = config.get("longitude") {
             if let Ok(lon) = lon_str.parse::<f64>() {
-                if lon < -180.0 || lon > 180.0 {
+                if !(-180.0..=180.0).contains(&lon) {
                     return Err(VestaError::Internal(
                         "longitude must be between -180 and 180".to_string(),
                     ));
@@ -323,28 +304,21 @@ impl WidgetHandler for WeatherWidget {
             }
         }
 
-        // Validate units if provided
-        if let Some(units) = config.get("units") {
-            if !["celsius", "fahrenheit"].contains(&units.as_str()) {
-                return Err(VestaError::Internal(
-                    "units must be 'celsius' or 'fahrenheit'".to_string(),
-                ));
-            }
+        if let Some(units) = config.get("units")
+            && !["celsius", "fahrenheit"].contains(&units.as_str())
+        {
+            return Err(VestaError::Internal(
+                "units must be 'celsius' or 'fahrenheit'".to_string(),
+            ));
         }
 
-        // Validate refresh interval if provided
-        if let Some(interval_str) = config.get("refresh_interval") {
-            if let Ok(interval) = interval_str.parse::<u64>() {
-                if interval < 60 || interval > 3600 {
-                    return Err(VestaError::Internal(
-                        "refresh_interval must be between 60 and 3600 seconds".to_string(),
-                    ));
-                }
-            } else {
-                return Err(VestaError::Internal(
-                    "refresh_interval must be a number".to_string(),
-                ));
-            }
+        if let Some(interval_str) = config.get("refresh_interval")
+            && let Ok(interval) = interval_str.parse::<u64>()
+            && !(60..=3600).contains(&interval)
+        {
+            return Err(VestaError::Internal(
+                "refresh_interval must be between 60 and 3600 seconds".to_string(),
+            ));
         }
 
         Ok(())

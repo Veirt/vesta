@@ -1,14 +1,14 @@
 use async_trait::async_trait;
 use chrono::{Local, Utc};
-use maud::{html, Markup};
+use maud::{Markup, html};
 use std::sync::Arc;
 
 use crate::{
+    AppState,
     config::{Service, Widget},
     error::VestaResult,
     widget_system::{WidgetHandler, WidgetQuery},
     widgets::widget_container,
-    AppState,
 };
 
 pub struct ClockWidget;
@@ -36,24 +36,24 @@ impl WidgetHandler for ClockWidget {
             html! {
                 div data-clock class="text-center space-y-2" {
                     // Main time display
-                    div data-clock-time class="text-4xl font-mono font-bold text-white" {
+                    div data-clock-time class="text-4xl font-mono font-bold text-zinc-100 tracking-tight" {
                         (now.format("%H:%M:%S").to_string())
                     }
 
                     // Date display
-                    div data-clock-date class="text-lg text-gray-300" {
+                    div data-clock-date class="text-sm text-zinc-400" {
                         (now.format("%A, %B %d").to_string())
                     }
 
                     // Year and timezone
-                    div class="text-sm text-gray-400 space-y-1" {
+                    div class="text-xs text-zinc-500 space-y-0.5" {
                         div data-clock-year { (now.format("%Y").to_string()) }
                         div data-clock-tz { (now.format("%Z").to_string()) }
                     }
 
                     // UTC time
-                    div data-clock-utc class="text-xs text-gray-500 pt-2 border-t border-slate-800" {
-                        "UTC: " (utc_now.format("%H:%M:%S").to_string())
+                    div data-clock-utc class="text-xs text-zinc-600 pt-2 border-t border-zinc-800" {
+                        "UTC " (utc_now.format("%H:%M:%S").to_string())
                     }
                 }
             },
@@ -71,24 +71,24 @@ impl WidgetHandler for ClockWidget {
         Ok(html! {
             div class="text-center space-y-2" {
                 // Main time display
-                div class="text-4xl font-mono font-bold text-white" {
+                div class="text-4xl font-mono font-bold text-zinc-100 tracking-tight" {
                     (now.format("%H:%M:%S").to_string())
                 }
 
                 // Date display
-                div class="text-lg text-gray-300" {
+                div class="text-sm text-zinc-400" {
                     (now.format("%A, %B %d").to_string())
                 }
 
                 // Year and timezone
-                div class="text-sm text-gray-400 space-y-1" {
+                div class="text-xs text-zinc-500 space-y-0.5" {
                     div { (now.format("%Y").to_string()) }
                     div { (now.format("%Z").to_string()) }
                 }
 
                 // UTC time
-                div class="text-xs text-gray-500 pt-2 border-t border-slate-800" {
-                    "UTC: " (utc_now.format("%H:%M:%S").to_string())
+                div class="text-xs text-zinc-600 pt-2 border-t border-zinc-800" {
+                    "UTC " (utc_now.format("%H:%M:%S").to_string())
                 }
             }
         })

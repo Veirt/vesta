@@ -1,15 +1,9 @@
-use axum::{extract::Query, response::IntoResponse, Extension};
+use axum::{Extension, extract::Query, response::IntoResponse};
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
 
-use crate::{
-    config_manager::ConfigManager,
-    error::{VestaError, VestaResult},
-    response::jsend,
-    widget_system::WidgetRegistry,
-    AppState,
-};
+use crate::{AppState, error::VestaError, response::jsend};
 
 #[derive(Deserialize)]
 pub struct ServiceQuery {

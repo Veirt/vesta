@@ -1,14 +1,14 @@
 use async_trait::async_trait;
-use maud::{html, Markup};
+use maud::{Markup, html};
 use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::{
+    AppState,
     config::{Service, Widget},
     error::{VestaError, VestaResult},
     widget_system::{WidgetHandler, WidgetQuery},
     widgets::widget_container,
-    AppState,
 };
 
 #[derive(Deserialize, Debug)]
@@ -75,7 +75,7 @@ impl WidgetHandler for QuickLinksWidget {
                     hx-trigger="load"
                     hx-swap="innerHTML" {
                     div class="flex items-center justify-center h-full" {
-                        div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" {}
+                        div class="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500" {}
                     }
                 }
             },
@@ -103,36 +103,30 @@ impl WidgetHandler for QuickLinksWidget {
         let links = self.parse_config(widget_config)?;
 
         Ok(html! {
-            div class="space-y-3" {
+            div class="space-y-2" {
                 // Header
-                div class="text-center" {
-                    h3 class="text-lg font-semibold text-white mb-4" { "Quick Links" }
-                }
+                h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-3" style="font-family: 'JetBrains Mono', monospace;" { "Quick Links" }
 
-                // Links grid
-                div class="space-y-2" {
+                // Links
+                div class="space-y-1" {
                     @for link in &links {
                         a href=(link.url) target="_blank"
-                          class="flex items-center p-3 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors duration-200 group" {
+                          class="flex items-center p-2.5 bg-zinc-800/60 hover:bg-zinc-700/60 border border-zinc-700/50 hover:border-violet-500/30 rounded-md transition-all duration-150 group cursor-pointer" {
                             @if let Some(icon) = &link.icon {
-                                img src=(icon) alt=(link.title) class="w-6 h-6 mr-3 flex-shrink-0" {}
+                                img src=(icon) alt=(link.title) class="w-5 h-5 mr-2.5 flex-shrink-0 opacity-80" {}
                             } @else {
-                                div class="w-6 h-6 mr-3 flex-shrink-0 bg-blue-500 rounded flex items-center justify-center" {
-                                    span class="text-white text-sm font-bold" {
+                                div class="w-5 h-5 mr-2.5 flex-shrink-0 bg-violet-500/20 border border-violet-500/30 rounded flex items-center justify-center" {
+                                    span class="text-violet-400 text-xs font-bold font-mono" {
                                         (link.title.chars().next().unwrap_or('?').to_uppercase())
                                     }
                                 }
                             }
-                            div class="flex-1" {
-                                span class="text-white text-sm font-medium group-hover:text-blue-300 transition-colors" {
-                                    (link.title)
-                                }
+                            span class="text-zinc-300 text-sm font-medium group-hover:text-zinc-100 transition-colors flex-1 truncate" {
+                                (link.title)
                             }
-                            div class="text-gray-400 group-hover:text-gray-300 transition-colors" {
-                                svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" {
-                                    path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                         d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" {}
-                                }
+                            svg class="w-3.5 h-3.5 text-zinc-600 group-hover:text-zinc-400 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" {
+                                path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                     d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" {}
                             }
                         }
                     }

@@ -1,13 +1,13 @@
 use std::{sync::Arc, time::Duration};
 
-use axum::{extract::Query, response::IntoResponse, Extension};
-use maud::{html, Markup};
+use axum::{Extension, extract::Query, response::IntoResponse};
+use maud::{Markup, html};
 use serde::Deserialize;
 
 use crate::{
+    AppState,
     config::PingConfig,
     error::{VestaError, VestaResult},
-    AppState,
 };
 
 #[derive(Deserialize)]

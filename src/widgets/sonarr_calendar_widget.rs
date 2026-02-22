@@ -1,17 +1,17 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Local, Utc};
 use indexmap::IndexMap;
-use maud::{html, Markup};
+use maud::{Markup, html};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, sync::Arc};
 
 use crate::{
+    AppState,
     config::{Service, Widget},
     error::{VestaError, VestaResult},
     widget_system::{WidgetHandler, WidgetQuery},
     widgets::widget_container,
-    AppState,
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -194,7 +194,7 @@ impl WidgetHandler for SonarrCalendarWidget {
                     hx-trigger="load"
                     hx-swap="innerHTML" {
                         div class="flex items-center justify-center h-full" {
-                            div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" {}
+                            div class="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500" {}
                         }
                     }
             },
@@ -249,8 +249,8 @@ impl WidgetHandler for SonarrCalendarWidget {
                 }
             } @else {
                 @for (date, entries) in calendar_grouped {
-                    div class="flex justify-center py-2 my-2 min-w-full rounded bg-sky-400" {
-                        a href=(format!("{}/calendar", url)) class="font-semibold text-center" {
+                    div class="flex justify-center py-1.5 my-2 min-w-full rounded bg-zinc-800 border border-zinc-700" {
+                        a href=(format!("{}/calendar", url)) class="font-mono text-xs font-medium text-zinc-300 text-center" {
                             (date)
                         }
                     }
@@ -259,10 +259,10 @@ impl WidgetHandler for SonarrCalendarWidget {
                             a href=(self.format_series_url(url, &entry.series.title_slug)) class="line-clamp-1 hover:brightness-125" {
                                 (entry.series.title)
                             }
-                            span class="block text-xs text-slate-400" {
+                            span class="block text-xs text-zinc-500" {
                                 (self.format_episode(entry))
                             }
-                            span class="text-xs text-slate-500" {
+                            span class="text-xs text-zinc-600" {
                                 (self.format_air_time(entry))
                             }
                         }

@@ -1,11 +1,11 @@
 @import "tailwindcss";
 
 .unaired {
-    @apply border-l-2 border-l-sky-800;
+    @apply border-l-2 border-l-zinc-600;
 }
 
 .airing {
-    @apply border-l-2 border-l-yellow-300;
+    @apply border-l-2 border-l-amber-400;
 }
 
 .missing {
@@ -13,9 +13,9 @@
 }
 
 .downloaded {
-    @apply border-l-2 border-l-green-700;
+    @apply border-l-2 border-l-emerald-500;
 }
 
 .downloading {
-    @apply border-l-2 border-l-violet-900;
+    @apply border-l-2 border-l-violet-500;
 }

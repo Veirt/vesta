@@ -1,10 +1,10 @@
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// JSend specification implementation for API responses
 /// See: https://github.com/omniti-labs/jsend
@@ -29,46 +29,6 @@ impl<T: Serialize> JSendResponse<T> {
     pub fn success(data: T) -> Self {
         Self::Success { data }
     }
-
-    pub fn fail(data: T) -> Self {
-        Self::Fail { data }
-    }
-
-    pub fn error(message: impl Into<String>) -> Self {
-        Self::Error {
-            message: message.into(),
-            code: None,
-            data: None,
-        }
-    }
-
-    pub fn error_with_code(message: impl Into<String>, code: u32) -> Self {
-        Self::Error {
-            message: message.into(),
-            code: Some(code),
-            data: None,
-        }
-    }
-
-    pub fn error_with_data(message: impl Into<String>, data: T) -> Self {
-        Self::Error {
-            message: message.into(),
-            code: None,
-            data: Some(data),
-        }
-    }
-
-    pub fn is_success(&self) -> bool {
-        matches!(self, Self::Success { .. })
-    }
-
-    pub fn is_fail(&self) -> bool {
-        matches!(self, Self::Fail { .. })
-    }
-
-    pub fn is_error(&self) -> bool {
-        matches!(self, Self::Error { .. })
-    }
 }
 
 impl<T: Serialize> IntoResponse for JSendResponse<T> {
@@ -91,67 +51,8 @@ pub mod jsend {
         JSendResponse::success(data)
     }
 
-    pub fn success_empty() -> JSendResponse<Value> {
-        JSendResponse::success(json!({}))
-    }
-
     pub fn success_message(message: impl Into<String>) -> JSendResponse<Value> {
         JSendResponse::success(json!({ "message": message.into() }))
-    }
-
-    pub fn fail<T: Serialize>(data: T) -> JSendResponse<T> {
-        JSendResponse::fail(data)
-    }
-
-    pub fn fail_message(message: impl Into<String>) -> JSendResponse<Value> {
-        JSendResponse::fail(json!({ "message": message.into() }))
-    }
-
-    pub fn fail_validation(
-        field: impl Into<String>,
-        message: impl Into<String>,
-    ) -> JSendResponse<Value> {
-        JSendResponse::fail(json!({
-            "validation": {
-                field.into(): message.into()
-            }
-        }))
-    }
-
-    pub fn error(message: impl Into<String>) -> JSendResponse<Value> {
-        JSendResponse::error(message)
-    }
-
-    pub fn error_not_found(resource: impl Into<String>) -> JSendResponse<Value> {
-        JSendResponse::Error {
-            message: format!("{} not found", resource.into()),
-            code: Some(404),
-            data: None,
-        }
-    }
-
-    pub fn error_unauthorized() -> JSendResponse<Value> {
-        JSendResponse::Error {
-            message: "Unauthorized".to_string(),
-            code: Some(401),
-            data: None,
-        }
-    }
-
-    pub fn error_forbidden() -> JSendResponse<Value> {
-        JSendResponse::Error {
-            message: "Forbidden".to_string(),
-            code: Some(403),
-            data: None,
-        }
-    }
-
-    pub fn error_internal(message: impl Into<String>) -> JSendResponse<Value> {
-        JSendResponse::Error {
-            message: message.into(),
-            code: Some(500),
-            data: None,
-        }
     }
 }
 

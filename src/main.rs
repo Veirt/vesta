@@ -14,10 +14,10 @@ use widgets::system_stats_widget::SystemStatsWidget;
 use widgets::weather_widget::WeatherWidget;
 
 use axum::{
+    Router,
     extract::{Extension, Path, Query},
     response::IntoResponse,
     routing::{get, post},
-    Router,
 };
 use tower_http::services::ServeDir;
 

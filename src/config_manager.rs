@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock, RwLockReadGuard};
 use tokio::sync::broadcast;
 
 use crate::{
-    config::{load_config, Dashboard},
+    config::{Dashboard, load_config},
     error::{VestaError, VestaResult},
     widget_system::WidgetRegistry,
 };
@@ -45,7 +45,7 @@ impl ConfigManager {
         })
     }
 
-    pub fn read_config(&self) -> Result<RwLockReadGuard<Dashboard>, VestaError> {
+    pub fn read_config(&self) -> Result<RwLockReadGuard<'_, Dashboard>, VestaError> {
         self.config
             .read()
             .map_err(|e| VestaError::Internal(format!("Failed to acquire read lock: {}", e)))
