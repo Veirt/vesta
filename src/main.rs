@@ -9,6 +9,7 @@ use axum::{
     routing::{get, post},
 };
 use reqwest::Client;
+use tower_http::compression::CompressionLayer;
 use tower_http::services::ServeDir;
 
 use config::Dashboard;
@@ -145,6 +146,7 @@ async fn main() {
         .route("/api/config/reload", post(api::reload_config))
         .route("/", get(dashboard))
         .nest_service("/static", ServeDir::new("static"))
+        .layer(CompressionLayer::new())
         .layer(Extension(state));
 
     let address = "0.0.0.0:3000";

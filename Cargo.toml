@@ -6,23 +6,24 @@ edition = "2024"
 resolver = "2"
 
 [dependencies]
-async-trait = "0.1.83"
-axum = "0.8.4"
-chrono = { version = "0.4.38", features = ["clock", "serde"], default-features = false }
-indexmap = { version = "2.2.6", features = ["serde"] }
+async-trait = "0.1.89"
+axum = "0.8.8"
+chrono = { version = "0.4.44", features = ["clock", "serde"], default-features = false }
+indexmap = { version = "2.14.0", features = ["serde"] }
 maud = { version = "0.27.0", features = ["axum"] }
-moka = { version = "0.12.10", features = ["future"] }
-reqwest = { version = "0.12.5", features = ["json", "rustls-tls"], default-features = false }
-serde = { version = "1.0.204", features = ["derive"] }
-serde_json = "1.0.121"
-sysinfo = "0.36.1"
-thiserror = "2.0.12"
-tokio = { version = "1.39.1", features = ["rt-multi-thread", "sync", "time"] }
+moka = { version = "0.12.15", features = ["future"] }
+reqwest = { version = "0.13.2", features = ["json", "rustls", "query"], default-features = false }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+sysinfo = "0.38.4"
+thiserror = "2.0.18"
+tokio = { version = "1.51.1", features = ["rt-multi-thread", "sync", "time"] }
 toml = { version = "0.9.5", features = ["preserve_order"] }
-tower-http = { version = "0.6.6", features = ["fs"] }
+tower-http = { version = "0.6.8", features = ["fs", "compression-gzip"] }
 
 [profile.release]
 strip = true
-opt-level = 2
-lto = true
+opt-level = 3
+lto = "fat"
 codegen-units = 1
+panic = "abort"
