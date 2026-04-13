@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use maud::{Markup, html};
 use std::sync::Arc;
-use sysinfo::{Disks, System};
 
 use crate::{
     AppState,
@@ -16,45 +15,6 @@ pub struct SystemStatsWidget;
 impl SystemStatsWidget {
     pub fn new() -> Self {
         Self
-    }
-
-    fn get_system_stats(&self) -> VestaResult<SystemStats> {
-        let mut sys = System::new_all();
-        sys.refresh_all();
-
-        let cpu_usage = sys.global_cpu_usage();
-        let memory_used = sys.used_memory();
-        let memory_total = sys.total_memory();
-        let memory_usage = (memory_used as f64 / memory_total as f64) * 100.0;
-
-        // Get disk usage for root partition
-        let mut disk_usage = 0.0;
-        let mut disk_total = 0;
-        let mut disk_used = 0;
-
-        let disks = Disks::new_with_refreshed_list();
-        for disk in disks.list() {
-            if disk.mount_point().to_str() == Some("/") {
-                disk_total = disk.total_space();
-                disk_used = disk_total - disk.available_space();
-                disk_usage = (disk_used as f64 / disk_total as f64) * 100.0;
-                break;
-            }
-        }
-
-        // Get load average (Linux only)
-        let load_avg = System::load_average();
-
-        Ok(SystemStats {
-            cpu_usage,
-            memory_usage,
-            memory_used: memory_used / 1024 / 1024, // Convert to MB
-            memory_total: memory_total / 1024 / 1024, // Convert to MB
-            disk_usage,
-            disk_used: disk_used / 1024 / 1024 / 1024, // Convert to GB
-            disk_total: disk_total / 1024 / 1024 / 1024, // Convert to GB
-            load_avg: load_avg.one,
-        })
     }
 
     fn render_progress_bar(&self, value: f64, max: f64, color_class: &str) -> Markup {
@@ -74,18 +34,6 @@ impl SystemStatsWidget {
             _ => "bg-red-500",
         }
     }
-}
-
-#[derive(Debug)]
-struct SystemStats {
-    cpu_usage: f32,
-    memory_usage: f64,
-    memory_used: u64,
-    memory_total: u64,
-    disk_usage: f64,
-    disk_used: u64,
-    disk_total: u64,
-    load_avg: f64,
 }
 
 #[async_trait]
@@ -123,14 +71,13 @@ impl WidgetHandler for SystemStatsWidget {
 
     async fn handle_request(
         &self,
-        _state: Arc<AppState>,
+        state: Arc<AppState>,
         _query: WidgetQuery,
     ) -> VestaResult<Markup> {
-        let stats = self.get_system_stats()?;
+        let stats = state.get_system_stats_service().get_snapshot().await;
 
         Ok(html! {
             div class="space-y-4" {
-                // Header
                 div class="flex items-center justify-between mb-4" {
                     h3 class="text-sm font-semibold text-zinc-100" style="font-family: 'JetBrains Mono', monospace;" { "System Stats" }
                     div class="text-xs text-zinc-500 font-mono" {
@@ -138,16 +85,14 @@ impl WidgetHandler for SystemStatsWidget {
                     }
                 }
 
-                // CPU Usage
                 div class="space-y-1.5" {
                     div class="flex justify-between items-center" {
                         span class="text-xs text-zinc-400 uppercase tracking-wide" { "CPU" }
                         span class="text-xs text-zinc-200 font-mono" { (format!("{:.1}%", stats.cpu_usage)) }
                     }
-                    (self.render_progress_bar(stats.cpu_usage as f64, 100.0, self.get_usage_color(stats.cpu_usage as f64)))
+                    (self.render_progress_bar(stats.cpu_usage_percent(), 100.0, self.get_usage_color(stats.cpu_usage_percent())))
                 }
 
-                // Memory Usage
                 div class="space-y-1.5" {
                     div class="flex justify-between items-center" {
                         span class="text-xs text-zinc-400 uppercase tracking-wide" { "Memory" }
@@ -155,10 +100,9 @@ impl WidgetHandler for SystemStatsWidget {
                             (format!("{:.1}% · {}M / {}M", stats.memory_usage, stats.memory_used, stats.memory_total))
                         }
                     }
-                    (self.render_progress_bar(stats.memory_usage, 100.0, self.get_usage_color(stats.memory_usage)))
+                    (self.render_progress_bar(stats.memory_usage_percent(), 100.0, self.get_usage_color(stats.memory_usage_percent())))
                 }
 
-                // Disk Usage
                 div class="space-y-1.5" {
                     div class="flex justify-between items-center" {
                         span class="text-xs text-zinc-400 uppercase tracking-wide" { "Disk (/)" }
@@ -166,7 +110,7 @@ impl WidgetHandler for SystemStatsWidget {
                             (format!("{:.1}% · {}G / {}G", stats.disk_usage, stats.disk_used, stats.disk_total))
                         }
                     }
-                    (self.render_progress_bar(stats.disk_usage, 100.0, self.get_usage_color(stats.disk_usage)))
+                    (self.render_progress_bar(stats.disk_usage_percent(), 100.0, self.get_usage_color(stats.disk_usage_percent())))
                 }
             }
         })

@@ -1,10 +1,24 @@
+use std::process::exit;
+use std::sync::Arc;
+use std::time::Duration;
+
+use axum::{
+    Router,
+    extract::{Extension, Path, Query},
+    response::IntoResponse,
+    routing::{get, post},
+};
+use reqwest::Client;
+use tower_http::services::ServeDir;
+
 use config::Dashboard;
 use config_manager::ConfigManager;
 use error::{VestaError, VestaResult};
 use http_client::create_default_client;
 use ping::ping_handler;
-use reqwest::Client;
-use std::{process::exit, sync::Arc};
+use services::ping_service::PingService;
+use services::system_stats_service::SystemStatsService;
+use services::weather_service::WeatherService;
 use templates::dashboard;
 use widget_system::WidgetRegistry;
 use widgets::clock_widget::ClockWidget;
@@ -13,14 +27,6 @@ use widgets::sonarr_calendar_widget::SonarrCalendarWidget;
 use widgets::system_stats_widget::SystemStatsWidget;
 use widgets::weather_widget::WeatherWidget;
 
-use axum::{
-    Router,
-    extract::{Extension, Path, Query},
-    response::IntoResponse,
-    routing::{get, post},
-};
-use tower_http::services::ServeDir;
-
 mod api;
 mod config;
 mod config_manager;
@@ -28,6 +34,7 @@ mod error;
 mod http_client;
 mod ping;
 mod response;
+mod services;
 mod templates;
 mod widget_system;
 mod widgets;
@@ -36,9 +43,14 @@ pub struct AppState {
     config_manager: Arc<ConfigManager>,
     http_client: Client,
     widget_registry: Arc<WidgetRegistry>,
+    system_stats_service: Arc<SystemStatsService>,
+    ping_service: Arc<PingService>,
+    weather_service: Arc<WeatherService>,
 }
 
 impl AppState {
+    const SYSTEM_STATS_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
+
     pub fn new(config_path: &str) -> VestaResult<Arc<Self>> {
         let widget_registry = Arc::new(
             WidgetRegistry::new()
@@ -52,10 +64,17 @@ impl AppState {
         let config_manager = Arc::new(ConfigManager::new(config_path, widget_registry.clone())?);
         let http_client = create_default_client()?;
 
+        let system_stats_service = SystemStatsService::new(Self::SYSTEM_STATS_REFRESH_INTERVAL);
+        let ping_service = PingService::new(http_client.clone());
+        let weather_service = WeatherService::new(http_client.clone());
+
         Ok(Arc::new(Self {
             config_manager,
             http_client,
             widget_registry,
+            system_stats_service,
+            ping_service,
+            weather_service,
         }))
     }
 
@@ -77,6 +96,18 @@ impl AppState {
 
     pub fn get_config_manager(&self) -> &ConfigManager {
         &self.config_manager
+    }
+
+    pub fn get_system_stats_service(&self) -> &SystemStatsService {
+        &self.system_stats_service
+    }
+
+    pub fn get_ping_service(&self) -> &PingService {
+        &self.ping_service
+    }
+
+    pub fn get_weather_service(&self) -> &WeatherService {
+        &self.weather_service
     }
 }
 

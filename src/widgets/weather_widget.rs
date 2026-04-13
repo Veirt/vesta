@@ -1,78 +1,21 @@
 use async_trait::async_trait;
 use maud::{Markup, html};
-use reqwest::Client;
-use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::{
     AppState,
     config::{Service, Widget},
     error::{VestaError, VestaResult},
+    services::weather_service::WeatherConfig,
     widget_system::{WidgetHandler, WidgetQuery},
     widgets::widget_container,
 };
-
-#[derive(Deserialize, Debug)]
-pub struct WeatherConfig {
-    pub latitude: f64,
-    pub longitude: f64,
-    #[serde(default = "default_units")]
-    pub units: String, // celsius, fahrenheit
-}
-
-fn default_units() -> String {
-    "celsius".to_string()
-}
-
-#[derive(Deserialize, Debug)]
-struct OpenMeteoResponse {
-    current: CurrentWeather,
-}
-
-#[derive(Deserialize, Debug)]
-struct CurrentWeather {
-    temperature_2m: f64,
-    relative_humidity_2m: u32,
-    apparent_temperature: f64,
-    weather_code: u32,
-    wind_speed_10m: f64,
-    wind_direction_10m: u32,
-}
 
 pub struct WeatherWidget;
 
 impl WeatherWidget {
     pub fn new() -> Self {
         Self
-    }
-
-    async fn fetch_weather(
-        &self,
-        client: &Client,
-        config: &WeatherConfig,
-    ) -> VestaResult<OpenMeteoResponse> {
-        let temperature_unit = if config.units == "fahrenheit" {
-            "fahrenheit"
-        } else {
-            "celsius"
-        };
-
-        let url = format!(
-            "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m&temperature_unit={}",
-            config.latitude, config.longitude, temperature_unit
-        );
-
-        let response = client.get(&url).send().await?;
-
-        if !response.status().is_success() {
-            return Err(VestaError::ApiError {
-                status: response.status(),
-                message: "Failed to fetch weather data".to_string(),
-            });
-        }
-
-        let weather_data = response.json::<OpenMeteoResponse>().await?;
-        Ok(weather_data)
     }
 
     fn get_temperature_unit(&self, units: &str) -> &'static str {
@@ -207,9 +150,11 @@ impl WidgetHandler for WeatherWidget {
                 .to_string(),
         };
 
-        let weather_data = self
-            .fetch_weather(&state.http_client, &weather_config)
+        let weather_data = state
+            .get_weather_service()
+            .fetch_weather(&weather_config)
             .await?;
+
         let temp_unit = self.get_temperature_unit(&weather_config.units);
         let weather_description = self.get_weather_description(weather_data.current.weather_code);
         let weather_icon = self.get_weather_icon(weather_data.current.weather_code);
@@ -217,7 +162,6 @@ impl WidgetHandler for WeatherWidget {
 
         Ok(html! {
             div class="space-y-4" {
-                // Header
                 div class="text-center" {
                     h3 class="text-sm font-semibold text-zinc-100" style="font-family: 'JetBrains Mono', monospace;" {
                         "Weather"
@@ -227,7 +171,6 @@ impl WidgetHandler for WeatherWidget {
                     }
                 }
 
-                // Main weather display
                 div class="flex items-center justify-between" {
                     div class="flex-1" {
                         div class="text-3xl font-bold text-zinc-100 mb-1 font-mono" {
@@ -245,7 +188,6 @@ impl WidgetHandler for WeatherWidget {
                     }
                 }
 
-                // Additional details
                 div class="grid grid-cols-2 gap-3 pt-3 border-t border-zinc-800" {
                     div class="text-center" {
                         div class="text-xs text-zinc-500 uppercase tracking-wide" { "Humidity" }

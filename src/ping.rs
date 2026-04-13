@@ -1,28 +1,15 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use axum::{Extension, extract::Query, response::IntoResponse};
 use maud::{Markup, html};
 use serde::Deserialize;
 
-use crate::{
-    AppState,
-    config::PingConfig,
-    error::{VestaError, VestaResult},
-};
+use crate::{AppState, error::VestaError};
 
 #[derive(Deserialize)]
 pub struct QueryParams {
     group: String,
     title: String,
-}
-
-async fn is_service_up(client: &reqwest::Client, ping_config: &PingConfig) -> VestaResult<bool> {
-    let response = client
-        .get(&ping_config.url)
-        .timeout(Duration::new(5, 0))
-        .send()
-        .await?;
-    Ok(response.status().is_success())
 }
 
 pub async fn ping_handler(
@@ -37,25 +24,27 @@ pub async fn ping_handler(
             title: params.title.clone(),
         })?;
 
-    let ping_config =
-        service_info
-            .ping
-            .as_ref()
-            .ok_or_else(|| VestaError::MissingWidgetConfig {
-                service: service_info.title.clone(),
-            })?;
+    let ping_config = service_info
+        .ping
+        .as_ref()
+        .ok_or_else(|| VestaError::MissingWidgetConfig {
+            service: service_info.title.clone(),
+        })?;
 
-    let client = state.get_http_client();
-    let is_service_up = is_service_up(client, ping_config).await.unwrap_or(false);
+    let ping_service = state.get_ping_service();
+    let is_up = ping_service
+        .check_service(&params.group, &params.title, ping_config)
+        .await
+        .unwrap_or(false);
 
-    if is_service_up {
-        Ok(html!(
-            div class="w-2 h-2 bg-green-500 rounded-full" {}
-        ))
+    Ok(render_ping_indicator(is_up))
+}
+
+fn render_ping_indicator(is_up: bool) -> Markup {
+    if is_up {
+        html!(div class="w-2 h-2 bg-green-500 rounded-full" {})
     } else {
-        Ok(html!(
-            div class="w-2 h-2 bg-red-500 rounded-full" {}
-        ))
+        html!(div class="w-2 h-2 bg-red-500 rounded-full" {})
     }
 }
 
@@ -66,6 +55,5 @@ pub fn render_service_indicator(group_id: &str, title: &str) -> Markup {
             hx-get=(format!("/api/ping?group={}&title={}", group_id, title))
             hx-trigger="load"
             hx-swap="outerHTML" { }
-
     }
 }
