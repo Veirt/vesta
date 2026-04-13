@@ -290,6 +290,10 @@ fn group(
 fn load_dashboard_config(
     state: &AppState,
 ) -> Result<std::sync::RwLockReadGuard<'_, Dashboard>, String> {
+    if let Err(e) = state.reload_config() {
+        eprintln!("Error reloading config: {}", e);
+    }
+
     state.get_config_manager().read_config().map_err(|e| {
         eprintln!("Error getting config: {}", e);
         e.to_string()
