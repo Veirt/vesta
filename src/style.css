@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Group columns come from config (sm:grid-cols-{n}), never a literal in
+   source, so declare the range here for the scanner. */
+@source inline("sm:grid-cols-{1..12}");
+
 .unaired {
     @apply border-l-2 border-l-zinc-600;
 }
