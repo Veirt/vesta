@@ -34,12 +34,45 @@ services:
     restart: unless-stopped
 ```
 
+### Environment variables
+
+| Variable           | Default              | Purpose                          |
+| ------------------ | -------------------- | -------------------------------- |
+| `VESTA_CONFIG`     | `./config/vesta.toml`| Path to the configuration file   |
+| `VESTA_BIND`       | `0.0.0.0:3000`       | Listen address                   |
+| `VESTA_STATIC_DIR` | `static`             | Static assets directory          |
+| `RUST_LOG`         | `vesta=info`         | Log filter (`tracing` syntax)    |
+
+Sending `SIGHUP` to the process reloads the configuration without restarting.
+
+## Nodes
+
+Each `[[nodes]]` entry is a monitoring target polled on its own interval:
+
+```toml
+[[nodes]]
+id = "self"              # stable identifier, referenced by widgets
+name = "This server"     # display name
+endpoint = "local"       # `local` reads the host via sysinfo
+interval_secs = 15
+
+[[nodes]]
+id = "nas"
+name = "NAS"
+endpoint = "http://nas.lan:9100/metrics"  # any Prometheus text-format endpoint
+interval_secs = 15
+```
+
+Remote endpoints must expose the Prometheus text exposition format
+(e.g. [node_exporter](https://github.com/prometheus/node_exporter) on `:9100/metrics`).
+The current stats of any node are available at `GET /api/nodes/{id}/stats`.
+
 ## Available Widgets
 
 - `QuickLinks`: a list of links that you can customize.
 - `Clock`: a simple clock that shows the current time.
 - `Weather`: shows the current weather (Open-Meteo).
-- `SystemStats`: shows system statistics (CPU, RAM, Disk).
+- `SystemStats`: shows CPU, RAM, disk, load and uptime for a configured node.
 - `SonarrCalendar`: shows the upcoming episodes from Sonarr.
 
 ## Credits

@@ -1,21 +1,36 @@
+# Vesta example configuration.
+#
+# Nodes are monitoring targets polled on a fixed interval. `endpoint` is either
+# `local` (read this host through sysinfo) or the URL of a node_exporter /
+# Prometheus text-format metrics endpoint.
+
+[[nodes]]
+id = "self"
+name = "This server"
+endpoint = "local"
+interval_secs = 15
+
+[[nodes]]
+id = "nas"
+name = "NAS"
+endpoint = "http://nas.lan:9100/metrics"
+interval_secs = 15
+
 [widgets]
 name = "Widgets"
 columns = 3
 [[widgets.services]]
 title = "QuickLinks"
-name = "QuickLinks"
 widget.name = "QuickLinks"
-widget.config.link_0_title = "GitHub"
-widget.config.link_0_url = "https://github.com/veirt"
-widget.config.link_0_icon = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/github.svg"
-widget.config.link_1_title = "Personal Website"
-widget.config.link_1_url = "https://veirt.is-a.dev"
-widget.config.link_1_icon = "https://veirt.is-a.dev/favicon.ico"
+widget.config.links = [
+  { title = "GitHub", url = "https://github.com/veirt", icon = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/github.svg" },
+  { title = "Personal Website", url = "https://veirt.is-a.dev", icon = "https://veirt.is-a.dev/favicon.ico" },
+]
 width = 1
 height = 3
 [[widgets.services]]
-widget = { name = "Clock" }
 title = "Clock"
+widget = { name = "Clock" }
 width = 1
 height = 3
 [[widgets.services]]
@@ -24,8 +39,13 @@ widget = { name = "Weather", config = { latitude = "0.5016", longitude = "117.12
 width = 1
 height = 3
 [[widgets.services]]
-title = "System Stats"
-widget = { name = "SystemStats", config = { refresh_interval = "5" } }
+title = "This server"
+widget = { name = "SystemStats", config = { node = "self", refresh_interval = "5" } }
+width = 3
+height = 3
+[[widgets.services]]
+title = "NAS"
+widget = { name = "SystemStats", config = { node = "nas", refresh_interval = "15" } }
 width = 3
 height = 3
 
@@ -48,6 +68,7 @@ title = "Sonarr"
 imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/sonarr.svg"
 href = "https://sonarr.veirt.moe"
 ping = { url = "https://sonarr.veirt.moe" }
+widget = { name = "SonarrCalendar", config = { url = "https://sonarr.veirt.moe", key = "your-api-key" } }
 [[media.services]]
 title = "Prowlarr"
 href = "https://prowlarr.veirt.moe"
