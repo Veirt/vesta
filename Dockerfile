@@ -18,7 +18,8 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 ARG TARGETARCH
-RUN if [ "$TARGETARCH" = "arm64" ]; then \
+RUN mkdir -p /out \
+    && if [ "$TARGETARCH" = "arm64" ]; then \
         export CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc \
                CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc; \
         cargo build --release --target=aarch64-unknown-linux-musl; \
