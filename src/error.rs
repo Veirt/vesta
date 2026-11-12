@@ -23,14 +23,14 @@ pub enum VestaError {
     #[error("Widget configuration missing for service '{service}'")]
     MissingWidgetConfig { service: String },
 
-    #[error("Missing credentials: {field}")]
-    MissingCredentials { field: String },
+    #[error("Invalid widget config: {0}")]
+    InvalidWidgetConfig(String),
+
+    #[error("Metrics error: {0}")]
+    Metrics(#[from] MetricsError),
 
     #[error("API error: {status} - {message}")]
     ApiError { status: StatusCode, message: String },
-
-    #[error("Internal server error: {0}")]
-    Internal(String),
 }
 
 #[derive(Error, Debug)]
@@ -39,33 +39,41 @@ pub enum ConfigError {
     IoError(#[from] std::io::Error),
     #[error("Failed to parse TOML: {0}")]
     TomlError(#[from] toml::de::Error),
+    #[error("Invalid configuration: {0}")]
+    Invalid(String),
 }
+
+#[derive(Error, Debug)]
+#[error("{0}")]
+pub struct MetricsError(pub String);
+
+pub type VestaResult<T> = Result<T, VestaError>;
 
 impl IntoResponse for VestaError {
     fn into_response(self) -> Response {
-        let (status, error_message) = match &self {
-            VestaError::Config(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Configuration error"),
-            VestaError::Http(_) => (StatusCode::BAD_GATEWAY, "External service error"),
-            VestaError::ServiceNotFound { .. } => (StatusCode::NOT_FOUND, "Service not found"),
-            VestaError::WidgetNotFound { .. } => (StatusCode::NOT_FOUND, "Widget not found"),
+        let (status, code) = match &self {
+            VestaError::Config(_) => (StatusCode::INTERNAL_SERVER_ERROR, "config_error"),
+            VestaError::Http(_) => (StatusCode::BAD_GATEWAY, "external_service_error"),
+            VestaError::ServiceNotFound { .. } => (StatusCode::NOT_FOUND, "service_not_found"),
+            VestaError::WidgetNotFound { .. } => (StatusCode::NOT_FOUND, "widget_not_found"),
             VestaError::MissingWidgetConfig { .. } => {
-                (StatusCode::BAD_REQUEST, "Missing widget configuration")
+                (StatusCode::BAD_REQUEST, "missing_widget_config")
             }
-            VestaError::MissingCredentials { .. } => {
-                (StatusCode::BAD_REQUEST, "Missing credentials")
+            VestaError::InvalidWidgetConfig(_) => {
+                (StatusCode::BAD_REQUEST, "invalid_widget_config")
             }
-            VestaError::ApiError { status, .. } => (*status, "API error"),
-            VestaError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
+            VestaError::Metrics(_) => (StatusCode::BAD_GATEWAY, "metrics_error"),
+            VestaError::ApiError { status, .. } => (*status, "api_error"),
         };
 
-        let body = Json(json!({
-            "status": "error",
-            "message": error_message,
-            "details": self.to_string(),
-        }));
-
-        (status, body).into_response()
+        (
+            status,
+            Json(json!({
+                "status": "error",
+                "error": code,
+                "message": self.to_string(),
+            })),
+        )
+            .into_response()
     }
 }
-
-pub type VestaResult<T> = Result<T, VestaError>;

@@ -1,138 +1,48 @@
-use serde::Serialize;
-use std::sync::{Arc, RwLock, RwLockReadGuard};
-use tokio::sync::broadcast;
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 
-use crate::{
-    config::{Dashboard, load_config},
-    error::{VestaError, VestaResult},
-    widget_system::WidgetRegistry,
-};
+use crate::config::{Dashboard, Widget, load_config};
+use crate::error::VestaResult;
 
-#[derive(Debug, Clone)]
-pub struct ConfigChangeEvent {
-    pub timestamp: std::time::SystemTime,
-    pub changes: ConfigChanges,
-}
-
-#[derive(Debug, Clone)]
-pub enum ConfigChanges {
-    Reloaded,
-    ServicesUpdated,
-    WidgetsUpdated,
-}
-
-/// Configuration manager that handles config access, validation, and change notifications
+/// Loads `vesta.toml` and hands out consistent snapshots. Reload re-reads from
+/// disk and validates through the widget registry before swapping.
 pub struct ConfigManager {
-    config: Arc<RwLock<Dashboard>>,
-    config_path: String,
-    change_notifier: broadcast::Sender<ConfigChangeEvent>,
-    widget_registry: Arc<WidgetRegistry>,
+    config: RwLock<Arc<Dashboard>>,
+    path: PathBuf,
+    registry: Arc<crate::widget_system::WidgetRegistry>,
 }
 
 impl ConfigManager {
-    pub fn new(config_path: &str, widget_registry: Arc<WidgetRegistry>) -> VestaResult<Self> {
-        let config = load_config(config_path)?;
-
-        widget_registry.validate_widgets(&config)?;
-
-        let (change_notifier, _) = broadcast::channel(100);
-
+    pub fn new(
+        path: impl Into<PathBuf>,
+        registry: Arc<crate::widget_system::WidgetRegistry>,
+    ) -> VestaResult<Self> {
+        let path = path.into();
+        let config = Arc::new(load_config(&path)?);
+        registry.validate_dashboard(&config)?;
         Ok(Self {
-            config: Arc::new(RwLock::new(config)),
-            config_path: config_path.to_string(),
-            change_notifier,
-            widget_registry,
+            config: RwLock::new(config),
+            path,
+            registry,
         })
     }
 
-    pub fn read_config(&self) -> Result<RwLockReadGuard<'_, Dashboard>, VestaError> {
-        self.config
-            .read()
-            .map_err(|e| VestaError::Internal(format!("Failed to acquire read lock: {}", e)))
+    /// Cheap consistent snapshot; cloning the Arc is the whole cost.
+    pub fn snapshot(&self) -> Arc<Dashboard> {
+        self.config.read().expect("config lock poisoned").clone()
     }
 
-    pub fn get_config(&self) -> VestaResult<Dashboard> {
-        let config = self.read_config()?;
-        Ok(config.clone())
+    pub fn widget(&self, group: &str, title: &str) -> VestaResult<Option<Widget>> {
+        Ok(self.snapshot().widget(group, title).cloned())
     }
 
-    pub fn reload_config(&self) -> VestaResult<()> {
-        let new_config = load_config(&self.config_path)?;
-
-        self.widget_registry.validate_widgets(&new_config)?;
-
-        {
-            let mut config = self.config.write().map_err(|e| {
-                VestaError::Internal(format!("Failed to acquire write lock: {}", e))
-            })?;
-            *config = new_config;
-        }
-
-        let _ = self.change_notifier.send(ConfigChangeEvent {
-            timestamp: std::time::SystemTime::now(),
-            changes: ConfigChanges::Reloaded,
-        });
-
+    /// Re-read from disk, validate, then swap atomically.
+    pub fn reload(&self) -> VestaResult<()> {
+        let fresh = load_config(&self.path)?;
+        self.registry.validate_dashboard(&fresh)?;
+        crate::metrics::service::validate_nodes(&fresh.nodes)?;
+        *self.config.write().expect("config lock poisoned") = Arc::new(fresh);
+        tracing::info!(path = %self.path.display(), "configuration reloaded");
         Ok(())
     }
-
-    pub fn subscribe_to_changes(&self) -> broadcast::Receiver<ConfigChangeEvent> {
-        self.change_notifier.subscribe()
-    }
-
-    pub fn get_service(
-        &self,
-        group: &str,
-        title: &str,
-    ) -> VestaResult<Option<crate::config::Service>> {
-        let config = self.read_config()?;
-        Ok(config.get_service(group, title).cloned())
-    }
-
-    pub fn get_widget(
-        &self,
-        group: &str,
-        title: &str,
-    ) -> VestaResult<Option<crate::config::Widget>> {
-        let config = self.read_config()?;
-        Ok(config.get_widget(group, title).cloned())
-    }
-
-    pub fn validate_config(&self) -> VestaResult<()> {
-        let config = self.read_config()?;
-        self.widget_registry.validate_widgets(&config)
-    }
-
-    pub fn get_config_stats(&self) -> VestaResult<ConfigStats> {
-        let config = self.read_config()?;
-
-        let total_services = config.groups.values().map(|g| g.services.len()).sum();
-        let services_with_ping = config
-            .groups
-            .values()
-            .flat_map(|g| &g.services)
-            .filter(|s| s.ping.is_some())
-            .count();
-        let services_with_widgets = config
-            .groups
-            .values()
-            .flat_map(|g| &g.services)
-            .filter(|s| s.widget.is_some())
-            .count();
-
-        Ok(ConfigStats {
-            total_groups: config.groups.len(),
-            total_services,
-            services_with_ping,
-            services_with_widgets,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ConfigStats {
-    pub total_groups: usize,
-    pub total_services: usize,
-    pub services_with_ping: usize,
-    pub services_with_widgets: usize,
 }

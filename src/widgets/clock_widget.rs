@@ -1,15 +1,17 @@
 use async_trait::async_trait;
 use chrono::{Local, Utc};
 use maud::{Markup, html};
-use std::sync::Arc;
+use serde::Deserialize;
 
-use crate::{
-    AppState,
-    config::{Service, Widget},
-    error::VestaResult,
-    widget_system::{WidgetHandler, WidgetQuery},
-    widgets::widget_container,
-};
+use crate::config::Service;
+use crate::error::VestaResult;
+
+use crate::widget_system::{WidgetContext, WidgetHandler, WidgetRef, widget_scaffold_with};
+
+/// Client-side ticking clock; the server renders the initial frame into the
+/// scaffold (no loading spinner flash) and `app.js` keeps it ticking.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct Config {}
 
 pub struct ClockWidget;
 
@@ -19,83 +21,53 @@ impl ClockWidget {
     }
 }
 
+impl Default for ClockWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn clock_markup(now: chrono::DateTime<Local>, utc_now: chrono::DateTime<Utc>) -> Markup {
+    html! {
+        div data-clock class="text-center space-y-2" {
+            div data-clock-time class="text-4xl font-mono font-bold text-zinc-100 tracking-tight" {
+                (now.format("%H:%M:%S").to_string())
+            }
+            div data-clock-date class="text-sm text-zinc-400" {
+                (now.format("%A, %B %d").to_string())
+            }
+            div class="text-xs text-zinc-500 space-y-0.5" {
+                div data-clock-year { (now.format("%Y").to_string()) }
+                div data-clock-tz { (now.format("%Z").to_string()) }
+            }
+            div data-clock-utc class="text-xs text-zinc-600 pt-2 border-t border-zinc-800" {
+                "UTC " (utc_now.format("%H:%M:%S").to_string())
+            }
+        }
+    }
+}
+
 #[async_trait]
 impl WidgetHandler for ClockWidget {
     fn name(&self) -> &'static str {
         "Clock"
     }
 
-    fn render(&self, _group_id: &str, service: &Service) -> Markup {
-        let now = Local::now();
-        let utc_now = Utc::now();
+    type Config = Config;
 
-        widget_container(
-            service.width,
-            service.height,
-            "flex flex-col justify-center",
-            html! {
-                div data-clock class="text-center space-y-2" {
-                    // Main time display
-                    div data-clock-time class="text-4xl font-mono font-bold text-zinc-100 tracking-tight" {
-                        (now.format("%H:%M:%S").to_string())
-                    }
-
-                    // Date display
-                    div data-clock-date class="text-sm text-zinc-400" {
-                        (now.format("%A, %B %d").to_string())
-                    }
-
-                    // Year and timezone
-                    div class="text-xs text-zinc-500 space-y-0.5" {
-                        div data-clock-year { (now.format("%Y").to_string()) }
-                        div data-clock-tz { (now.format("%Z").to_string()) }
-                    }
-
-                    // UTC time
-                    div data-clock-utc class="text-xs text-zinc-600 pt-2 border-t border-zinc-800" {
-                        "UTC " (utc_now.format("%H:%M:%S").to_string())
-                    }
-                }
-            },
-        )
+    fn render(&self, mount: &WidgetRef, service: &Service, _config: &Config) -> Markup {
+        // The clock renders its frame directly into the scaffold; htmx swaps
+        // in a fresh frame when the client triggers a reload.
+        let frame = clock_markup(Local::now(), Utc::now());
+        widget_scaffold_with(service, mount, self.name(), None, frame)
     }
 
     async fn handle_request(
         &self,
-        _state: Arc<AppState>,
-        _query: WidgetQuery,
+        _ctx: WidgetContext,
+        _mount: WidgetRef,
+        _config: Config,
     ) -> VestaResult<Markup> {
-        let now = Local::now();
-        let utc_now = Utc::now();
-
-        Ok(html! {
-            div class="text-center space-y-2" {
-                // Main time display
-                div class="text-4xl font-mono font-bold text-zinc-100 tracking-tight" {
-                    (now.format("%H:%M:%S").to_string())
-                }
-
-                // Date display
-                div class="text-sm text-zinc-400" {
-                    (now.format("%A, %B %d").to_string())
-                }
-
-                // Year and timezone
-                div class="text-xs text-zinc-500 space-y-0.5" {
-                    div { (now.format("%Y").to_string()) }
-                    div { (now.format("%Z").to_string()) }
-                }
-
-                // UTC time
-                div class="text-xs text-zinc-600 pt-2 border-t border-zinc-800" {
-                    "UTC " (utc_now.format("%H:%M:%S").to_string())
-                }
-            }
-        })
-    }
-
-    fn validate_config(&self, _widget: &Widget) -> VestaResult<()> {
-        // Clock widget doesn't need any configuration
-        Ok(())
+        Ok(clock_markup(Local::now(), Utc::now()))
     }
 }

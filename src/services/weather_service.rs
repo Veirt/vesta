@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use moka::future::Cache;
@@ -7,18 +6,34 @@ use serde::Deserialize;
 
 use crate::error::{VestaError, VestaResult};
 
-const DEFAULT_CACHE_TTL: Duration = Duration::from_secs(600);
+const CACHE_TTL: Duration = Duration::from_secs(600);
 
-#[derive(Deserialize, Debug)]
-pub struct WeatherConfig {
+#[derive(Clone, Debug, Deserialize)]
+pub struct WeatherQuery {
+    #[serde(deserialize_with = "crate::widget_config::debounced_f64")]
     pub latitude: f64,
+    #[serde(deserialize_with = "crate::widget_config::debounced_f64")]
     pub longitude: f64,
+    /// "celsius" (default) or "fahrenheit".
+    #[serde(default = "default_units")]
     pub units: String,
 }
 
-impl WeatherConfig {
-    pub fn cache_key(&self) -> String {
+fn default_units() -> String {
+    "celsius".to_string()
+}
+
+impl WeatherQuery {
+    fn cache_key(&self) -> String {
         format!("{}:{}:{}", self.latitude, self.longitude, self.units)
+    }
+
+    fn temperature_unit(&self) -> &'static str {
+        if self.units == "fahrenheit" {
+            "fahrenheit"
+        } else {
+            "celsius"
+        }
     }
 }
 
@@ -43,52 +58,68 @@ pub struct WeatherService {
 }
 
 impl WeatherService {
-    pub fn new(http_client: Client) -> Arc<Self> {
+    pub fn new(http_client: Client) -> Self {
         let cache = Cache::builder()
             .max_capacity(100)
-            .time_to_live(DEFAULT_CACHE_TTL)
+            .time_to_live(CACHE_TTL)
             .build();
-
-        Arc::new(Self {
-            cache,
-            http_client,
-        })
+        Self { cache, http_client }
     }
 
-    pub async fn fetch_weather(&self, config: &WeatherConfig) -> VestaResult<WeatherData> {
-        let cache_key = config.cache_key();
-
-        if let Some(cached) = self.cache.get(&cache_key).await {
+    pub async fn fetch(&self, query: &WeatherQuery) -> VestaResult<WeatherData> {
+        let key = query.cache_key();
+        if let Some(cached) = self.cache.get(&key).await {
             return Ok(cached);
         }
-
-        let weather_data = self.fetch_from_api(config).await?;
-        self.cache.insert(cache_key, weather_data.clone()).await;
-        Ok(weather_data)
+        let data = self.fetch_from_api(query).await?;
+        self.cache.insert(key, data.clone()).await;
+        Ok(data)
     }
 
-    async fn fetch_from_api(&self, config: &WeatherConfig) -> VestaResult<WeatherData> {
-        let temperature_unit = if config.units == "fahrenheit" {
-            "fahrenheit"
-        } else {
-            "celsius"
-        };
-
+    async fn fetch_from_api(&self, query: &WeatherQuery) -> VestaResult<WeatherData> {
         let url = format!(
             "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m&temperature_unit={}",
-            config.latitude, config.longitude, temperature_unit
+            query.latitude,
+            query.longitude,
+            query.temperature_unit()
         );
 
         let response = self.http_client.get(&url).send().await?;
-
-        if !response.status().is_success() {
+        let status = response.status();
+        if !status.is_success() {
             return Err(VestaError::ApiError {
-                status: response.status(),
-                message: "Failed to fetch weather data".to_string(),
+                status,
+                message: "weather provider error".to_string(),
             });
         }
+        Ok(response.json::<WeatherData>().await?)
+    }
+}
 
-        let weather_data = response.json::<WeatherData>().await?;
-        Ok(weather_data)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_to_celsius() {
+        let query: WeatherQuery = serde_json::from_value(serde_json::json!({
+            "latitude": "0.5", "longitude": "117.1"
+        }))
+        .unwrap();
+        assert_eq!(query.units, "celsius");
+        assert_eq!(query.temperature_unit(), "celsius");
+    }
+
+    #[test]
+    fn cache_key_distinguishes_units() {
+        let c: WeatherQuery = serde_json::from_value(
+            serde_json::json!({"latitude": "1", "longitude": "2", "units": "celsius"}),
+        )
+        .unwrap();
+        let f: WeatherQuery = serde_json::from_value(
+            serde_json::json!({"latitude": "1", "longitude": "2", "units": "fahrenheit"}),
+        )
+        .unwrap();
+        assert_ne!(c.cache_key(), f.cache_key());
     }
 }
