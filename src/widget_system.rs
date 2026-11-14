@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use maud::{Markup, html};
-use serde::de::DeserializeOwned;
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::config::{Service, Widget};
 use crate::error::{VestaError, VestaResult};
@@ -25,12 +25,15 @@ impl WidgetRef {
         }
     }
 
-    /// The URL htmx fetches the widget's data fragment from.
+    /// The URL htmx fetches; query values are percent-encoded before markup.
     pub fn api_path(&self, widget: &str) -> String {
-        format!(
-            "/api/widgets/{widget}?group={}&title={}",
-            self.group, self.title
-        )
+        let mut url = reqwest::Url::parse("http://vesta.invalid/")
+            .expect("the static URL base must be valid");
+        url.set_path(&format!("/api/widgets/{widget}"));
+        url.query_pairs_mut()
+            .append_pair("group", &self.group)
+            .append_pair("title", &self.title);
+        format!("{}?{}", url.path(), url.query().unwrap_or_default())
     }
 }
 
@@ -39,6 +42,32 @@ impl WidgetRef {
 pub struct WidgetQuery {
     pub group: String,
     pub title: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct WidgetDescriptor {
+    pub name: String,
+    pub description: &'static str,
+    pub fields: Vec<WidgetField>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct WidgetField {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub kind: &'static str,
+    pub required: bool,
+    pub description: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<WidgetOption>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct WidgetOption {
+    pub value: &'static str,
+    pub label: &'static str,
 }
 
 impl From<WidgetQuery> for WidgetRef {
@@ -55,12 +84,20 @@ pub struct WidgetContext {
 }
 
 /// What a widget provides. `Config` is the widget's typed options schema,
-/// deserialized from the TOML string map; validation happens by construction
+/// deserialized from its JSON settings map; validation happens by construction
 /// (bad config = typed error at load, not surprises at request time).
 #[async_trait]
 pub trait WidgetHandler: Send + Sync {
     /// Registry key, matching `widget.name` in the config (e.g. "SystemStats").
     fn name(&self) -> &'static str;
+
+    fn description(&self) -> &'static str {
+        "Configure this built-in widget."
+    }
+
+    fn fields(&self) -> Vec<WidgetField> {
+        Vec::new()
+    }
 
     /// The widget's typed configuration.
     type Config: DeserializeOwned + Send;
@@ -83,8 +120,7 @@ pub trait WidgetHandler: Send + Sync {
 }
 
 /// Typed config plumbing: widget config structs deserialize from the raw
-/// options map. TOML values may be strings or native numbers; the
-/// `widget_config` helpers coerce strings to numbers where needed.
+/// JSON options map.
 pub fn parse_widget_options<T: DeserializeOwned>(
     raw: Option<&crate::config::WidgetConfig>,
 ) -> VestaResult<T> {
@@ -92,11 +128,7 @@ pub fn parse_widget_options<T: DeserializeOwned>(
     let options = raw.unwrap_or_else(|| EMPTY.get_or_init(Default::default));
     let value = serde_json::to_value(options)
         .map_err(|e| VestaError::InvalidWidgetConfig(format!("widget options: {e}")))?;
-    serde_json::from_value(value).map_err(|e| {
-        VestaError::InvalidWidgetConfig(format!(
-            "{e} (all TOML values are strings; numeric fields accept any parseable string)"
-        ))
-    })
+    serde_json::from_value(value).map_err(|e| VestaError::InvalidWidgetConfig(format!("{e}")))
 }
 
 /// The shared shell every widget renders into: grid sizing plus an htmx
@@ -122,8 +154,8 @@ pub fn widget_scaffold_with(
         None => "load".to_string(),
     };
     html! {
-        div class="bg-zinc-900 border border-zinc-800 rounded-lg p-4 h-full overflow-y-auto"
-            style=(grid_span_style(service.width, service.height)) {
+        div class="widget-frame service-layout-item"
+            style=(service_layout_style(service)) {
             div class="h-full"
                 hx-get=(mount.api_path(widget))
                 hx-trigger=(trigger)
@@ -136,19 +168,17 @@ pub fn widget_scaffold_with(
 
 pub fn loading_placeholder() -> Markup {
     html! {
-        div class="flex items-center justify-center h-full" {
-            div class="animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500" {}
-        }
+        div class="widget-loading" { "Loading…" }
     }
 }
 
 /// Small labelled stat row shared by data-heavy widgets.
 pub fn stat_row(label: &str, value: &str, bar: Option<Markup>) -> Markup {
     html! {
-        div class="space-y-1.5" {
-            div class="flex justify-between items-center" {
-                span class="text-xs text-zinc-400 uppercase tracking-wide" { (label) }
-                span class="text-xs text-zinc-200 font-mono" { (value) }
+        div class="widget-stat" {
+            div class="widget-stat-heading" {
+                span { (label) }
+                span class="widget-value" { (value) }
             }
             @if let Some(bar) = bar { (bar) }
         }
@@ -156,24 +186,24 @@ pub fn stat_row(label: &str, value: &str, bar: Option<Markup>) -> Markup {
 }
 
 pub fn usage_bar(percent: f64) -> Markup {
-    let color = match percent {
-        p if p < 50.0 => "bg-emerald-500",
-        p if p < 80.0 => "bg-amber-400",
-        _ => "bg-red-500",
-    };
     let percentage = percent.clamp(0.0, 100.0);
     html! {
-        div class="w-full bg-zinc-800 rounded-full h-1.5" {
-            div class=(format!("h-1.5 rounded-full transition-all duration-300 {color}"))
+        div class="widget-meter" {
+            div class="widget-meter-fill"
                 style=(format!("width: {percentage}%")) {}
         }
     }
 }
 
-fn grid_span_style(width: Option<u8>, height: Option<u8>) -> String {
-    let w = width.unwrap_or(1).max(1);
-    let h = height.unwrap_or(1).max(1);
-    format!("grid-column: span {w}; grid-row: span {h};")
+pub fn service_layout_style(service: &Service) -> String {
+    let width = service.width.unwrap_or(4).clamp(1, 12);
+    let height = service
+        .height
+        .unwrap_or(if service.widget.is_some() { 2 } else { 1 })
+        .clamp(1, 12);
+    let x = service.x.unwrap_or(0).min(12 - width);
+    let y = service.y.unwrap_or(0).min(10_000);
+    format!("--tile-x:{x};--tile-y:{y};--tile-width:{width};--tile-height:{height};")
 }
 
 /// Registry mapping widget names to handlers. Built once at startup; all
@@ -203,6 +233,14 @@ impl WidgetRegistry {
         let mut names: Vec<&str> = self.widgets.keys().map(|s| s.as_str()).collect();
         names.sort_unstable();
         names
+    }
+
+    pub fn descriptors(&self) -> Vec<WidgetDescriptor> {
+        self.names()
+            .into_iter()
+            .filter_map(|name| self.get(name))
+            .map(|handler| handler.descriptor())
+            .collect()
     }
 
     /// Render the shell for a service's widget, or an inline error card.
@@ -265,6 +303,7 @@ impl Default for WidgetRegistry {
 /// different `Config` associated types behind one map.
 #[async_trait]
 pub trait WidgetHandlerDyn: Send + Sync {
+    fn descriptor(&self) -> WidgetDescriptor;
     fn render_erased(
         &self,
         mount: &WidgetRef,
@@ -287,6 +326,14 @@ impl<W: WidgetHandler + 'static> DynWidget<W> {
 
 #[async_trait]
 impl<W: WidgetHandler + 'static> WidgetHandlerDyn for DynWidget<W> {
+    fn descriptor(&self) -> WidgetDescriptor {
+        WidgetDescriptor {
+            name: self.inner.name().to_string(),
+            description: self.inner.description(),
+            fields: self.inner.fields(),
+        }
+    }
+
     fn render_erased(
         &self,
         mount: &WidgetRef,
@@ -317,7 +364,7 @@ impl<W: WidgetHandler + 'static> WidgetHandlerDyn for DynWidget<W> {
 
 fn error_card(message: &str) -> Markup {
     html! {
-        div class="p-4 text-red-400 bg-red-900/20 border border-red-800 rounded-xl" {
+        div class="widget-error" {
             (message)
         }
     }
@@ -368,8 +415,10 @@ mod tests {
     fn service_with(widget: Widget) -> Service {
         Service {
             title: "svc".to_string(),
+            icon: None,
             href: None,
-            img_src: None,
+            x: None,
+            y: None,
             width: None,
             height: None,
             widget: Some(widget),
@@ -385,8 +434,10 @@ mod tests {
     fn scaffold_embeds_htmx_attributes_and_grid_span() {
         let service = Service {
             title: "svc".to_string(),
+            icon: None,
             href: None,
-            img_src: None,
+            x: Some(3),
+            y: Some(4),
             width: Some(2),
             height: Some(3),
             widget: None,
@@ -401,8 +452,19 @@ mod tests {
             "{markup}"
         );
         assert!(markup.contains("hx-trigger=\"load, every 30s\""));
-        assert!(markup.contains("grid-column: span 2"));
-        assert!(markup.contains("grid-row: span 3"));
+        assert!(markup.contains("--tile-x:3"));
+        assert!(markup.contains("--tile-y:4"));
+        assert!(markup.contains("--tile-width:2"));
+        assert!(markup.contains("--tile-height:3"));
+    }
+
+    #[test]
+    fn widget_mount_encodes_user_configured_query_values() {
+        let path = WidgetRef::new("media & home", "A+B #1").api_path("Clock");
+        assert_eq!(
+            path,
+            "/api/widgets/Clock?group=media+%26+home&title=A%2BB+%231"
+        );
     }
 
     #[test]
@@ -413,7 +475,6 @@ mod tests {
             "g".to_string(),
             crate::config::Group {
                 name: "G".to_string(),
-                columns: 1,
                 services: vec![service_with(Widget {
                     name: "Nope".to_string(),
                     config: None,

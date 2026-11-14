@@ -29,18 +29,18 @@ impl Default for ClockWidget {
 
 fn clock_markup(now: chrono::DateTime<Local>, utc_now: chrono::DateTime<Utc>) -> Markup {
     html! {
-        div data-clock class="text-center space-y-2" {
-            div data-clock-time class="text-4xl font-mono font-bold text-zinc-100 tracking-tight" {
+        div data-clock class="clock-widget" {
+            div data-clock-time class="clock-time widget-value" {
                 (now.format("%H:%M:%S").to_string())
             }
-            div data-clock-date class="text-sm text-zinc-400" {
+            div data-clock-date class="clock-date widget-secondary" {
                 (now.format("%A, %B %d").to_string())
             }
-            div class="text-xs text-zinc-500 space-y-0.5" {
+            div class="clock-meta widget-secondary" {
                 div data-clock-year { (now.format("%Y").to_string()) }
                 div data-clock-tz { (now.format("%Z").to_string()) }
             }
-            div data-clock-utc class="text-xs text-zinc-600 pt-2 border-t border-zinc-800" {
+            div data-clock-utc class="clock-utc widget-secondary widget-divider" {
                 "UTC " (utc_now.format("%H:%M:%S").to_string())
             }
         }
@@ -51,6 +51,10 @@ fn clock_markup(now: chrono::DateTime<Local>, utc_now: chrono::DateTime<Utc>) ->
 impl WidgetHandler for ClockWidget {
     fn name(&self) -> &'static str {
         "Clock"
+    }
+
+    fn description(&self) -> &'static str {
+        "Shows your local time, date, time zone, and UTC time."
     }
 
     type Config = Config;

@@ -5,7 +5,9 @@ use serde::Deserialize;
 use crate::config::Service;
 use crate::error::VestaResult;
 use crate::services::weather_service::{WeatherQuery, WeatherService};
-use crate::widget_system::{WidgetContext, WidgetHandler, WidgetRef, widget_scaffold};
+use crate::widget_system::{
+    WidgetContext, WidgetField, WidgetHandler, WidgetOption, WidgetRef, widget_scaffold,
+};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
@@ -111,25 +113,24 @@ fn weather_body(config: &Config, data: &crate::services::weather_service::Weathe
     let unit = temp_unit(&config.units);
     let current = &data.current;
     html! {
-        div class="space-y-4" {
+        div class="weather-widget" {
             div class="text-center" {
-                h3 class="text-sm font-semibold text-zinc-100"
-                    style="font-family: 'JetBrains Mono', monospace;" {
+                h3 class="widget-title" {
                     "Weather"
                 }
-                div class="text-xs text-zinc-500 font-mono" {
+                div class="widget-secondary" {
                     (format!("{:.2}°, {:.2}°", config.latitude, config.longitude))
                 }
             }
             div class="flex items-center justify-between" {
                 div class="flex-1" {
-                    div class="text-3xl font-bold text-zinc-100 mb-1 font-mono" {
+                    div class="weather-temperature widget-value" {
                         (format!("{:.0}{}", current.temperature_2m, unit))
                     }
-                    div class="text-xs text-zinc-500" {
+                    div class="widget-secondary" {
                         "Feels " (format!("{:.0}{}", current.apparent_temperature, unit))
                     }
-                    div class="text-sm text-zinc-400 capitalize mt-1" {
+                    div class="weather-description" {
                         (description(current.weather_code))
                     }
                 }
@@ -137,16 +138,16 @@ fn weather_body(config: &Config, data: &crate::services::weather_service::Weathe
                     (icon(current.weather_code))
                 }
             }
-            div class="grid grid-cols-2 gap-3 pt-3 border-t border-zinc-800" {
+            div class="weather-details widget-divider" {
                 div class="text-center" {
-                    div class="text-xs text-zinc-500 uppercase tracking-wide" { "Humidity" }
-                    div class="text-sm font-semibold text-zinc-200 font-mono" {
+                    div class="widget-secondary" { "Humidity" }
+                    div class="weather-detail-value widget-value" {
                         (current.relative_humidity_2m) "%"
                     }
                 }
                 div class="text-center" {
-                    div class="text-xs text-zinc-500 uppercase tracking-wide" { "Wind" }
-                    div class="text-sm font-semibold text-zinc-200 font-mono" {
+                    div class="widget-secondary" { "Wind" }
+                    div class="weather-detail-value widget-value" {
                         (format!("{:.0} {}", current.wind_speed_10m, wind_direction(current.wind_direction_10m)))
                     }
                 }
@@ -159,6 +160,60 @@ fn weather_body(config: &Config, data: &crate::services::weather_service::Weathe
 impl WidgetHandler for WeatherWidget {
     fn name(&self) -> &'static str {
         "Weather"
+    }
+
+    fn description(&self) -> &'static str {
+        "Shows current weather for a latitude and longitude using Open-Meteo."
+    }
+
+    fn fields(&self) -> Vec<WidgetField> {
+        vec![
+            WidgetField {
+                key: "latitude",
+                label: "Latitude",
+                kind: "number",
+                required: true,
+                description: "A value from −90 to 90.",
+                default: None,
+                options: Vec::new(),
+            },
+            WidgetField {
+                key: "longitude",
+                label: "Longitude",
+                kind: "number",
+                required: true,
+                description: "A value from −180 to 180.",
+                default: None,
+                options: Vec::new(),
+            },
+            WidgetField {
+                key: "units",
+                label: "Temperature units",
+                kind: "select",
+                required: true,
+                description: "Choose how temperatures are displayed.",
+                default: Some(serde_json::json!("celsius")),
+                options: vec![
+                    WidgetOption {
+                        value: "celsius",
+                        label: "Celsius",
+                    },
+                    WidgetOption {
+                        value: "fahrenheit",
+                        label: "Fahrenheit",
+                    },
+                ],
+            },
+            WidgetField {
+                key: "refresh_interval",
+                label: "Refresh every (seconds)",
+                kind: "number",
+                required: true,
+                description: "Choose a value from 60 to 3600 seconds.",
+                default: Some(serde_json::json!(600)),
+                options: Vec::new(),
+            },
+        ]
     }
 
     type Config = Config;

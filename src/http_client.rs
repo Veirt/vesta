@@ -36,9 +36,7 @@ pub fn create_default_client() -> VestaResult<Client> {
         builder = builder.danger_accept_invalid_certs(true);
     }
 
-    builder.build().map_err(|e| {
-        VestaError::Config(crate::error::ConfigError::Invalid(format!(
-            "Failed to create HTTP client: {e}"
-        )))
-    })
+    builder
+        .build()
+        .map_err(|e| VestaError::Config(format!("Failed to create HTTP client: {e}")))
 }

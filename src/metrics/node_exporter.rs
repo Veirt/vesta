@@ -6,7 +6,7 @@ use reqwest::Client;
 
 use crate::error::MetricsError;
 use crate::metrics::node::{LoadAvg, NodeStats};
-use crate::metrics::parser::{MetricSample, parse_exposition};
+use prometheus_parse::{Sample, Scrape, Value};
 
 /// Builds host stats from node_exporter Prometheus text exposition.
 /// CPU percent requires two consecutive scrapes of the `node_cpu_seconds_total`
@@ -14,16 +14,22 @@ use crate::metrics::parser::{MetricSample, parse_exposition};
 /// disk, load and uptime come straight from gauges.
 pub struct NodeExporterCollector {
     client: Client,
-    /// Last scrape's idle counter per endpoint, with wall-clock time. A Mutex
-    /// is fine: one writer per endpoint, held for microseconds.
-    previous_idle: Mutex<HashMap<String, (f64, Instant)>>,
+    /// Last scrape's (idle, total) CPU seconds per endpoint, with wall-clock
+    /// time. A Mutex is fine: one writer per endpoint, held for microseconds.
+    previous_cpu: Mutex<HashMap<String, CpuBaseline>>,
+}
+
+#[derive(Clone, Copy)]
+struct CpuBaseline {
+    idle_seconds: f64,
+    total_seconds: f64,
 }
 
 impl NodeExporterCollector {
     pub fn new(client: Client) -> Self {
         Self {
             client,
-            previous_idle: Mutex::new(HashMap::new()),
+            previous_cpu: Mutex::new(HashMap::new()),
         }
     }
 
@@ -35,7 +41,7 @@ impl NodeExporterCollector {
     pub fn build_stats(
         &self,
         endpoint: &str,
-        samples: &[MetricSample],
+        samples: &[Sample],
     ) -> Result<NodeStats, MetricsError> {
         let cpu = self.cpu_percent(endpoint, samples)?;
         let memory_available = gauge(samples, "node_memory_MemAvailable_bytes")
@@ -65,31 +71,39 @@ impl NodeExporterCollector {
         })
     }
 
-    /// CPU% = delta(idle) / delta(wall clock) across scrapes. The first scrape
-    /// after (re)start yields no sample and records the baseline instead.
-    fn cpu_percent(&self, endpoint: &str, samples: &[MetricSample]) -> Result<f64, MetricsError> {
-        let idle_now = total_idle_seconds(samples)?;
-        let now = Instant::now();
+    /// CPU% = 1 - delta(idle) / delta(total) across scrapes, where `total`
+    /// sums every mode of every core. Using both counters removes the wall
+    /// clock and core count from the math, so multi-core hosts are exact.
+    /// The first scrape records the baseline and reports 0.
+    fn cpu_percent(&self, endpoint: &str, samples: &[Sample]) -> Result<f64, MetricsError> {
+        let (idle_now, total_now) = cpu_counters(samples)?;
 
-        let mut baselines = self.previous_idle.lock().expect("idle baseline lock");
+        let mut baselines = self.previous_cpu.lock().expect("cpu baseline lock");
         let previous = baselines.get(endpoint).copied();
-        baselines.insert(endpoint.to_string(), (idle_now, now));
+        baselines.insert(
+            endpoint.to_string(),
+            CpuBaseline {
+                idle_seconds: idle_now,
+                total_seconds: total_now,
+            },
+        );
         drop(baselines);
 
         Ok(match previous {
-            Some((idle_prev, at_prev)) => {
-                let elapsed = now.duration_since(at_prev).as_secs_f64();
-                if elapsed <= 0.0 {
+            Some(prev) => {
+                let idle_delta = (idle_now - prev.idle_seconds).max(0.0);
+                let total_delta = (total_now - prev.total_seconds).max(0.0);
+                if total_delta <= 0.0 {
                     0.0
                 } else {
-                    (((idle_now - idle_prev) / elapsed) * 100.0).clamp(0.0, 100.0)
+                    ((1.0 - idle_delta / total_delta) * 100.0).clamp(0.0, 100.0)
                 }
             }
             None => 0.0,
         })
     }
 
-    async fn fetch_samples(&self, endpoint: &str) -> Result<Vec<MetricSample>, MetricsError> {
+    async fn fetch_samples(&self, endpoint: &str) -> Result<Vec<Sample>, MetricsError> {
         let response = self
             .client
             .get(endpoint)
@@ -106,7 +120,9 @@ impl NodeExporterCollector {
             .text()
             .await
             .map_err(|e| MetricsError(format!("scrape {endpoint}: {e}")))?;
-        parse_exposition(&body).map_err(|e| MetricsError(format!("scrape {endpoint}: {e}")))
+        Scrape::parse(body.lines().map(|line| Ok(line.to_owned())))
+            .map(|scrape| scrape.samples)
+            .map_err(|e| MetricsError(format!("scrape {endpoint}: {e}")))
     }
 }
 
@@ -119,23 +135,39 @@ fn bytes(value: f64) -> u64 {
     value.max(0.0) as u64
 }
 
-fn gauge(samples: &[MetricSample], name: &str) -> Option<f64> {
-    samples.iter().find(|s| s.name == name).map(|s| s.value)
+fn numeric_value(sample: &Sample) -> Option<f64> {
+    match sample.value {
+        Value::Counter(value) | Value::Gauge(value) | Value::Untyped(value) => Some(value),
+        Value::Histogram(_) | Value::Summary(_) => None,
+    }
 }
 
-fn total_idle_seconds(samples: &[MetricSample]) -> Result<f64, MetricsError> {
-    let has_cpu_metric = samples.iter().any(|s| s.name == "node_cpu_seconds_total");
-    let idle: f64 = samples
+fn gauge(samples: &[Sample], name: &str) -> Option<f64> {
+    samples
         .iter()
-        .filter(|s| {
-            s.name == "node_cpu_seconds_total" && s.labels.get("mode").is_some_and(|m| m == "idle")
-        })
-        .map(|s| s.value)
-        .sum();
-    if !has_cpu_metric {
+        .find(|sample| sample.metric == name)
+        .and_then(numeric_value)
+}
+
+fn cpu_counters(samples: &[Sample]) -> Result<(f64, f64), MetricsError> {
+    let mut idle = 0.0;
+    let mut total = 0.0;
+    let mut found = false;
+    for sample in samples
+        .iter()
+        .filter(|sample| sample.metric == "node_cpu_seconds_total")
+    {
+        let value = numeric_value(sample).ok_or_else(|| missing("node_cpu_seconds_total"))?;
+        found = true;
+        total += value;
+        if sample.labels.get("mode") == Some("idle") {
+            idle += value;
+        }
+    }
+    if !found {
         return Err(missing("node_cpu_seconds_total"));
     }
-    Ok(idle)
+    Ok((idle, total))
 }
 
 struct DiskUsage {
@@ -144,11 +176,11 @@ struct DiskUsage {
     total: f64,
 }
 
-fn disk_usage(samples: &[MetricSample]) -> Result<DiskUsage, MetricsError> {
+fn disk_usage(samples: &[Sample]) -> Result<DiskUsage, MetricsError> {
     let total = samples
         .iter()
         .find(|s| {
-            s.name == "node_filesystem_size_bytes"
+            s.metric == "node_filesystem_size_bytes"
                 && s.labels
                     .get("fstype")
                     .is_some_and(|f| f != "tmpfs" && f != "squashfs")
@@ -158,22 +190,22 @@ fn disk_usage(samples: &[MetricSample]) -> Result<DiskUsage, MetricsError> {
     let mount = total
         .labels
         .get("mountpoint")
-        .cloned()
+        .map(str::to_owned)
         .unwrap_or_else(|| "/".to_string());
 
     let avail = samples
         .iter()
         .find(|s| {
-            s.name == "node_filesystem_avail_bytes"
+            s.metric == "node_filesystem_avail_bytes"
                 && s.labels.get("mountpoint") == total.labels.get("mountpoint")
         })
-        .map(|s| s.value)
+        .and_then(numeric_value)
         .unwrap_or(0.0);
 
     Ok(DiskUsage {
         mount,
-        used: (total.value - avail).max(0.0),
-        total: total.value,
+        used: (numeric_value(total).unwrap_or(0.0) - avail).max(0.0),
+        total: numeric_value(total).unwrap_or(0.0),
     })
 }
 

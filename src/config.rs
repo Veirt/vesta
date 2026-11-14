@@ -1,27 +1,14 @@
-use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
-
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-
-use crate::error::ConfigError;
-
-pub fn load_config<P: AsRef<Path>>(path: P) -> Result<Dashboard, ConfigError> {
-    let contents = fs::read_to_string(path)?;
-    let parsed: Dashboard = toml::from_str(&contents)?;
-    Ok(parsed)
-}
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct PingConfig {
     pub url: String,
 }
 
-/// Raw widget options exactly as written in `widget.config`. TOML values may
-/// be strings, numbers, booleans, arrays or tables; each widget's typed
-/// `Config` struct decides what it accepts. Dotted keys
-/// (`widget.config.foo.bar`) nest, matching the pre-refactor behavior.
+/// Widget-specific JSON settings are opaque to the dashboard and interpreted
+/// by the widget implementation that owns them.
 pub type WidgetConfig = HashMap<String, serde_json::Value>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -32,32 +19,99 @@ pub struct Widget {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Service {
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
     pub href: Option<String>,
-    #[serde(alias = "imgSrc")]
-    pub img_src: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub widget: Option<Widget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ping: Option<PingConfig>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Group {
     pub name: String,
-    pub columns: u8,
+    #[serde(default)]
     pub services: Vec<Service>,
 }
 
-/// Monitoring targets, declared as `[[nodes]]` in vesta.toml. Each is polled
-/// on its own interval; widgets and `/api/nodes/*` read their latest stats.
-#[derive(Clone, Debug, Deserialize)]
+/// Dashboard configuration normalized for runtime services and APIs.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Dashboard {
     #[serde(default)]
     pub nodes: Vec<crate::metrics::node::NodeConfig>,
     #[serde(flatten)]
     pub groups: IndexMap<String, Group>,
+}
+
+/// One human-editable TOML document contains all dashboard and app settings.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct AppConfig {
+    #[serde(default)]
+    pub nodes: Vec<crate::metrics::node::NodeConfig>,
+    #[serde(default)]
+    pub app: AppSettings,
+    #[serde(default)]
+    pub groups: IndexMap<String, Group>,
+}
+
+impl AppConfig {
+    pub fn dashboard(&self) -> Dashboard {
+        Dashboard {
+            nodes: self.nodes.clone(),
+            groups: self.groups.clone(),
+        }
+    }
+
+    pub fn from_dashboard(dashboard: &Dashboard, app: &AppSettings) -> Self {
+        Self {
+            nodes: dashboard.nodes.clone(),
+            app: app.clone(),
+            groups: dashboard.groups.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AppSettings {
+    #[serde(default = "default_dashboard_title")]
+    pub dashboard_title: String,
+    #[serde(default)]
+    pub theme: Theme,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            dashboard_title: default_dashboard_title(),
+            theme: Theme::default(),
+        }
+    }
+}
+
+fn default_dashboard_title() -> String {
+    "Server Monitor".to_string()
 }
 
 impl Dashboard {

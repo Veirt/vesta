@@ -8,8 +8,23 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum VestaError {
-    #[error("Configuration error: {0}")]
-    Config(#[from] ConfigError),
+    #[error("Application configuration error: {0}")]
+    Config(String),
+
+    #[error("Dashboard settings are invalid: {0}")]
+    InvalidDashboard(String),
+
+    #[error("Database operation failed: {0}")]
+    Database(#[from] sqlx::Error),
+
+    #[error("Database migration failed: {0}")]
+    Migration(#[from] sqlx::migrate::MigrateError),
+
+    #[error("Filesystem operation failed: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Data encoding failed: {0}")]
+    Serialization(#[from] serde_json::Error),
 
     #[error("HTTP request failed: {0}")]
     Http(#[from] reqwest::Error),
@@ -34,16 +49,6 @@ pub enum VestaError {
 }
 
 #[derive(Error, Debug)]
-pub enum ConfigError {
-    #[error("Failed to read config file: {0}")]
-    IoError(#[from] std::io::Error),
-    #[error("Failed to parse TOML: {0}")]
-    TomlError(#[from] toml::de::Error),
-    #[error("Invalid configuration: {0}")]
-    Invalid(String),
-}
-
-#[derive(Error, Debug)]
 #[error("{0}")]
 pub struct MetricsError(pub String);
 
@@ -53,6 +58,13 @@ impl IntoResponse for VestaError {
     fn into_response(self) -> Response {
         let (status, code) = match &self {
             VestaError::Config(_) => (StatusCode::INTERNAL_SERVER_ERROR, "config_error"),
+            VestaError::InvalidDashboard(_) => (StatusCode::BAD_REQUEST, "invalid_dashboard"),
+            VestaError::Database(_) | VestaError::Migration(_) | VestaError::Io(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "storage_error")
+            }
+            VestaError::Serialization(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "serialization_error")
+            }
             VestaError::Http(_) => (StatusCode::BAD_GATEWAY, "external_service_error"),
             VestaError::ServiceNotFound { .. } => (StatusCode::NOT_FOUND, "service_not_found"),
             VestaError::WidgetNotFound { .. } => (StatusCode::NOT_FOUND, "widget_not_found"),

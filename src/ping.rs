@@ -41,17 +41,27 @@ pub async fn ping_handler(
 }
 
 fn indicator_markup(is_up: bool) -> Markup {
-    let class = if is_up { "bg-green-500" } else { "bg-red-500" };
-    html!(div class=(format!("w-2 h-2 {class} rounded-full")) {})
+    html! {
+        span class="service-ping" data-up=(is_up) aria-label=(if is_up { "Service online" } else { "Service unavailable" }) {
+            span class="status-dot" aria-hidden="true" {}
+        }
+    }
 }
 
 /// Placeholder swapped by htmx for the real indicator on load.
 pub fn service_indicator(group_id: &str, title: &str) -> Markup {
+    let mut url = reqwest::Url::parse("http://vesta.invalid/api/ping")
+        .expect("the static URL base must be valid");
+    url.query_pairs_mut()
+        .append_pair("group", group_id)
+        .append_pair("title", title);
     html! {
-        div
-            class="w-2 h-2 bg-slate-900"
-            hx-get=(format!("/api/ping?group={}&title={}", group_id, title))
+        span
+            class="service-ping"
+            hx-get=(format!("{}?{}", url.path(), url.query().unwrap_or_default()))
             hx-trigger="load"
-            hx-swap="outerHTML" { }
+            hx-swap="outerHTML" aria-label="Checking service status" {
+            span class="status-dot" aria-hidden="true" {}
+        }
     }
 }

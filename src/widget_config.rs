@@ -1,9 +1,7 @@
 //! Serde helpers for widget configs.
 //!
-//! Every value in `widget.config` is a TOML string (`refresh_interval = "5"`),
-//! but widget `Config` structs want typed numbers. These deserializers accept
-//! both a native number and a string that parses, so configs read naturally
-//! in either style.
+//! Widget settings may use JSON numbers or numeric strings. These helpers let
+//! handlers accept either representation while keeping typed config fields.
 
 use serde::{Deserialize, Deserializer};
 

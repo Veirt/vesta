@@ -1,16 +1,25 @@
 use std::time::{Duration, Instant};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// A monitoring target polled on a fixed interval. Each instance is a
 /// standalone stats source: node_exporter URLs expose the Prometheus text
 /// format; the special value `local` reads the host through sysinfo.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NodeConfig {
     /// Stable identifier used in the API (`/api/nodes/{id}/stats`).
     pub id: String,
     /// Display name shown in the widget.
     pub name: String,
+    /// Optional host name shown alongside the configured display name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
+    /// Optional device label, such as "Proxmox host" or "Synology NAS".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_name: Option<String>,
+    /// Remote URL or local uploaded-image path rendered as the server icon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
     /// `local`, or an http(s) URL of a node_exporter / metrics endpoint.
     pub endpoint: String,
     /// Scrape interval in seconds (default 15).
@@ -96,7 +105,7 @@ mod tests {
     #[test]
     fn interval_defaults_to_15s() {
         let node: NodeConfig =
-            toml::from_str("id = \"a\"\nname = \"A\"\nendpoint = \"local\"\n").unwrap();
+            serde_json::from_str(r#"{"id":"a","name":"A","endpoint":"local"}"#).unwrap();
         assert_eq!(node.interval(), Duration::from_secs(15));
         assert!(node.is_local());
     }

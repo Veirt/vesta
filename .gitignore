@@ -1,5 +1,6 @@
 /target
-config/vesta.toml
-!config/.gitkeep
+/data/
+/config.toml
 node_modules
 static/style.css
+static/ui/

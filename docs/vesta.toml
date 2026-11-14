@@ -1,101 +1,70 @@
-# Vesta example configuration.
-#
-# Nodes are monitoring targets polled on a fixed interval. `endpoint` is either
-# `local` (read this host through sysinfo) or the URL of a node_exporter /
-# Prometheus text-format metrics endpoint.
+# Copy this example to the path configured by VESTA_CONFIG, then customize it.
+# Settings writes the same human-readable TOML format atomically.
+
+[app]
+dashboard_title = "Home lab"
+theme = "system"
 
 [[nodes]]
 id = "self"
 name = "This server"
+hostname = "vesta.home.arpa"
+device_name = "Mini PC"
 endpoint = "local"
 interval_secs = 15
 
 [[nodes]]
 id = "nas"
 name = "NAS"
-endpoint = "http://nas.lan:9100/metrics"
+hostname = "nas.home.arpa"
+device_name = "Synology NAS"
+endpoint = "http://nas.home.arpa:9100/metrics"
 interval_secs = 15
 
-[widgets]
-name = "Widgets"
-columns = 3
-[[widgets.services]]
-title = "QuickLinks"
+[groups.productivity]
+name = "Productivity"
+
+[[groups.productivity.services]]
+title = "Clock"
+x = 0
+y = 0
+width = 4
+height = 2
+widget.name = "Clock"
+
+[[groups.productivity.services]]
+title = "Quick links"
+x = 4
+y = 0
+width = 8
+height = 2
 widget.name = "QuickLinks"
 widget.config.links = [
-  { title = "GitHub", url = "https://github.com/veirt", icon = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/github.svg" },
-  { title = "Personal Website", url = "https://veirt.is-a.dev", icon = "https://veirt.is-a.dev/favicon.ico" },
+  { title = "Vesta on GitHub", url = "https://github.com/veirt/vesta", icon = "https://github.githubassets.com/favicons/favicon.svg" },
+  { title = "Synology", url = "https://nas.home.arpa", icon = "" },
 ]
-width = 1
-height = 3
-[[widgets.services]]
-title = "Clock"
-widget = { name = "Clock" }
-width = 1
-height = 3
-[[widgets.services]]
-title = "Weather"
-widget = { name = "Weather", config = { latitude = "0.5016", longitude = "117.1265", units = "celsius", refresh_interval = "600" } }
-width = 1
-height = 3
-[[widgets.services]]
+
+[groups.monitoring]
+name = "Monitoring"
+
+[[groups.monitoring.services]]
 title = "This server"
-widget = { name = "SystemStats", config = { node = "self", refresh_interval = "5" } }
-width = 3
+x = 0
+y = 0
+width = 6
 height = 3
-[[widgets.services]]
-title = "NAS"
-widget = { name = "SystemStats", config = { node = "nas", refresh_interval = "15" } }
-width = 3
+widget.name = "SystemStats"
+widget.config.node = "self"
+widget.config.refresh_interval = 5
+
+[[groups.monitoring.services]]
+title = "Weather"
+x = 6
+y = 0
+width = 6
 height = 3
-
-[media]
-name = "Media"
-columns = 6
-
-[[media.services]]
-title = "Jellyfin"
-href = "https://jellyfin.veirt.moe"
-imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/jellyfin.svg"
-ping = { url = "https://jellyfin.veirt.moe" }
-[[media.services]]
-title = "Jellyseerr"
-href = "https://jellyseerr.veirt.moe"
-imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/jellyseerr.svg"
-ping = { url = "https://jellyseerr.veirt.moe" }
-[[media.services]]
-title = "Sonarr"
-imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/sonarr.svg"
-href = "https://sonarr.veirt.moe"
-ping = { url = "https://sonarr.veirt.moe" }
-widget = { name = "SonarrCalendar", config = { url = "https://sonarr.veirt.moe", key = "your-api-key" } }
-[[media.services]]
-title = "Prowlarr"
-href = "https://prowlarr.veirt.moe"
-imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/prowlarr.svg"
-ping = { url = "https://prowlarr.veirt.moe" }
-[[media.services]]
-title = "qBittorrent"
-href = "https://qb.veirt.moe"
-imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/qbittorrent.svg"
-ping = { url = "https://qb.veirt.moe" }
-[[media.services]]
-title = "ShokoServer"
-href = "https://shoko.veirt.moe"
-imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/shoko.svg"
-ping = { url = "https://shoko.veirt.moe" }
-[[media.services]]
-title = "MeTube"
-href = "https://metube.veirt.moe"
-imgSrc = "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/metube.svg"
-ping = { url = "https://metube.veirt.moe" }
-[[media.services]]
-title = "AniDown"
-href = "https://anidown.veirt.moe"
-imgSrc = "https://public.veirt.moe/vesta/icons/anidown.png"
-ping = { url = "https://anidown.veirt.moe" }
-[[media.services]]
-title = "miyo"
-href = "http://miyo.veirt.moe"
-imgSrc = "https://public.veirt.moe/vesta/icons/miyo.png"
-ping = { url = "http://miyo.veirt.moe" }
+widget.name = "Weather"
+widget.config.latitude = "37.7749"
+widget.config.longitude = "-122.4194"
+widget.config.units = "fahrenheit"
+widget.config.refresh_interval = "600"

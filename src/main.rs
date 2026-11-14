@@ -1,12 +1,15 @@
 mod api;
+mod auth;
 mod config;
 mod config_manager;
+mod database;
 mod error;
 mod http_client;
 mod metrics;
 mod ping;
 mod response;
 mod services;
+mod settings_api;
 mod templates;
 mod widget_config;
 mod widget_system;
@@ -15,7 +18,8 @@ mod widgets;
 use std::sync::Arc;
 
 use axum::Router;
-use axum::extract::{Extension, Path, Query};
+use axum::extract::{DefaultBodyLimit, Extension, Path, Query};
+use axum::middleware;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use tower_http::compression::CompressionLayer;
@@ -23,6 +27,7 @@ use tower_http::services::ServeDir;
 use tracing_subscriber::EnvFilter;
 
 use config_manager::ConfigManager;
+use database::Database;
 use error::{VestaError, VestaResult};
 use http_client::create_default_client;
 use metrics::service::NodeService;
@@ -36,20 +41,23 @@ use widgets::sonarr_calendar_widget::SonarrCalendarWidget;
 use widgets::system_stats_widget::SystemStatsWidget;
 use widgets::weather_widget::WeatherWidget;
 
-/// Runtime settings, all overridable for device deployments where editing a
-/// TOML file is harder than setting an env var.
+/// Runtime paths and listener settings. Dashboard configuration is stored in TOML.
 struct Settings {
     config_path: String,
+    database_path: String,
     bind_addr: String,
     static_dir: String,
+    cookie_secure: bool,
 }
 
 impl Settings {
     fn from_env() -> Self {
         Self {
-            config_path: env_or("VESTA_CONFIG", "./config/vesta.toml"),
+            config_path: env_or("VESTA_CONFIG", "./config.toml"),
+            database_path: env_or("VESTA_DATABASE", "./data/vesta.sqlite"),
             bind_addr: env_or("VESTA_BIND", "0.0.0.0:3000"),
             static_dir: env_or("VESTA_STATIC_DIR", "static"),
+            cookie_secure: env_or("VESTA_COOKIE_SECURE", "false") == "true",
         }
     }
 }
@@ -59,16 +67,19 @@ fn env_or(key: &str, default: &str) -> String {
 }
 
 pub struct AppState {
-    config: Arc<ConfigManager>,
-    nodes: Arc<NodeService>,
-    ping: PingService,
-    widget_registry: Arc<WidgetRegistry>,
-    widget_ctx: WidgetContext,
+    pub(crate) config: Arc<ConfigManager>,
+    pub(crate) database: Arc<Database>,
+    pub(crate) nodes: Arc<NodeService>,
+    pub(crate) ping: PingService,
+    pub(crate) widget_registry: Arc<WidgetRegistry>,
+    pub(crate) widget_ctx: WidgetContext,
+    pub(crate) cookie_secure: bool,
 }
 
 impl AppState {
-    fn new(settings: &Settings) -> VestaResult<Arc<Self>> {
+    async fn new(settings: &Settings) -> VestaResult<Arc<Self>> {
         let http_client = create_default_client()?;
+        let database = Arc::new(Database::open(&settings.database_path).await?);
         let widget_registry = Arc::new(
             WidgetRegistry::new()
                 .register(SonarrCalendarWidget::new(http_client.clone()))
@@ -91,10 +102,12 @@ impl AppState {
 
         Ok(Arc::new(Self {
             config,
+            database,
             nodes,
             ping,
             widget_registry,
             widget_ctx,
+            cookie_secure: settings.cookie_secure,
         }))
     }
 }
@@ -111,46 +124,57 @@ async fn widget_handler(
 }
 
 fn build_router(state: Arc<AppState>, static_dir: &str) -> Router {
+    let settings_routes = Router::new()
+        .route(
+            "/api/settings",
+            get(settings_api::get_settings).put(settings_api::save_settings),
+        )
+        .route("/api/settings/icons", post(settings_api::upload_icon))
+        .route("/api/nodes", get(api::list_nodes))
+        .route("/api/services", get(api::get_service))
+        .route("/api/widget", get(api::get_widget))
+        .route_layer(middleware::from_fn(auth::require_admin));
+
     Router::new()
         .route("/api/widgets/{widget_name}", get(widget_handler))
         .route("/api/ping", get(ping_handler))
-        .route("/api/nodes", get(api::list_nodes))
+        .route("/api/dashboard", get(api::dashboard))
+        .route(
+            "/api/dashboard/services",
+            get(templates::dashboard_services),
+        )
+        .route("/api/nodes/events", get(api::node_events))
         .route("/api/nodes/{node_id}/stats", get(api::node_stats))
         .route("/api/health", get(api::health))
-        .route("/api/services", get(api::get_service))
-        .route("/api/widget", get(api::get_widget))
-        .route("/api/config/validate", get(api::validate_config))
-        .route("/api/config/reload", post(api::reload_config))
+        .route("/api/auth/status", get(auth::status))
+        .route("/api/auth/setup", post(auth::setup))
+        .route("/api/auth/login", post(auth::login))
+        .route("/api/auth/logout", post(auth::logout))
+        .route("/api/icons/{icon_id}", get(settings_api::get_icon))
+        .merge(settings_routes)
         .route("/", get(dashboard))
+        .route("/settings", get(dashboard))
         .nest_service("/static", ServeDir::new(static_dir))
+        .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .layer(CompressionLayer::new())
         .layer(Extension(state))
 }
 
-/// SIGINT/SIGTERM end the process; SIGHUP reloads the config in place.
-async fn shutdown_or_reload(config: Arc<ConfigManager>) -> Result<(), VestaError> {
+/// SIGINT/SIGTERM end the process. TOML settings are saved atomically on request.
+async fn shutdown() {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};
         let mut term = signal(SignalKind::terminate()).expect("install SIGTERM handler");
-        let mut hangup = signal(SignalKind::hangup()).expect("install SIGHUP handler");
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {}
             _ = term.recv() => {}
-            _ = hangup.recv() => {
-                if let Err(e) = config.reload() {
-                    tracing::error!(error = %e, "SIGHUP reload failed");
-                }
-                Box::pin(shutdown_or_reload(config)).await?;
-            }
         }
     }
     #[cfg(not(unix))]
     {
-        let _ = &config;
         tokio::signal::ctrl_c().await.ok();
     }
-    Ok(())
 }
 
 #[tokio::main]
@@ -160,7 +184,7 @@ async fn main() {
         .init();
 
     let settings = Settings::from_env();
-    let state = match AppState::new(&settings) {
+    let state = match AppState::new(&settings).await {
         Ok(state) => state,
         Err(e) => {
             tracing::error!(error = %e, "startup failed");
@@ -175,18 +199,13 @@ async fn main() {
 
     tracing::info!(addr = %settings.bind_addr, "vesta listening");
     tracing::debug!(
-        config = %settings.config_path,
+        database = %settings.database_path,
         widgets = ?state.widget_registry.names(),
         "registered widgets"
     );
 
-    let reload_state = state.config.clone();
     axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            if let Err(e) = shutdown_or_reload(reload_state).await {
-                tracing::error!(error = %e, "shutdown handler error");
-            }
-        })
+        .with_graceful_shutdown(shutdown())
         .await
         .expect("server run");
 

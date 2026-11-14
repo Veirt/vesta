@@ -1,6 +1,16 @@
+use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Duration;
 
-use axum::{Extension, extract::Query, response::IntoResponse};
+use async_stream::stream;
+use axum::{
+    Extension,
+    extract::Query,
+    response::{
+        IntoResponse,
+        sse::{Event, KeepAlive, Sse},
+    },
+};
 use serde_json::json;
 
 use crate::{AppState, error::VestaError, response::jsend};
@@ -17,14 +27,8 @@ pub struct HealthQuery {
     pub detailed: bool,
 }
 
-/// One node's current stats: `GET /api/nodes/{id}/stats`.
-pub async fn node_stats(
-    Extension(state): Extension<Arc<AppState>>,
-    axum::extract::Path(id): axum::extract::Path<String>,
-) -> Result<impl IntoResponse, VestaError> {
-    let stats = state.nodes.stats_for(&id).await?;
-    Ok(jsend::success(json!({
-        "node": id,
+fn stats_payload(stats: &crate::metrics::node::NodeStats) -> serde_json::Value {
+    json!({
         "cpu_usage_percent": stats.cpu_usage_percent,
         "memory": {
             "used_bytes": stats.memory_used_bytes,
@@ -37,11 +41,130 @@ pub async fn node_stats(
             "total_bytes": stats.disk_total_bytes,
             "usage_percent": stats.disk_usage_percent(),
         },
-        "load": stats.load.map(|l| json!({
-            "one": l.one, "five": l.five, "fifteen": l.fifteen,
+        "load": stats.load.map(|load| json!({
+            "one": load.one, "five": load.five, "fifteen": load.fifteen,
         })),
         "uptime_secs": stats.uptime_secs,
-    })))
+        "collected_age_secs": stats.collected_at.elapsed().as_secs(),
+    })
+}
+
+fn safe_source_label(endpoint: &str) -> String {
+    let Some(authority) = endpoint
+        .strip_prefix("https://")
+        .or_else(|| endpoint.strip_prefix("http://"))
+        .and_then(|rest| rest.split(['/', '?', '#']).next())
+    else {
+        return "Remote node exporter".to_string();
+    };
+
+    let host = authority.rsplit('@').next().unwrap_or_default();
+    if host.is_empty() {
+        "Remote node exporter".to_string()
+    } else {
+        host.to_string()
+    }
+}
+
+async fn dashboard_payload(state: &AppState) -> serde_json::Value {
+    let config = state.config.snapshot();
+    let mut nodes = Vec::with_capacity(config.nodes.len());
+    for node in &config.nodes {
+        let stats = state.nodes.stats_for(&node.id).await.ok();
+        let scrape_failed = state.nodes.scrape_failed(&node.id).await;
+        let source = if node.is_local() {
+            "Local system metrics".to_string()
+        } else {
+            safe_source_label(&node.endpoint)
+        };
+        nodes.push(json!({
+            "id": node.id,
+            "name": node.name,
+            "hostname": node.hostname,
+            "device_name": node.device_name,
+            "icon": node.icon,
+            "source": source,
+            "interval_secs": node.interval_secs,
+            "scrape_failed": scrape_failed,
+            "stats": if scrape_failed {
+                None
+            } else {
+                stats.as_ref().map(stats_payload)
+            },
+        }));
+    }
+
+    let groups = config
+        .groups
+        .iter()
+        .map(|(id, group)| json!({ "id": id, "name": group.name }))
+        .collect::<Vec<_>>();
+
+    let app = state.config.settings_snapshot().app.clone();
+    json!({ "nodes": nodes, "groups": groups, "app": app })
+}
+
+/// Initial dashboard state: `GET /api/dashboard`.
+pub async fn dashboard(Extension(state): Extension<Arc<AppState>>) -> impl IntoResponse {
+    jsend::success(dashboard_payload(&state).await)
+}
+
+/// Live node scrape updates: `GET /api/nodes/events`.
+/// Each connection receives a full snapshot before incremental node events.
+pub async fn node_events(Extension(state): Extension<Arc<AppState>>) -> impl IntoResponse {
+    let mut updates = state.nodes.subscribe_updates();
+    let mut config_updates = state.config.subscribe_updates();
+    let initial = dashboard_payload(&state).await;
+    let stream = stream! {
+        yield Ok::<Event, Infallible>(Event::default().event("snapshot").data(initial.to_string()));
+
+        loop {
+            tokio::select! {
+                update = updates.recv() => match update {
+                    Ok((id, stats)) => {
+                        let scrape_failed = stats.is_none();
+                        let data = json!({
+                            "id": id,
+                            "stats": stats.as_ref().map(stats_payload),
+                            "scrape_failed": scrape_failed,
+                        });
+                        yield Ok(Event::default().event("node").data(data.to_string()));
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        let snapshot = dashboard_payload(&state).await;
+                        yield Ok(Event::default().event("snapshot").data(snapshot.to_string()));
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                },
+                changed = config_updates.changed() => {
+                    if changed.is_err() {
+                        break;
+                    }
+                    let snapshot = dashboard_payload(&state).await;
+                    yield Ok(Event::default().event("snapshot").data(snapshot.to_string()));
+                }
+            }
+        }
+    };
+
+    Sse::new(stream).keep_alive(
+        KeepAlive::new()
+            .interval(Duration::from_secs(15))
+            .text("keep-alive"),
+    )
+}
+
+/// One node's current stats: `GET /api/nodes/{id}/stats`.
+pub async fn node_stats(
+    Extension(state): Extension<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Result<impl IntoResponse, VestaError> {
+    let stats = state.nodes.stats_for(&id).await?;
+    let mut payload = stats_payload(&stats);
+    if let Some(data) = payload.as_object_mut() {
+        data.insert("node".to_string(), json!(id));
+    }
+    Ok(jsend::success(payload))
 }
 
 /// List configured nodes: `GET /api/nodes`.
@@ -124,22 +247,20 @@ pub async fn health(
     })))
 }
 
-/// Validate configuration without swapping it: `GET /api/config/validate`.
-pub async fn validate_config(
-    Extension(state): Extension<Arc<AppState>>,
-) -> Result<impl IntoResponse, VestaError> {
-    let config = state.config.snapshot();
-    state.widget_registry.validate_dashboard(&config)?;
-    crate::metrics::service::validate_nodes(&config.nodes).map_err(VestaError::Metrics)?;
-    Ok(jsend::success_message("Configuration is valid"))
-}
+#[cfg(test)]
+mod tests {
+    use super::safe_source_label;
 
-/// Reload configuration from disk: `POST /api/config/reload`.
-pub async fn reload_config(
-    Extension(state): Extension<Arc<AppState>>,
-) -> Result<impl IntoResponse, VestaError> {
-    state.config.reload()?;
-    Ok(jsend::success_message(
-        "Configuration reloaded successfully",
-    ))
+    #[test]
+    fn remote_source_label_excludes_credentials_and_path() {
+        assert_eq!(
+            safe_source_label("https://user:pass@example.test:9100/metrics?token=private"),
+            "example.test:9100"
+        );
+    }
+
+    #[test]
+    fn malformed_remote_source_uses_generic_label() {
+        assert_eq!(safe_source_label("metrics.sock"), "Remote node exporter");
+    }
 }

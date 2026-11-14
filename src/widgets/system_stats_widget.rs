@@ -5,7 +5,7 @@ use serde::Deserialize;
 use crate::config::Service;
 use crate::error::VestaResult;
 use crate::widget_system::{
-    WidgetContext, WidgetHandler, WidgetRef, stat_row, usage_bar, widget_scaffold_with,
+    WidgetContext, WidgetField, WidgetHandler, WidgetRef, stat_row, usage_bar, widget_scaffold_with,
 };
 
 #[derive(Clone, Debug, Deserialize)]
@@ -53,13 +53,13 @@ fn stats_body(name: &str, stats: &crate::metrics::node::NodeStats) -> Markup {
         .map(|l| format!("{:.2}", l.one))
         .unwrap_or_else(|| "n/a".to_string());
     html! {
-        div class="space-y-4" {
-            div class="flex items-center justify-between mb-4" {
-                h3 class="text-sm font-semibold text-zinc-100" style="font-family: 'JetBrains Mono', monospace;" {
+        div class="system-stats-widget" {
+            div class="system-stats-heading" {
+                h3 class="widget-title" {
                     (name)
                 }
-                div class="text-xs text-zinc-500 font-mono" {
-                    "load " (load)
+                div class="widget-secondary" {
+                    "Load " (load)
                 }
             }
             (stat_row(
@@ -83,9 +83,9 @@ fn stats_body(name: &str, stats: &crate::metrics::node::NodeStats) -> Markup {
                     fmt_gib(stats.disk_total_bytes)),
                 Some(usage_bar(stats.disk_usage_percent())),
             ))
-            div class="flex justify-between text-xs pt-2 border-t border-zinc-800" {
-                span class="text-zinc-500" { "Uptime" }
-                span class="text-zinc-300 font-mono" { (format_uptime(stats.uptime_secs)) }
+            div class="system-stats-uptime widget-divider" {
+                span class="widget-secondary" { "Uptime" }
+                span class="widget-value" { (format_uptime(stats.uptime_secs)) }
             }
         }
     }
@@ -108,12 +108,39 @@ impl WidgetHandler for SystemStatsWidget {
         "SystemStats"
     }
 
+    fn description(&self) -> &'static str {
+        "Shows CPU, memory, disk, load, and uptime for one configured server."
+    }
+
+    fn fields(&self) -> Vec<WidgetField> {
+        vec![
+            WidgetField {
+                key: "node",
+                label: "Server",
+                kind: "node",
+                required: false,
+                description: "Leave on the first server to follow the configured order.",
+                default: Some(serde_json::json!("")),
+                options: Vec::new(),
+            },
+            WidgetField {
+                key: "refresh_interval",
+                label: "Refresh every (seconds)",
+                kind: "number",
+                required: true,
+                description: "How often this widget requests updated values (1–3600 seconds).",
+                default: Some(serde_json::json!(5)),
+                options: Vec::new(),
+            },
+        ]
+    }
+
     type Config = Config;
 
     fn render(&self, mount: &WidgetRef, service: &Service, config: &Config) -> Markup {
         let frame = html! {
-            div class="flex items-center justify-center h-full" {
-                p class="text-xs text-zinc-500" { "Waiting for first poll…" }
+            div class="widget-loading" {
+                p { "Waiting for first poll…" }
             }
         };
         widget_scaffold_with(
@@ -134,7 +161,7 @@ impl WidgetHandler for SystemStatsWidget {
         let node_id = if config.node.is_empty() {
             ctx.nodes.node_ids().await.first().cloned().ok_or_else(|| {
                 crate::error::VestaError::InvalidWidgetConfig(
-                    "no nodes configured; add a [nodes] entry to vesta.toml".to_string(),
+                    "no nodes configured; add a server in Settings".to_string(),
                 )
             })?
         } else {
@@ -167,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn config_accepts_string_numbers_like_toml() {
+    fn config_accepts_numeric_strings() {
         let config: Config =
             serde_json::from_value(serde_json::json!({"refresh_interval": "10", "node": "nas"}))
                 .unwrap();

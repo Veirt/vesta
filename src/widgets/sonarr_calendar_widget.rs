@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use crate::config::Service;
 use crate::error::{VestaError, VestaResult};
-use crate::widget_system::{WidgetContext, WidgetHandler, WidgetRef, widget_scaffold};
+use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetRef, widget_scaffold};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
@@ -152,6 +152,33 @@ impl WidgetHandler for SonarrCalendarWidget {
         "SonarrCalendar"
     }
 
+    fn description(&self) -> &'static str {
+        "Shows upcoming Sonarr episodes and download status."
+    }
+
+    fn fields(&self) -> Vec<WidgetField> {
+        vec![
+            WidgetField {
+                key: "url",
+                label: "Sonarr URL",
+                kind: "url",
+                required: true,
+                description: "The base URL of your Sonarr server.",
+                default: None,
+                options: Vec::new(),
+            },
+            WidgetField {
+                key: "key",
+                label: "API key",
+                kind: "password",
+                required: true,
+                description: "Stored in config.toml; protect that file as a secret.",
+                default: None,
+                options: Vec::new(),
+            },
+        ]
+    }
+
     type Config = Config;
 
     fn render(&self, mount: &WidgetRef, service: &Service, _config: &Config) -> Markup {
@@ -194,9 +221,9 @@ impl WidgetHandler for SonarrCalendarWidget {
                 }
             } @else {
                 @for (date, entries) in grouped {
-                    div class="flex justify-center py-1.5 my-2 min-w-full rounded bg-zinc-800 border border-zinc-700" {
+                    div class="calendar-date" {
                         a href=(format!("{}/calendar", config.url))
-                            class="font-mono text-xs font-medium text-zinc-300 text-center" {
+                            class="widget-value" {
                             (date)
                         }
                     }
@@ -206,10 +233,10 @@ impl WidgetHandler for SonarrCalendarWidget {
                                 class="line-clamp-1 hover:brightness-125" {
                                 (entry.series.title)
                             }
-                            span class="block text-xs text-zinc-500" {
+                            span class="block widget-secondary" {
                                 (format!("{}x{:02}", entry.season_number, entry.episode_number))
                             }
-                            span class="text-xs text-zinc-600" {
+                            span class="widget-secondary" {
                                 (format_air_time(entry))
                             }
                         }

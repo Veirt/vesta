@@ -5,6 +5,12 @@ services:
     build: .
     ports:
       - 8450:3000
+    environment:
+      VESTA_CONFIG: /data/config.toml
+      VESTA_DATABASE: /data/vesta.sqlite
     volumes:
-      - ./config:/app/config
+      - vesta_data:/data
     restart: unless-stopped
+
+volumes:
+  vesta_data:

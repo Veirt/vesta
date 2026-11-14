@@ -1,5 +1,6 @@
 # Rust build artifacts
 target/
+/data/
 
 # Node.js dependencies
 node_modules/
@@ -7,9 +8,6 @@ node_modules/
 # Git files
 .git
 .gitignore
-
-# Documentation
-docs/
 
 # Editor-specific files
 .vscode/
@@ -25,7 +23,6 @@ Thumbs.db
 # Environment files
 .env
 *.env
-
 # Test files
 tests/
 
@@ -39,3 +36,4 @@ Dockerfile
 docker-compose.yml
 
 static/style.css
+static/ui/

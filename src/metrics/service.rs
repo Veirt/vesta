@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
-use tokio::task::JoinHandle;
+use tokio::sync::{RwLock, broadcast, watch};
+use tokio::task::{JoinHandle, JoinSet};
 
 use crate::error::{MetricsError, VestaError};
 use crate::metrics::local::LocalCollector;
@@ -17,7 +17,10 @@ fn sysinfo_error(e: sysinfo::Error) -> MetricsError {
 /// a fixed interval; shutting down aborts them all (every task is owned).
 pub struct NodeService {
     stats: Arc<RwLock<HashMap<String, NodeStats>>>,
-    pollers: Vec<JoinHandle<()>>,
+    scrape_failures: Arc<RwLock<HashSet<String>>>,
+    updates: broadcast::Sender<(String, Option<NodeStats>)>,
+    configuration: watch::Sender<Vec<NodeConfig>>,
+    supervisor: JoinHandle<()>,
 }
 
 impl NodeService {
@@ -26,21 +29,26 @@ impl NodeService {
         let exporter = Arc::new(NodeExporterCollector::new(client));
         let local = LocalCollector::new();
         let stats: Arc<RwLock<HashMap<String, NodeStats>>> = Arc::new(RwLock::new(HashMap::new()));
+        let scrape_failures = Arc::new(RwLock::new(HashSet::new()));
+        let (updates, _) = broadcast::channel(64);
 
-        let pollers = nodes
-            .iter()
-            .map(|node| {
-                let node = node.clone();
-                let exporter = Arc::clone(&exporter);
-                let local = Arc::clone(&local);
-                let stats = Arc::clone(&stats);
-                tokio::spawn(async move {
-                    poll_loop(node, exporter, local, stats).await;
-                })
-            })
-            .collect();
+        let (configuration, receiver) = watch::channel(nodes.to_vec());
+        let supervisor = tokio::spawn(run_supervisor(
+            receiver,
+            exporter,
+            local,
+            Arc::clone(&stats),
+            Arc::clone(&scrape_failures),
+            updates.clone(),
+        ));
 
-        Arc::new(Self { stats, pollers })
+        Arc::new(Self {
+            stats,
+            scrape_failures,
+            updates,
+            configuration,
+            supervisor,
+        })
     }
 
     pub async fn stats_for(&self, id: &str) -> Result<NodeStats, VestaError> {
@@ -53,15 +61,84 @@ impl NodeService {
     }
 
     pub async fn node_ids(&self) -> Vec<String> {
-        self.stats.read().await.keys().cloned().collect()
+        self.configuration
+            .borrow()
+            .iter()
+            .map(|node| node.id.clone())
+            .collect()
+    }
+
+    pub async fn scrape_failed(&self, id: &str) -> bool {
+        self.scrape_failures.read().await.contains(id)
+    }
+
+    pub fn subscribe_updates(&self) -> broadcast::Receiver<(String, Option<NodeStats>)> {
+        self.updates.subscribe()
+    }
+
+    pub fn reconfigure(&self, nodes: &[NodeConfig]) -> Result<(), MetricsError> {
+        validate_nodes(nodes)?;
+        self.configuration.send_replace(nodes.to_vec());
+        Ok(())
     }
 
     /// Aborts every poller; called on shutdown so no task outlives the service.
     pub fn shutdown(&self) {
-        for handle in &self.pollers {
-            handle.abort();
+        self.supervisor.abort();
+    }
+}
+
+async fn run_supervisor(
+    mut configuration: watch::Receiver<Vec<NodeConfig>>,
+    exporter: Arc<NodeExporterCollector>,
+    local: Arc<LocalCollector>,
+    stats: Arc<RwLock<HashMap<String, NodeStats>>>,
+    scrape_failures: Arc<RwLock<HashSet<String>>>,
+    updates: broadcast::Sender<(String, Option<NodeStats>)>,
+) {
+    let mut pollers = JoinSet::new();
+    loop {
+        let nodes = configuration.borrow_and_update().clone();
+        pollers.abort_all();
+        while pollers.join_next().await.is_some() {}
+
+        let configured_ids: HashSet<_> = nodes.iter().map(|node| node.id.as_str()).collect();
+        stats
+            .write()
+            .await
+            .retain(|id, _| configured_ids.contains(id.as_str()));
+        scrape_failures
+            .write()
+            .await
+            .retain(|id| configured_ids.contains(id.as_str()));
+
+        for node in nodes {
+            let exporter = Arc::clone(&exporter);
+            let local = Arc::clone(&local);
+            let stats = Arc::clone(&stats);
+            let scrape_failures = Arc::clone(&scrape_failures);
+            let updates = updates.clone();
+            pollers.spawn(async move {
+                poll_loop(node, exporter, local, stats, scrape_failures, updates).await;
+            });
+        }
+
+        tokio::select! {
+            changed = configuration.changed() => {
+                if changed.is_err() {
+                    break;
+                }
+            }
+            Some(result) = pollers.join_next(), if !pollers.is_empty() => {
+                if let Err(error) = result {
+                    tracing::error!(%error, "node poller exited unexpectedly");
+                } else {
+                    tracing::error!("node poller exited unexpectedly");
+                }
+            }
         }
     }
+    pollers.abort_all();
 }
 
 async fn poll_loop(
@@ -69,12 +146,15 @@ async fn poll_loop(
     exporter: Arc<NodeExporterCollector>,
     local: Arc<LocalCollector>,
     stats: Arc<RwLock<HashMap<String, NodeStats>>>,
+    scrape_failures: Arc<RwLock<HashSet<String>>>,
+    updates: broadcast::Sender<(String, Option<NodeStats>)>,
 ) {
     let mut ticker = tokio::time::interval(node.interval());
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let local = &local;
     let exporter = &exporter;
     let stats = &stats;
+    let scrape_failures = &scrape_failures;
     loop {
         ticker.tick().await;
         let result = if node.is_local() {
@@ -88,16 +168,26 @@ async fn poll_loop(
         };
 
         match result {
-            Ok(new_stats) => stats.write().await.insert(node.id.clone(), new_stats),
+            Ok(new_stats) => {
+                stats
+                    .write()
+                    .await
+                    .insert(node.id.clone(), new_stats.clone());
+                scrape_failures.write().await.remove(&node.id);
+                let _ = updates.send((node.id.clone(), Some(new_stats)));
+            }
             Err(e) => {
                 tracing::warn!(node = %node.id, error = %e, "node poll failed");
+                scrape_failures.write().await.insert(node.id.clone());
+                stats.write().await.remove(&node.id);
+                let _ = updates.send((node.id.clone(), None));
                 continue;
             }
         };
     }
 }
 
-/// Validates that node ids are unique; config loading calls this once.
+/// Validates that node ids are unique before persistence and poller updates.
 pub fn validate_nodes(nodes: &[NodeConfig]) -> Result<(), MetricsError> {
     let mut ids = std::collections::HashSet::new();
     for node in nodes {
@@ -116,6 +206,9 @@ mod tests {
         NodeConfig {
             id: id.to_string(),
             name: id.to_string(),
+            hostname: None,
+            device_name: None,
+            icon: None,
             endpoint: "local".to_string(),
             interval_secs: 15,
         }
@@ -142,18 +235,39 @@ mod tests {
             ..node("self")
         };
         let service = NodeService::start(&[config], reqwest::Client::new());
-        // First tick lands immediately after spawn; allow scheduler room.
-        tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            loop {
-                if let Ok(stats) = service.stats_for("self").await {
-                    assert!(stats.memory_usage_percent() <= 100.0);
-                    break;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            }
-        })
-        .await
-        .expect("local node should report within 5s");
+        let mut updates = service.subscribe_updates();
+        let (id, stats) = tokio::time::timeout(std::time::Duration::from_secs(5), updates.recv())
+            .await
+            .expect("local node should publish within 5s")
+            .expect("update channel should remain open");
+        assert_eq!(id, "self");
+        let stats = stats.expect("successful scrapes should include metrics");
+        assert!(stats.memory_usage_percent() <= 100.0);
+        assert!(service.stats_for("self").await.is_ok());
+        service.shutdown();
+    }
+
+    #[tokio::test]
+    async fn failed_scrapes_are_published_and_tracked() {
+        let config = NodeConfig {
+            id: "offline".to_string(),
+            name: "Offline".to_string(),
+            hostname: None,
+            device_name: None,
+            icon: None,
+            endpoint: "http://127.0.0.1:1/metrics".to_string(),
+            interval_secs: 1,
+        };
+        let service = NodeService::start(&[config], reqwest::Client::new());
+        let mut updates = service.subscribe_updates();
+        let (id, stats) = tokio::time::timeout(std::time::Duration::from_secs(5), updates.recv())
+            .await
+            .expect("failed scrape should publish within 5s")
+            .expect("update channel should remain open");
+
+        assert_eq!(id, "offline");
+        assert!(stats.is_none());
+        assert!(service.scrape_failed("offline").await);
         service.shutdown();
     }
 }
