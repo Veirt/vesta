@@ -4,12 +4,11 @@ use axum::extract::{Extension, Path, Query};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::AppState;
-use crate::config::{AppSettings, Dashboard, Group, Service};
+use crate::config::{AppSettings, Dashboard, DashboardGroup, DashboardItem};
 use crate::error::{VestaError, VestaResult};
 use crate::metrics::node::NodeConfig;
 use crate::response::jsend;
@@ -18,16 +17,6 @@ use crate::response::jsend;
 pub struct DashboardInput {
     #[serde(default)]
     nodes: Vec<NodeConfig>,
-    #[serde(default)]
-    groups: Vec<GroupInput>,
-}
-
-#[derive(Deserialize)]
-struct GroupInput {
-    id: String,
-    name: String,
-    #[serde(default)]
-    services: Vec<Service>,
 }
 
 #[derive(Deserialize)]
@@ -42,29 +31,32 @@ pub struct IconUploadQuery {
     name: String,
 }
 
+#[derive(Deserialize)]
+pub struct PingTestInput {
+    url: String,
+}
+
+#[derive(Deserialize)]
+pub struct DashboardItemsInput {
+    #[serde(default)]
+    items: Vec<DashboardItem>,
+    groups: Option<Vec<DashboardGroup>>,
+}
+
 pub async fn get_settings(
     Extension(state): Extension<std::sync::Arc<AppState>>,
 ) -> Result<impl IntoResponse, VestaError> {
     let snapshot = state.config.settings_snapshot();
-    let groups = snapshot
-        .dashboard
-        .groups
-        .iter()
-        .map(|(id, group)| {
-            json!({
-                "id": id,
-                "name": group.name,
-                "services": group.services,
-            })
-        })
-        .collect::<Vec<_>>();
     Ok(jsend::success(json!({
         "dashboard": {
             "nodes": snapshot.dashboard.nodes,
-            "groups": groups,
+            "items": snapshot.dashboard.items,
+            "groups": snapshot.dashboard.groups,
         },
         "app": snapshot.app,
-        "widgets": state.widget_registry.descriptors(),
+        "widgets": state.widget_registry.descriptors().into_iter()
+            .filter(|widget| widget.name != "SystemStats")
+            .collect::<Vec<_>>(),
     })))
 }
 
@@ -72,32 +64,48 @@ pub async fn save_settings(
     Extension(state): Extension<std::sync::Arc<AppState>>,
     Json(input): Json<SettingsInput>,
 ) -> VestaResult<impl IntoResponse> {
-    let mut groups = IndexMap::new();
-    for group in input.dashboard.groups {
-        let id = group.id.trim().to_string();
-        if groups
-            .insert(
-                id.clone(),
-                Group {
-                    name: group.name,
-                    services: group.services,
-                },
-            )
-            .is_some()
-        {
-            return Err(VestaError::InvalidDashboard(format!(
-                "service group ID '{id}' is duplicated"
-            )));
-        }
-    }
+    let snapshot = state.config.settings_snapshot();
     let dashboard = Dashboard {
         nodes: input.dashboard.nodes,
-        groups,
+        items: snapshot.dashboard.items.clone(),
+        groups: snapshot.dashboard.groups.clone(),
     };
 
     state.config.save(dashboard.clone(), input.app).await?;
     state.nodes.reconfigure(&dashboard.nodes)?;
     Ok(jsend::success_message("Dashboard settings saved"))
+}
+
+pub async fn save_dashboard_items(
+    Extension(state): Extension<std::sync::Arc<AppState>>,
+    Json(input): Json<DashboardItemsInput>,
+) -> VestaResult<impl IntoResponse> {
+    let snapshot = state.config.settings_snapshot();
+    let dashboard = Dashboard {
+        nodes: snapshot.dashboard.nodes.clone(),
+        items: input.items,
+        groups: input
+            .groups
+            .unwrap_or_else(|| snapshot.dashboard.groups.clone()),
+    };
+    state.config.save(dashboard, snapshot.app.clone()).await?;
+    Ok(jsend::success_message("Dashboard layout saved"))
+}
+
+pub async fn test_ping_url(
+    Extension(state): Extension<std::sync::Arc<AppState>>,
+    Json(input): Json<PingTestInput>,
+) -> VestaResult<impl IntoResponse> {
+    let valid = reqwest::Url::parse(&input.url)
+        .ok()
+        .is_some_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some());
+    if !valid {
+        return Err(VestaError::InvalidDashboard(
+            "availability check must be a valid http(s) URL".to_string(),
+        ));
+    }
+    let up = state.ping.test_url(&input.url).await;
+    Ok(jsend::success(json!({ "up": up })))
 }
 
 pub async fn upload_icon(

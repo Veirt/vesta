@@ -2,52 +2,32 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use maud::{Markup, html};
 use serde::{Serialize, de::DeserializeOwned};
+use serde_json::Value;
 
-use crate::config::{Service, Widget};
+use crate::config::Widget;
 use crate::error::{VestaError, VestaResult};
-
-/// Identifies one widget instance on the dashboard: its group and service
-/// title in the config, which double as its API address. HTML attribute
-/// escaping makes the composed query string safe for any title.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct WidgetRef {
-    pub group: String,
-    pub title: String,
-}
-
-impl WidgetRef {
-    pub fn new(group: impl Into<String>, title: impl Into<String>) -> Self {
-        Self {
-            group: group.into(),
-            title: title.into(),
-        }
-    }
-
-    /// The URL htmx fetches; query values are percent-encoded before markup.
-    pub fn api_path(&self, widget: &str) -> String {
-        let mut url = reqwest::Url::parse("http://vesta.invalid/")
-            .expect("the static URL base must be valid");
-        url.set_path(&format!("/api/widgets/{widget}"));
-        url.query_pairs_mut()
-            .append_pair("group", &self.group)
-            .append_pair("title", &self.title);
-        format!("{}?{}", url.path(), url.query().unwrap_or_default())
-    }
-}
 
 /// Query parameters for widget data requests.
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct WidgetQuery {
-    pub group: String,
-    pub title: String,
+    pub id: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct WidgetResponseData {
+    pub widget: Value,
+    pub refresh_interval_secs: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct WidgetDescriptor {
     pub name: String,
     pub description: &'static str,
+    pub default_width: u8,
+    pub default_height: u8,
+    pub min_width: u8,
+    pub min_height: u8,
     pub fields: Vec<WidgetField>,
 }
 
@@ -70,10 +50,13 @@ pub struct WidgetOption {
     pub label: &'static str,
 }
 
-impl From<WidgetQuery> for WidgetRef {
-    fn from(q: WidgetQuery) -> Self {
-        WidgetRef::new(q.group, q.title)
-    }
+/// A select option resolved at edit time from an external system, for
+/// fields whose choices depend on the widget's own configuration (the
+/// values are not known at startup).
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct DynamicOption {
+    pub value: String,
+    pub label: String,
 }
 
 /// Services a widget may use, passed explicitly instead of global state.
@@ -99,6 +82,16 @@ pub trait WidgetHandler: Send + Sync {
         Vec::new()
     }
 
+    /// Default dashboard dimensions in grid columns and rows.
+    fn default_size(&self) -> (u8, u8) {
+        (4, 2)
+    }
+
+    /// Smallest usable dimensions in grid columns and rows.
+    fn min_size(&self) -> (u8, u8) {
+        (3, 2)
+    }
+
     /// The widget's typed configuration.
     type Config: DeserializeOwned + Send;
 
@@ -107,16 +100,31 @@ pub trait WidgetHandler: Send + Sync {
         parse_widget_options(raw)
     }
 
-    /// Server-side HTML for the widget's shell (the htmx mount point).
-    fn render(&self, mount: &WidgetRef, service: &Service, config: &Self::Config) -> Markup;
+    /// Optional refresh cadence exposed to the client as safe metadata.
+    fn refresh_interval_secs(&self, _config: &Self::Config) -> Option<u64> {
+        None
+    }
 
-    /// Fresh data fragment for htmx to swap into the shell.
+    /// Widget data serialized as JSON for the React renderer.
     async fn handle_request(
         &self,
         ctx: WidgetContext,
-        mount: WidgetRef,
+        query: WidgetQuery,
         config: Self::Config,
-    ) -> VestaResult<Markup>;
+    ) -> VestaResult<Value>;
+
+    /// Options for a dynamic select field, resolved from the widget's
+    /// unsaved form values (`config_json` is the raw options map as typed
+    /// in the editor). Widgets with only static selects need no override.
+    async fn field_options(
+        &self,
+        field: &str,
+        _config_json: &Value,
+    ) -> VestaResult<Vec<DynamicOption>> {
+        Err(VestaError::InvalidWidgetConfig(format!(
+            "field '{field}' has no dynamic options"
+        )))
+    }
 }
 
 /// Typed config plumbing: widget config structs deserialize from the raw
@@ -129,81 +137,6 @@ pub fn parse_widget_options<T: DeserializeOwned>(
     let value = serde_json::to_value(options)
         .map_err(|e| VestaError::InvalidWidgetConfig(format!("widget options: {e}")))?;
     serde_json::from_value(value).map_err(|e| VestaError::InvalidWidgetConfig(format!("{e}")))
-}
-
-/// The shared shell every widget renders into: grid sizing plus an htmx
-/// loader that fetches the data fragment on load, and on an interval when set.
-pub fn widget_scaffold(
-    service: &Service,
-    mount: &WidgetRef,
-    widget: &str,
-    refresh_secs: Option<u64>,
-) -> Markup {
-    widget_scaffold_with(service, mount, widget, refresh_secs, loading_placeholder())
-}
-
-pub fn widget_scaffold_with(
-    service: &Service,
-    mount: &WidgetRef,
-    widget: &str,
-    refresh_secs: Option<u64>,
-    initial: Markup,
-) -> Markup {
-    let trigger = match refresh_secs {
-        Some(secs) => format!("load, every {secs}s"),
-        None => "load".to_string(),
-    };
-    html! {
-        div class="widget-frame service-layout-item"
-            style=(service_layout_style(service)) {
-            div class="h-full"
-                hx-get=(mount.api_path(widget))
-                hx-trigger=(trigger)
-                hx-swap="innerHTML" {
-                (initial)
-            }
-        }
-    }
-}
-
-pub fn loading_placeholder() -> Markup {
-    html! {
-        div class="widget-loading" { "Loading…" }
-    }
-}
-
-/// Small labelled stat row shared by data-heavy widgets.
-pub fn stat_row(label: &str, value: &str, bar: Option<Markup>) -> Markup {
-    html! {
-        div class="widget-stat" {
-            div class="widget-stat-heading" {
-                span { (label) }
-                span class="widget-value" { (value) }
-            }
-            @if let Some(bar) = bar { (bar) }
-        }
-    }
-}
-
-pub fn usage_bar(percent: f64) -> Markup {
-    let percentage = percent.clamp(0.0, 100.0);
-    html! {
-        div class="widget-meter" {
-            div class="widget-meter-fill"
-                style=(format!("width: {percentage}%")) {}
-        }
-    }
-}
-
-pub fn service_layout_style(service: &Service) -> String {
-    let width = service.width.unwrap_or(4).clamp(1, 12);
-    let height = service
-        .height
-        .unwrap_or(if service.widget.is_some() { 2 } else { 1 })
-        .clamp(1, 12);
-    let x = service.x.unwrap_or(0).min(12 - width);
-    let y = service.y.unwrap_or(0).min(10_000);
-    format!("--tile-x:{x};--tile-y:{y};--tile-width:{width};--tile-height:{height};")
 }
 
 /// Registry mapping widget names to handlers. Built once at startup; all
@@ -243,36 +176,34 @@ impl WidgetRegistry {
             .collect()
     }
 
-    /// Render the shell for a service's widget, or an inline error card.
-    pub fn render_widget(&self, mount: &WidgetRef, service: &Service, widget: &Widget) -> Markup {
-        match self.get(&widget.name) {
-            Some(handler) => match handler.render_erased(mount, service, widget) {
-                Ok(markup) => markup,
-                Err(e) => error_card(&format!("widget '{}': {e}", widget.name)),
-            },
-            None => error_card(&format!("unknown widget '{}'", widget.name)),
-        }
+    pub fn refresh_interval_secs(&self, widget: &Widget) -> Option<u64> {
+        self.get(&widget.name)?
+            .refresh_interval_secs(widget)
+            .ok()
+            .flatten()
+    }
+
+    pub fn min_size(&self, name: &str) -> Option<(u8, u8)> {
+        self.get(name).map(|handler| handler.min_size_erased())
     }
 
     /// Validate every widget config in the dashboard against its handler.
     pub fn validate_dashboard(&self, config: &crate::config::Dashboard) -> VestaResult<()> {
-        for (group_id, _, service) in config.services() {
-            if let Some(widget) = &service.widget {
-                let handler = self.get(&widget.name).ok_or_else(|| {
-                    VestaError::InvalidWidgetConfig(format!(
-                        "unknown widget '{}' on service '{}' (group '{group_id}'); available: {}",
-                        widget.name,
-                        service.title,
-                        self.names().join(", ")
-                    ))
-                })?;
-                handler.validate_erased(widget).map_err(|e| {
-                    VestaError::InvalidWidgetConfig(format!(
-                        "widget '{}' on service '{}': {e}",
-                        widget.name, service.title
-                    ))
-                })?;
-            }
+        for widget in config.widgets() {
+            let handler = self.get(&widget.name).ok_or_else(|| {
+                VestaError::InvalidWidgetConfig(format!(
+                    "unknown widget '{}' on tile '{}'; available: {}",
+                    widget.name,
+                    widget.id,
+                    self.names().join(", ")
+                ))
+            })?;
+            handler.validate_erased(widget).map_err(|error| {
+                VestaError::InvalidWidgetConfig(format!(
+                    "widget '{}' on tile '{}': {error}",
+                    widget.name, widget.id
+                ))
+            })?;
         }
         Ok(())
     }
@@ -282,14 +213,30 @@ impl WidgetRegistry {
         widget_name: &str,
         ctx: WidgetContext,
         query: WidgetQuery,
-    ) -> VestaResult<Markup> {
+    ) -> VestaResult<WidgetResponseData> {
         let handler = self
             .get(widget_name)
             .ok_or_else(|| VestaError::WidgetNotFound {
-                group: widget_name.to_string(),
-                title: query.title.clone(),
+                id: query.id.clone(),
             })?;
         handler.handle_erased(ctx, query).await
+    }
+
+    /// Resolve the dynamic options of one widget field from unsaved form
+    /// values (see `WidgetHandler::field_options`).
+    pub async fn field_options(
+        &self,
+        widget_name: &str,
+        field: &str,
+        config_json: &Value,
+    ) -> VestaResult<Vec<DynamicOption>> {
+        let handler = self.get(widget_name).ok_or_else(|| {
+            VestaError::InvalidWidgetConfig(format!(
+                "unknown widget '{widget_name}'; available: {}",
+                self.names().join(", ")
+            ))
+        })?;
+        handler.options_erased(field, config_json).await
     }
 }
 
@@ -304,14 +251,19 @@ impl Default for WidgetRegistry {
 #[async_trait]
 pub trait WidgetHandlerDyn: Send + Sync {
     fn descriptor(&self) -> WidgetDescriptor;
-    fn render_erased(
-        &self,
-        mount: &WidgetRef,
-        service: &Service,
-        widget: &Widget,
-    ) -> VestaResult<Markup>;
     fn validate_erased(&self, widget: &Widget) -> VestaResult<()>;
-    async fn handle_erased(&self, ctx: WidgetContext, query: WidgetQuery) -> VestaResult<Markup>;
+    fn refresh_interval_secs(&self, widget: &Widget) -> VestaResult<Option<u64>>;
+    fn min_size_erased(&self) -> (u8, u8);
+    async fn options_erased(
+        &self,
+        field: &str,
+        config_json: &Value,
+    ) -> VestaResult<Vec<DynamicOption>>;
+    async fn handle_erased(
+        &self,
+        ctx: WidgetContext,
+        query: WidgetQuery,
+    ) -> VestaResult<WidgetResponseData>;
 }
 
 struct DynWidget<W: WidgetHandler + 'static> {
@@ -327,46 +279,61 @@ impl<W: WidgetHandler + 'static> DynWidget<W> {
 #[async_trait]
 impl<W: WidgetHandler + 'static> WidgetHandlerDyn for DynWidget<W> {
     fn descriptor(&self) -> WidgetDescriptor {
+        let (default_width, default_height) = self.inner.default_size();
+        let (min_width, min_height) = self.inner.min_size();
         WidgetDescriptor {
             name: self.inner.name().to_string(),
             description: self.inner.description(),
+            default_width,
+            default_height,
+            min_width,
+            min_height,
             fields: self.inner.fields(),
         }
     }
 
-    fn render_erased(
+    fn min_size_erased(&self) -> (u8, u8) {
+        self.inner.min_size()
+    }
+
+    async fn options_erased(
         &self,
-        mount: &WidgetRef,
-        service: &Service,
-        widget: &Widget,
-    ) -> VestaResult<Markup> {
-        let config = self.inner.parse_config(widget.config.as_ref())?;
-        Ok(self.inner.render(mount, service, &config))
+        field: &str,
+        config_json: &Value,
+    ) -> VestaResult<Vec<DynamicOption>> {
+        self.inner.field_options(field, config_json).await
     }
 
     fn validate_erased(&self, widget: &Widget) -> VestaResult<()> {
         self.inner.parse_config(widget.config.as_ref()).map(|_| ())
     }
 
-    async fn handle_erased(&self, ctx: WidgetContext, query: WidgetQuery) -> VestaResult<Markup> {
-        let mount = WidgetRef::from(query.clone());
+    fn refresh_interval_secs(&self, widget: &Widget) -> VestaResult<Option<u64>> {
+        let config = self.inner.parse_config(widget.config.as_ref())?;
+        Ok(self.inner.refresh_interval_secs(&config))
+    }
+
+    async fn handle_erased(
+        &self,
+        ctx: WidgetContext,
+        query: WidgetQuery,
+    ) -> VestaResult<WidgetResponseData> {
         let widget = ctx
             .config
-            .widget(&query.group, &query.title)?
+            .widget(&query.id)?
             .ok_or_else(|| VestaError::WidgetNotFound {
-                group: query.group.clone(),
-                title: query.title.clone(),
+                id: query.id.clone(),
             })?;
-        let config = self.inner.parse_config(widget.config.as_ref())?;
-        self.inner.handle_request(ctx, mount, config).await
-    }
-}
-
-fn error_card(message: &str) -> Markup {
-    html! {
-        div class="widget-error" {
-            (message)
+        if widget.name != self.inner.name() {
+            return Err(VestaError::WidgetNotFound { id: query.id });
         }
+        let config = self.inner.parse_config(widget.config.as_ref())?;
+        let refresh_interval_secs = self.inner.refresh_interval_secs(&config);
+        let widget = self.inner.handle_request(ctx, query, config).await?;
+        Ok(WidgetResponseData {
+            widget,
+            refresh_interval_secs,
+        })
     }
 }
 
@@ -374,7 +341,6 @@ fn error_card(message: &str) -> Markup {
 mod tests {
     use super::*;
     use crate::config::WidgetConfig;
-    use maud::html;
 
     struct FakeWidget;
 
@@ -398,31 +364,17 @@ mod tests {
 
         type Config = FakeConfig;
 
-        fn render(&self, mount: &WidgetRef, _service: &Service, config: &FakeConfig) -> Markup {
-            html! { div data-node=(config.node) data-refresh=(config.refresh_interval) hx-get=(mount.api_path(self.name())) {} }
+        fn refresh_interval_secs(&self, config: &FakeConfig) -> Option<u64> {
+            Some(config.refresh_interval)
         }
 
         async fn handle_request(
             &self,
             _ctx: WidgetContext,
-            _mount: WidgetRef,
+            _query: WidgetQuery,
             config: FakeConfig,
-        ) -> VestaResult<Markup> {
-            Ok(html! { span { (config.node) } })
-        }
-    }
-
-    fn service_with(widget: Widget) -> Service {
-        Service {
-            title: "svc".to_string(),
-            icon: None,
-            href: None,
-            x: None,
-            y: None,
-            width: None,
-            height: None,
-            widget: Some(widget),
-            ping: None,
+        ) -> VestaResult<Value> {
+            Ok(serde_json::json!({ "node": config.node }))
         }
     }
 
@@ -431,59 +383,39 @@ mod tests {
     }
 
     #[test]
-    fn scaffold_embeds_htmx_attributes_and_grid_span() {
-        let service = Service {
-            title: "svc".to_string(),
-            icon: None,
-            href: None,
-            x: Some(3),
-            y: Some(4),
-            width: Some(2),
-            height: Some(3),
-            widget: None,
-            ping: None,
+    fn refresh_interval_is_derived_from_typed_widget_config() {
+        let registry = WidgetRegistry::new().register(FakeWidget);
+        let widget = Widget {
+            id: "fake".to_string(),
+            title: "Fake".to_string(),
+            name: "Fake".to_string(),
+            group: None,
+            config: Some(options(serde_json::json!({ "refresh_interval": "42" }))),
+            x: None,
+            y: None,
+            width: None,
+            height: None,
         };
-        // maud escapes `&` in attributes; browsers decode it back.
-        let markup = widget_scaffold(&service, &WidgetRef::new("g", "t"), "Fake", Some(30))
-            .0
-            .to_string();
-        assert!(
-            markup.contains("hx-get=\"/api/widgets/Fake?group=g&amp;title=t\""),
-            "{markup}"
-        );
-        assert!(markup.contains("hx-trigger=\"load, every 30s\""));
-        assert!(markup.contains("--tile-x:3"));
-        assert!(markup.contains("--tile-y:4"));
-        assert!(markup.contains("--tile-width:2"));
-        assert!(markup.contains("--tile-height:3"));
-    }
-
-    #[test]
-    fn widget_mount_encodes_user_configured_query_values() {
-        let path = WidgetRef::new("media & home", "A+B #1").api_path("Clock");
-        assert_eq!(
-            path,
-            "/api/widgets/Clock?group=media+%26+home&title=A%2BB+%231"
-        );
+        assert_eq!(registry.refresh_interval_secs(&widget), Some(42));
     }
 
     #[test]
     fn registry_validates_unknown_widget_names() {
         let registry = WidgetRegistry::new().register(FakeWidget);
-        let mut groups = indexmap::IndexMap::new();
-        groups.insert(
-            "g".to_string(),
-            crate::config::Group {
-                name: "G".to_string(),
-                services: vec![service_with(Widget {
-                    name: "Nope".to_string(),
-                    config: None,
-                })],
-            },
-        );
         let dashboard = crate::config::Dashboard {
             nodes: vec![],
-            groups,
+            items: vec![crate::config::DashboardItem::Widget(Widget {
+                id: "bad-widget".to_string(),
+                title: "Bad widget".to_string(),
+                name: "Nope".to_string(),
+                group: None,
+                config: None,
+                x: None,
+                y: None,
+                width: None,
+                height: None,
+            })],
+            groups: vec![],
         };
         let err = registry.validate_dashboard(&dashboard).unwrap_err();
         assert!(err.to_string().contains("unknown widget 'Nope'"), "{err}");
@@ -495,43 +427,46 @@ mod tests {
         let registry = WidgetRegistry::new().register(FakeWidget);
         // refresh_interval as a non-numeric string must fail validation.
         let widget = Widget {
+            id: "fake".to_string(),
+            title: "Fake".to_string(),
             name: "Fake".to_string(),
+            group: None,
             config: Some(options(serde_json::json!({"refresh_interval": "soon"}))),
+            x: None,
+            y: None,
+            width: None,
+            height: None,
         };
-        let service = service_with(widget);
         let err = registry
-            .render_widget(
-                &WidgetRef::new("g", "svc"),
-                &service,
-                service.widget.as_ref().unwrap(),
-            )
-            .0;
-        assert!(err.contains("widget 'Fake'"), "{err}");
+            .get("Fake")
+            .unwrap()
+            .validate_erased(&widget)
+            .unwrap_err();
+        assert!(err.to_string().contains("soon"), "{err}");
     }
 
     #[test]
     fn typed_config_coerces_string_numbers() {
         let widget = Widget {
+            id: "fake".to_string(),
+            title: "Fake".to_string(),
             name: "Fake".to_string(),
+            group: None,
             config: Some(options(serde_json::json!({
                 "node": "nas",
                 "refresh_interval": "42"
             }))),
+            x: None,
+            y: None,
+            width: None,
+            height: None,
         };
         let registry = WidgetRegistry::new().register(FakeWidget);
-        let markup = registry
-            .render_widget(
-                &WidgetRef::new("g", "t"),
-                &service_with(widget),
-                &Widget {
-                    name: "Fake".to_string(),
-                    config: Some(options(serde_json::json!({
-                        "node": "nas", "refresh_interval": "42"
-                    }))),
-                },
-            )
-            .0;
-        assert!(markup.contains("data-node=\"nas\""), "{markup}");
-        assert!(markup.contains("data-refresh=\"42\""), "{markup}");
+        registry
+            .get("Fake")
+            .unwrap()
+            .validate_erased(&widget)
+            .unwrap();
+        assert_eq!(registry.refresh_interval_secs(&widget), Some(42));
     }
 }

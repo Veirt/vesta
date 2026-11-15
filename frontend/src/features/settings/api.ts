@@ -4,6 +4,7 @@ import {
   AuthStatusResponseSchema,
   IconUploadResponseSchema,
   MessageResponseSchema,
+  PingTestResponseSchema,
   SettingsResponseSchema,
   type SettingsData,
   type SettingsPayload,
@@ -50,6 +51,30 @@ async function saveSettings(value: SettingsPayload) {
   await decode(response, MessageResponseSchema);
 }
 
+async function saveDashboardItems(
+  items: SettingsData["dashboard"]["items"],
+  groups: SettingsData["dashboard"]["groups"],
+  signal?: AbortSignal,
+) {
+  const response = await fetch("/api/settings/dashboard", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ items, groups }),
+    signal,
+  });
+  await decode(response, MessageResponseSchema);
+}
+
+async function testPingUrl(url: string, signal?: AbortSignal): Promise<boolean> {
+  const response = await fetch("/api/settings/ping-test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ url }),
+    signal,
+  });
+  return (await decode(response, PingTestResponseSchema)).data.up;
+}
+
 async function submitPassword(mode: "setup" | "login", password: string) {
   const response = await fetch(`/api/auth/${mode}`, {
     method: "POST",
@@ -73,4 +98,13 @@ async function uploadIcon(file: File) {
   return (await decode(response, IconUploadResponseSchema)).data;
 }
 
-export { fetchAuthStatus, fetchSettings, saveSettings, signOut, submitPassword, uploadIcon };
+export {
+  fetchAuthStatus,
+  fetchSettings,
+  saveDashboardItems,
+  saveSettings,
+  signOut,
+  submitPassword,
+  testPingUrl,
+  uploadIcon,
+};

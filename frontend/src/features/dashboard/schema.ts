@@ -36,14 +36,48 @@ const NodeSchema = v.object({
   stats: v.nullable(StatsSchema),
 });
 
-const GroupSchema = v.object({ id: v.string(), name: v.string() });
+const ServiceSchema = v.object({
+  kind: v.literal("service"),
+  id: v.string(),
+  title: v.string(),
+  group: v.nullable(v.string()),
+  icon: v.nullable(v.string()),
+  href: v.nullable(v.string()),
+  show_destination: v.optional(v.boolean(), true),
+  x: v.nullable(v.number()),
+  y: v.nullable(v.number()),
+  width: v.nullable(v.number()),
+  height: v.nullable(v.number()),
+  has_ping: v.boolean(),
+});
+const WidgetSchema = v.object({
+  kind: v.literal("widget"),
+  id: v.string(),
+  title: v.string(),
+  group: v.nullable(v.string()),
+  name: v.string(),
+  x: v.nullable(v.number()),
+  y: v.nullable(v.number()),
+  width: v.nullable(v.number()),
+  height: v.nullable(v.number()),
+  refresh_interval_secs: v.nullable(v.number()),
+});
+const DashboardItemSchema = v.union([ServiceSchema, WidgetSchema]);
+const DashboardGroupSchema = v.object({
+  id: v.string(),
+  title: v.string(),
+  description: v.optional(v.nullable(v.string())),
+  icon: v.optional(v.nullable(v.string())),
+  width: v.optional(v.nullable(v.number())),
+});
 const AppSettingsSchema = v.object({
   dashboard_title: v.string(),
   theme: v.picklist(["system", "light", "dark"]),
 });
 const DashboardDataSchema = v.object({
   nodes: v.array(NodeSchema),
-  groups: v.array(GroupSchema),
+  items: v.array(DashboardItemSchema),
+  groups: v.optional(v.array(DashboardGroupSchema), []),
   app: AppSettingsSchema,
 });
 const DashboardResponseSchema = v.object({
@@ -58,7 +92,10 @@ const NodeEventSchema = v.object({
 
 type Stats = v.InferOutput<typeof StatsSchema>;
 type DashboardNode = v.InferOutput<typeof NodeSchema> & { receivedAt: number | null };
-type DashboardGroup = v.InferOutput<typeof GroupSchema>;
+type DashboardItem = v.InferOutput<typeof DashboardItemSchema>;
+type DashboardService = Extract<DashboardItem, { kind: "service" }>;
+type DashboardWidget = Extract<DashboardItem, { kind: "widget" }>;
+type DashboardGroup = v.InferOutput<typeof DashboardGroupSchema>;
 type DashboardData = v.InferOutput<typeof DashboardDataSchema>;
 type DashboardAppSettings = v.InferOutput<typeof AppSettingsSchema>;
 type NodeEvent = v.InferOutput<typeof NodeEventSchema>;
@@ -87,8 +124,11 @@ export { DashboardDataSchema, NodeEventSchema, fetchDashboard, parseEvent };
 export type {
   DashboardAppSettings,
   DashboardData,
+  DashboardItem,
   DashboardGroup,
+  DashboardService,
   DashboardNode,
+  DashboardWidget,
   NodeEvent,
   Stats,
 };

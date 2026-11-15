@@ -21,7 +21,7 @@ use axum::Router;
 use axum::extract::{DefaultBodyLimit, Extension, Path, Query};
 use axum::middleware;
 use axum::response::IntoResponse;
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use tower_http::compression::CompressionLayer;
 use tower_http::services::ServeDir;
 use tracing_subscriber::EnvFilter;
@@ -32,10 +32,12 @@ use error::{VestaError, VestaResult};
 use http_client::create_default_client;
 use metrics::service::NodeService;
 use ping::ping_handler;
+use response::jsend;
 use services::ping_service::PingService;
 use templates::dashboard;
 use widget_system::{WidgetContext, WidgetQuery, WidgetRegistry};
 use widgets::clock_widget::ClockWidget;
+use widgets::jellyfin_random_show_widget::JellyfinRandomShowWidget;
 use widgets::quick_links_widget::QuickLinksWidget;
 use widgets::sonarr_calendar_widget::SonarrCalendarWidget;
 use widgets::system_stats_widget::SystemStatsWidget;
@@ -83,6 +85,7 @@ impl AppState {
         let widget_registry = Arc::new(
             WidgetRegistry::new()
                 .register(SonarrCalendarWidget::new(http_client.clone()))
+                .register(JellyfinRandomShowWidget::new(http_client.clone()))
                 .register(SystemStatsWidget::new())
                 .register(WeatherWidget::new(http_client.clone()))
                 .register(ClockWidget::new())
@@ -117,10 +120,11 @@ async fn widget_handler(
     Query(query): Query<WidgetQuery>,
     Extension(state): Extension<Arc<AppState>>,
 ) -> Result<impl IntoResponse, VestaError> {
-    state
+    let data = state
         .widget_registry
         .handle_request(&widget_name, state.widget_ctx.clone(), query)
-        .await
+        .await?;
+    Ok(jsend::success(data))
 }
 
 fn build_router(state: Arc<AppState>, static_dir: &str) -> Router {
@@ -130,19 +134,25 @@ fn build_router(state: Arc<AppState>, static_dir: &str) -> Router {
             get(settings_api::get_settings).put(settings_api::save_settings),
         )
         .route("/api/settings/icons", post(settings_api::upload_icon))
+        .route(
+            "/api/settings/dashboard",
+            put(settings_api::save_dashboard_items),
+        )
+        .route("/api/settings/ping-test", post(settings_api::test_ping_url))
         .route("/api/nodes", get(api::list_nodes))
         .route("/api/services", get(api::get_service))
         .route("/api/widget", get(api::get_widget))
+        .route(
+            "/api/widgets/{widget_name}/options",
+            post(api::widget_options),
+        )
         .route_layer(middleware::from_fn(auth::require_admin));
 
     Router::new()
         .route("/api/widgets/{widget_name}", get(widget_handler))
         .route("/api/ping", get(ping_handler))
         .route("/api/dashboard", get(api::dashboard))
-        .route(
-            "/api/dashboard/services",
-            get(templates::dashboard_services),
-        )
+        .route("/api/dashboard/services", get(api::dashboard_services))
         .route("/api/nodes/events", get(api::node_events))
         .route("/api/nodes/{node_id}/stats", get(api::node_stats))
         .route("/api/health", get(api::health))

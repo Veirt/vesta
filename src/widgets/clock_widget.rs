@@ -1,17 +1,21 @@
 use async_trait::async_trait;
-use chrono::{Local, Utc};
-use maud::{Markup, html};
+use chrono::Utc;
 use serde::Deserialize;
+use serde_json::{Value, json};
 
-use crate::config::Service;
 use crate::error::VestaResult;
+use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetOption, WidgetQuery};
 
-use crate::widget_system::{WidgetContext, WidgetHandler, WidgetRef, widget_scaffold_with};
+/// The React client owns the ticking display and formats it in this IANA zone.
+#[derive(Clone, Debug, Deserialize)]
+pub struct Config {
+    #[serde(default = "default_time_zone")]
+    pub time_zone: String,
+}
 
-/// Client-side ticking clock; the server renders the initial frame into the
-/// scaffold (no loading spinner flash) and `app.js` keeps it ticking.
-#[derive(Clone, Debug, Default, Deserialize)]
-pub struct Config {}
+fn default_time_zone() -> String {
+    "UTC".to_string()
+}
 
 pub struct ClockWidget;
 
@@ -27,26 +31,6 @@ impl Default for ClockWidget {
     }
 }
 
-fn clock_markup(now: chrono::DateTime<Local>, utc_now: chrono::DateTime<Utc>) -> Markup {
-    html! {
-        div data-clock class="clock-widget" {
-            div data-clock-time class="clock-time widget-value" {
-                (now.format("%H:%M:%S").to_string())
-            }
-            div data-clock-date class="clock-date widget-secondary" {
-                (now.format("%A, %B %d").to_string())
-            }
-            div class="clock-meta widget-secondary" {
-                div data-clock-year { (now.format("%Y").to_string()) }
-                div data-clock-tz { (now.format("%Z").to_string()) }
-            }
-            div data-clock-utc class="clock-utc widget-secondary widget-divider" {
-                "UTC " (utc_now.format("%H:%M:%S").to_string())
-            }
-        }
-    }
-}
-
 #[async_trait]
 impl WidgetHandler for ClockWidget {
     fn name(&self) -> &'static str {
@@ -54,24 +38,115 @@ impl WidgetHandler for ClockWidget {
     }
 
     fn description(&self) -> &'static str {
-        "Shows your local time, date, time zone, and UTC time."
+        "Shows the current time and date in a configurable time zone."
+    }
+
+    fn fields(&self) -> Vec<WidgetField> {
+        vec![WidgetField {
+            key: "time_zone",
+            label: "Time zone",
+            kind: "select",
+            required: true,
+            description: "Choose the IANA time zone used by this clock.",
+            default: Some(serde_json::json!("UTC")),
+            options: vec![
+                WidgetOption {
+                    value: "UTC",
+                    label: "UTC",
+                },
+                WidgetOption {
+                    value: "America/Los_Angeles",
+                    label: "Los Angeles",
+                },
+                WidgetOption {
+                    value: "America/Denver",
+                    label: "Denver",
+                },
+                WidgetOption {
+                    value: "America/Chicago",
+                    label: "Chicago",
+                },
+                WidgetOption {
+                    value: "America/New_York",
+                    label: "New York",
+                },
+                WidgetOption {
+                    value: "America/Sao_Paulo",
+                    label: "São Paulo",
+                },
+                WidgetOption {
+                    value: "Europe/London",
+                    label: "London",
+                },
+                WidgetOption {
+                    value: "Europe/Paris",
+                    label: "Paris",
+                },
+                WidgetOption {
+                    value: "Europe/Helsinki",
+                    label: "Helsinki",
+                },
+                WidgetOption {
+                    value: "Africa/Johannesburg",
+                    label: "Johannesburg",
+                },
+                WidgetOption {
+                    value: "Asia/Dubai",
+                    label: "Dubai",
+                },
+                WidgetOption {
+                    value: "Asia/Kolkata",
+                    label: "Kolkata",
+                },
+                WidgetOption {
+                    value: "Asia/Singapore",
+                    label: "Singapore",
+                },
+                WidgetOption {
+                    value: "Asia/Tokyo",
+                    label: "Tokyo",
+                },
+                WidgetOption {
+                    value: "Australia/Sydney",
+                    label: "Sydney",
+                },
+            ],
+        }]
+    }
+
+    fn default_size(&self) -> (u8, u8) {
+        (4, 2)
+    }
+
+    fn min_size(&self) -> (u8, u8) {
+        (3, 2)
     }
 
     type Config = Config;
 
-    fn render(&self, mount: &WidgetRef, service: &Service, _config: &Config) -> Markup {
-        // The clock renders its frame directly into the scaffold; htmx swaps
-        // in a fresh frame when the client triggers a reload.
-        let frame = clock_markup(Local::now(), Utc::now());
-        widget_scaffold_with(service, mount, self.name(), None, frame)
-    }
-
     async fn handle_request(
         &self,
         _ctx: WidgetContext,
-        _mount: WidgetRef,
-        _config: Config,
-    ) -> VestaResult<Markup> {
-        Ok(clock_markup(Local::now(), Utc::now()))
+        _query: WidgetQuery,
+        config: Config,
+    ) -> VestaResult<Value> {
+        Ok(json!({
+            "timestamp": Utc::now().to_rfc3339(),
+            "time_zone": config.time_zone,
+        }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_defaults_to_utc_and_accepts_selected_zone() {
+        let default: Config = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(default.time_zone, "UTC");
+        let configured: Config =
+            serde_json::from_value(serde_json::json!({"time_zone": "Asia/Tokyo"})).unwrap();
+        assert_eq!(configured.time_zone, "Asia/Tokyo");
     }
 }

@@ -3,6 +3,7 @@ import { useState, type FormEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { submitPassword } from "@/features/settings/api";
+import { Field } from "@/features/settings/components/form-field";
 import { inputClass, primaryButtonClass } from "@/features/settings/components/styles";
 
 function AuthPanel({
@@ -59,8 +60,7 @@ function AuthPanel({
       </CardHeader>
       <CardContent className="px-5 py-5 sm:px-6">
         <form className="grid gap-4" onSubmit={handleSubmit}>
-          <label className="grid gap-2 text-sm font-medium" htmlFor="admin-password">
-            Password
+          <Field label="Password" required>
             <Input
               id="admin-password"
               type="password"
@@ -71,10 +71,9 @@ function AuthPanel({
               onChange={(event) => setPassword(event.target.value)}
               className={inputClass}
             />
-          </label>
+          </Field>
           {setupRequired && (
-            <label className="grid gap-2 text-sm font-medium" htmlFor="admin-password-confirm">
-              Confirm password
+            <Field label="Confirm password" required>
               <Input
                 id="admin-password-confirm"
                 type="password"
@@ -84,7 +83,7 @@ function AuthPanel({
                 onChange={(event) => setConfirmation(event.target.value)}
                 className={inputClass}
               />
-            </label>
+            </Field>
           )}
           {error && (
             <p

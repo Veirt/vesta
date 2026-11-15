@@ -4,13 +4,14 @@
     "dev": "vp dev",
     "build": "vp build",
     "preview": "vp preview",
-    "check": "vp check frontend/src vite.config.ts package.json components.json tsconfig.json frontend/index.html src/style.css static/app.js && tsc --noEmit",
-    "fmt": "vp fmt frontend/src vite.config.ts package.json components.json tsconfig.json frontend/index.html src/style.css static/app.js",
+    "check": "vp check frontend/src vite.config.ts package.json components.json tsconfig.json frontend/index.html src/style.css && tsc --noEmit",
+    "fmt": "vp fmt frontend/src vite.config.ts package.json components.json tsconfig.json frontend/index.html src/style.css",
     "lint": "vp lint frontend/src vite.config.ts"
   },
   "dependencies": {
     "@tabler/icons-react": "^3.51.0",
     "cn": "^0.5.2",
+    "radix-ui": "^1.8.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-grid-layout": "^2.3.0",

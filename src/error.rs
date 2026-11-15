@@ -29,14 +29,11 @@ pub enum VestaError {
     #[error("HTTP request failed: {0}")]
     Http(#[from] reqwest::Error),
 
-    #[error("Service not found: group='{group}', title='{title}'")]
-    ServiceNotFound { group: String, title: String },
+    #[error("Service not found: id='{id}'")]
+    ServiceNotFound { id: String },
 
-    #[error("Widget not found: group='{group}', title='{title}'")]
-    WidgetNotFound { group: String, title: String },
-
-    #[error("Widget configuration missing for service '{service}'")]
-    MissingWidgetConfig { service: String },
+    #[error("Widget not found: id='{id}'")]
+    WidgetNotFound { id: String },
 
     #[error("Invalid widget config: {0}")]
     InvalidWidgetConfig(String),
@@ -68,9 +65,6 @@ impl IntoResponse for VestaError {
             VestaError::Http(_) => (StatusCode::BAD_GATEWAY, "external_service_error"),
             VestaError::ServiceNotFound { .. } => (StatusCode::NOT_FOUND, "service_not_found"),
             VestaError::WidgetNotFound { .. } => (StatusCode::NOT_FOUND, "widget_not_found"),
-            VestaError::MissingWidgetConfig { .. } => {
-                (StatusCode::BAD_REQUEST, "missing_widget_config")
-            }
             VestaError::InvalidWidgetConfig(_) => {
                 (StatusCode::BAD_REQUEST, "invalid_widget_config")
             }

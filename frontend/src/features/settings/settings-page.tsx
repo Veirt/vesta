@@ -69,12 +69,19 @@ function SettingsPage() {
             </span>
             <span className="text-sm font-medium">Vesta</span>
           </a>
-          <a
-            className="inline-flex min-h-10 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            href="/"
-          >
-            <IconArrowLeft size={17} stroke={1.8} aria-hidden="true" /> Back to dashboard
-          </a>
+          <nav aria-label="Settings navigation" className="flex flex-wrap items-center gap-2">
+            <a
+              className="inline-flex min-h-10 items-center gap-2 px-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+              href="/"
+            >
+              <IconArrowLeft size={17} stroke={1.8} aria-hidden="true" /> Back to dashboard
+            </a>
+            {status?.authenticated && (
+              <button className={buttonClass} type="button" onClick={handleSignOut}>
+                Sign out
+              </button>
+            )}
+          </nav>
         </header>
 
         {authError && (
@@ -100,7 +107,7 @@ function SettingsPage() {
             </CardContent>
           </Card>
         ) : status.authenticated ? (
-          <SettingsEditor onSignOut={handleSignOut} />
+          <SettingsEditor />
         ) : (
           <AuthPanel setupRequired={status.setup_required} onSuccess={handleAuthenticated} />
         )}

@@ -5,7 +5,7 @@ use std::time::Duration;
 use async_stream::stream;
 use axum::{
     Extension,
-    extract::Query,
+    extract::{Path, Query},
     response::{
         IntoResponse,
         sse::{Event, KeepAlive, Sse},
@@ -13,18 +13,40 @@ use axum::{
 };
 use serde_json::json;
 
-use crate::{AppState, error::VestaError, response::jsend};
+use crate::{AppState, error::VestaError, response::jsend, widget_system::WidgetQuery};
 
 #[derive(serde::Deserialize)]
 pub struct ServiceQuery {
-    pub group: String,
-    pub title: String,
+    pub id: String,
 }
 
 #[derive(serde::Deserialize)]
 pub struct HealthQuery {
     #[serde(default)]
     pub detailed: bool,
+}
+
+/// Body of `POST /api/widgets/{name}/options`: the edited widget's field key
+/// and its unsaved options map.
+#[derive(serde::Deserialize)]
+pub struct WidgetOptionsRequest {
+    pub field: String,
+    #[serde(default)]
+    pub config: serde_json::Value,
+}
+
+/// Options for a widget's dynamic select field, resolved from unsaved form
+/// values against the external system the widget talks to.
+pub async fn widget_options(
+    Path(widget_name): Path<String>,
+    Extension(state): Extension<Arc<AppState>>,
+    axum::Json(request): axum::Json<WidgetOptionsRequest>,
+) -> Result<impl IntoResponse, VestaError> {
+    let options = state
+        .widget_registry
+        .field_options(&widget_name, &request.field, &request.config)
+        .await?;
+    Ok(jsend::success(json!({ "options": options })))
 }
 
 fn stats_payload(stats: &crate::metrics::node::NodeStats) -> serde_json::Value {
@@ -94,19 +116,59 @@ async fn dashboard_payload(state: &AppState) -> serde_json::Value {
         }));
     }
 
-    let groups = config
-        .groups
-        .iter()
-        .map(|(id, group)| json!({ "id": id, "name": group.name }))
-        .collect::<Vec<_>>();
+    let items = dashboard_items_payload(state, &config);
 
     let app = state.config.settings_snapshot().app.clone();
-    json!({ "nodes": nodes, "groups": groups, "app": app })
+    json!({ "nodes": nodes, "items": items, "groups": config.groups, "app": app })
+}
+
+fn dashboard_items_payload(
+    state: &AppState,
+    config: &crate::config::Dashboard,
+) -> Vec<serde_json::Value> {
+    config
+        .items
+        .iter()
+        .map(|item| match item {
+            crate::config::DashboardItem::Service(service) => json!({
+                "kind": "service",
+                "id": service.id,
+                "title": service.title,
+                "group": service.group,
+                "icon": service.icon,
+                "href": service.href,
+                "show_destination": service.show_destination,
+                "x": service.x,
+                "y": service.y,
+                "width": service.width,
+                "height": service.height,
+                "has_ping": service.ping.is_some(),
+            }),
+            crate::config::DashboardItem::Widget(widget) => json!({
+                "kind": "widget",
+                "id": widget.id,
+                "title": widget.title,
+                "group": widget.group,
+                "name": widget.name,
+                "x": widget.x,
+                "y": widget.y,
+                "width": widget.width,
+                "height": widget.height,
+                "refresh_interval_secs": state.widget_registry.refresh_interval_secs(widget),
+            }),
+        })
+        .collect()
 }
 
 /// Initial dashboard state: `GET /api/dashboard`.
 pub async fn dashboard(Extension(state): Extension<Arc<AppState>>) -> impl IntoResponse {
     jsend::success(dashboard_payload(&state).await)
+}
+
+/// Configured service layout without server-side markup or widget secrets.
+pub async fn dashboard_services(Extension(state): Extension<Arc<AppState>>) -> impl IntoResponse {
+    let config = state.config.snapshot();
+    jsend::success(json!({ "items": dashboard_items_payload(&state, &config) }))
 }
 
 /// Live node scrape updates: `GET /api/nodes/events`.
@@ -186,27 +248,24 @@ pub async fn get_service(
     Extension(state): Extension<Arc<AppState>>,
 ) -> Result<impl IntoResponse, VestaError> {
     let config = state.config.snapshot();
-    let service =
-        config
-            .service(&query.group, &query.title)
-            .ok_or_else(|| VestaError::ServiceNotFound {
-                group: query.group.clone(),
-                title: query.title.clone(),
-            })?;
+    let service = config
+        .service(&query.id)
+        .ok_or_else(|| VestaError::ServiceNotFound {
+            id: query.id.clone(),
+        })?;
     Ok(jsend::success(json!({ "service": service })))
 }
 
 /// Get widget information.
 pub async fn get_widget(
-    Query(query): Query<ServiceQuery>,
+    Query(query): Query<WidgetQuery>,
     Extension(state): Extension<Arc<AppState>>,
 ) -> Result<impl IntoResponse, VestaError> {
     let widget = state
         .config
-        .widget(&query.group, &query.title)?
+        .widget(&query.id)?
         .ok_or_else(|| VestaError::WidgetNotFound {
-            group: query.group.clone(),
-            title: query.title.clone(),
+            id: query.id.clone(),
         })?;
     Ok(jsend::success(json!({ "widget": widget })))
 }
@@ -224,25 +283,25 @@ pub async fn health(
     let total_services = config.services().count();
     let services_with_ping = config
         .services()
-        .filter(|(_, _, s)| s.ping.is_some())
+        .filter(|service| service.ping.is_some())
         .count();
-    let widgets_by_group = config
-        .services()
-        .filter_map(|(_, _, s)| s.widget.as_ref().map(|w| w.name.clone()))
+    let widgets_in_use = config
+        .widgets()
+        .map(|widget| widget.name.clone())
         .collect::<Vec<_>>();
 
     Ok(jsend::success(json!({
         "status": "healthy",
         "version": env!("CARGO_PKG_VERSION"),
         "statistics": {
-            "total_groups": config.groups.len(),
             "total_services": total_services,
+            "total_widgets": widgets_in_use.len(),
             "services_with_ping": services_with_ping,
             "nodes": config.nodes.len(),
         },
         "widgets": {
             "registered": state.widget_registry.names(),
-            "in_use": widgets_by_group,
+            "in_use": widgets_in_use,
         }
     })))
 }

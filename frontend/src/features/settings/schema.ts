@@ -14,25 +14,39 @@ const NodeSettingsSchema = v.object({
   endpoint: v.string(),
   interval_secs: v.number(),
 });
-const WidgetSettingsSchema = v.object({
-  name: v.string(),
-  config: v.nullable(v.record(v.string(), v.unknown())),
-});
 const ServiceSettingsSchema = v.object({
+  kind: v.literal("service"),
+  id: v.string(),
   title: v.string(),
+  group: v.optional(v.nullable(v.string())),
   href: v.nullable(v.string()),
+  show_destination: v.optional(v.boolean(), true),
   icon: v.optional(v.nullable(v.string())),
   x: v.optional(v.nullable(v.number())),
   y: v.optional(v.nullable(v.number())),
-  width: v.nullable(v.number()),
-  height: v.nullable(v.number()),
-  widget: v.nullable(WidgetSettingsSchema),
-  ping: v.nullable(v.object({ url: v.string() })),
+  width: v.optional(v.nullable(v.number())),
+  height: v.optional(v.nullable(v.number())),
+  ping: v.optional(v.nullable(v.object({ url: v.string() }))),
 });
-const GroupSettingsSchema = v.object({
+const WidgetInstanceSettingsSchema = v.object({
+  kind: v.literal("widget"),
   id: v.string(),
+  title: v.string(),
+  group: v.optional(v.nullable(v.string())),
   name: v.string(),
-  services: v.array(ServiceSettingsSchema),
+  config: v.optional(v.nullable(v.record(v.string(), v.unknown()))),
+  x: v.optional(v.nullable(v.number())),
+  y: v.optional(v.nullable(v.number())),
+  width: v.optional(v.nullable(v.number())),
+  height: v.optional(v.nullable(v.number())),
+});
+const DashboardItemSettingsSchema = v.union([ServiceSettingsSchema, WidgetInstanceSettingsSchema]);
+const DashboardGroupSettingsSchema = v.object({
+  id: v.string(),
+  title: v.string(),
+  description: v.optional(v.nullable(v.string())),
+  icon: v.optional(v.nullable(v.string())),
+  width: v.optional(v.nullable(v.number())),
 });
 const UploadedIconSchema = v.object({
   id: v.number(),
@@ -53,12 +67,17 @@ const WidgetFieldSchema = v.object({
 const WidgetDescriptorSchema = v.object({
   name: v.string(),
   description: v.string(),
+  default_width: v.number(),
+  default_height: v.number(),
+  min_width: v.number(),
+  min_height: v.number(),
   fields: v.array(WidgetFieldSchema),
 });
 const SettingsDataSchema = v.object({
   dashboard: v.object({
     nodes: v.array(NodeSettingsSchema),
-    groups: v.array(GroupSettingsSchema),
+    items: v.array(DashboardItemSettingsSchema),
+    groups: v.optional(v.array(DashboardGroupSettingsSchema), []),
   }),
   app: AppSettingsSchema,
   widgets: v.array(WidgetDescriptorSchema),
@@ -78,6 +97,10 @@ const MessageResponseSchema = v.object({
   status: v.literal("success"),
   data: v.object({ message: v.string() }),
 });
+const PingTestResponseSchema = v.object({
+  status: v.literal("success"),
+  data: v.object({ up: v.boolean() }),
+});
 const IconUploadResponseSchema = v.object({
   status: v.literal("success"),
   data: UploadedIconSchema,
@@ -88,11 +111,16 @@ type Theme = v.InferOutput<typeof ThemeSchema>;
 type AppSettings = v.InferOutput<typeof AppSettingsSchema>;
 type NodeSettings = v.InferOutput<typeof NodeSettingsSchema>;
 type ServiceSettings = v.InferOutput<typeof ServiceSettingsSchema>;
-type GroupSettings = v.InferOutput<typeof GroupSettingsSchema>;
+type WidgetInstanceSettings = v.InferOutput<typeof WidgetInstanceSettingsSchema>;
+type DashboardItemSettings = v.InferOutput<typeof DashboardItemSettingsSchema>;
+type DashboardGroupSettings = v.InferOutput<typeof DashboardGroupSettingsSchema>;
 type WidgetDescriptor = v.InferOutput<typeof WidgetDescriptorSchema>;
 type WidgetField = v.InferOutput<typeof WidgetFieldSchema>;
 type SettingsData = v.InferOutput<typeof SettingsDataSchema>;
-type SettingsPayload = Pick<SettingsData, "dashboard" | "app">;
+type SettingsPayload = {
+  dashboard: { nodes: NodeSettings[] };
+  app: AppSettings;
+};
 type AuthStatus = v.InferOutput<typeof AuthStatusResponseSchema>["data"];
 
 export {
@@ -100,16 +128,19 @@ export {
   AuthStatusResponseSchema,
   IconUploadResponseSchema,
   MessageResponseSchema,
+  PingTestResponseSchema,
   SettingsResponseSchema,
 };
 export type {
   AppSettings,
   AuthStatus,
-  GroupSettings,
+  DashboardItemSettings,
+  DashboardGroupSettings,
+  ServiceSettings,
+  WidgetInstanceSettings,
   WidgetDescriptor,
   WidgetField,
   NodeSettings,
-  ServiceSettings,
   SettingsData,
   SettingsPayload,
   Theme,

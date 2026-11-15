@@ -1,5 +1,6 @@
 /target
 /data/
+/artifacts/verification/
 /config.toml
 node_modules
 static/style.css

@@ -13,14 +13,14 @@ function AppearanceSection({
 }) {
   return (
     <Card className="gap-0 border-border/70 bg-card/60 py-0 shadow-none">
-      <CardHeader className="border-b border-border/70 px-5 py-4 sm:px-6">
+      <CardHeader className="border-b border-border/70 px-4 py-4 sm:px-6">
         <CardTitle className="text-base font-semibold">Appearance</CardTitle>
         <p className="text-sm text-muted-foreground">
           Set the name shown on the dashboard and choose a color theme.
         </p>
       </CardHeader>
-      <CardContent className="grid gap-5 px-5 py-5 sm:grid-cols-2 sm:px-6">
-        <Field label="Dashboard title">
+      <CardContent className="grid min-w-0 gap-5 px-4 py-4 sm:grid-cols-2 sm:px-6 sm:py-5">
+        <Field label="Dashboard title" required>
           <Input
             value={settings.dashboard_title}
             maxLength={80}

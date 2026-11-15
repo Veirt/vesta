@@ -181,6 +181,7 @@ fn disk_usage(samples: &[Sample]) -> Result<DiskUsage, MetricsError> {
         .iter()
         .find(|s| {
             s.metric == "node_filesystem_size_bytes"
+                && s.labels.get("mountpoint") == Some("/")
                 && s.labels
                     .get("fstype")
                     .is_some_and(|f| f != "tmpfs" && f != "squashfs")
@@ -215,4 +216,29 @@ fn boot_time_to_uptime(boot_time_secs: f64) -> u64 {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     now_secs.saturating_sub(boot_time_secs as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disk_usage_selects_root_even_when_boot_is_listed_first() {
+        let exposition = [
+            "# TYPE node_filesystem_size_bytes gauge",
+            "node_filesystem_size_bytes{device=\"/dev/sda1\",fstype=\"ext4\",mountpoint=\"/boot\"} 1000",
+            "node_filesystem_avail_bytes{device=\"/dev/sda1\",fstype=\"ext4\",mountpoint=\"/boot\"} 400",
+            "node_filesystem_size_bytes{device=\"/dev/mapper/root\",fstype=\"ext4\",mountpoint=\"/\"} 10000",
+            "node_filesystem_avail_bytes{device=\"/dev/mapper/root\",fstype=\"ext4\",mountpoint=\"/\"} 2500",
+        ];
+        let samples = Scrape::parse(exposition.into_iter().map(|line| Ok(line.to_string())))
+            .unwrap()
+            .samples;
+
+        let disk = disk_usage(&samples).unwrap();
+
+        assert_eq!(disk.mount, "/");
+        assert_eq!(disk.total, 10_000.0);
+        assert_eq!(disk.used, 7_500.0);
+    }
 }

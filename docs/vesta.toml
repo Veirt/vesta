@@ -21,50 +21,68 @@ device_name = "Synology NAS"
 endpoint = "http://nas.home.arpa:9100/metrics"
 interval_secs = 15
 
-[groups.productivity]
-name = "Productivity"
+[[groups]]
+id = "home"
+title = "Home"
+description = "At a glance"
+width = 8
 
-[[groups.productivity.services]]
+[[groups]]
+id = "media"
+title = "Media"
+description = "Streaming services and tools"
+
+[[items]]
+kind = "widget"
+id = "clock"
 title = "Clock"
+name = "Clock"
+group = "home"
 x = 0
 y = 0
 width = 4
 height = 2
-widget.name = "Clock"
 
-[[groups.productivity.services]]
+[[items]]
+kind = "widget"
+id = "quick-links"
 title = "Quick links"
+name = "QuickLinks"
+group = "home"
 x = 4
 y = 0
 width = 8
 height = 2
-widget.name = "QuickLinks"
-widget.config.links = [
+config.links = [
   { title = "Vesta on GitHub", url = "https://github.com/veirt/vesta", icon = "https://github.githubassets.com/favicons/favicon.svg" },
   { title = "Synology", url = "https://nas.home.arpa", icon = "" },
 ]
 
-[groups.monitoring]
-name = "Monitoring"
-
-[[groups.monitoring.services]]
-title = "This server"
-x = 0
-y = 0
-width = 6
-height = 3
-widget.name = "SystemStats"
-widget.config.node = "self"
-widget.config.refresh_interval = 5
-
-[[groups.monitoring.services]]
+[[items]]
+kind = "widget"
+id = "weather"
 title = "Weather"
+name = "Weather"
+group = "home"
 x = 6
-y = 0
+y = 2
 width = 6
 height = 3
-widget.name = "Weather"
-widget.config.latitude = "37.7749"
-widget.config.longitude = "-122.4194"
-widget.config.units = "fahrenheit"
-widget.config.refresh_interval = "600"
+config.latitude = "37.7749"
+config.longitude = "-122.4194"
+config.units = "fahrenheit"
+config.refresh_interval = "600"
+
+[[items]]
+kind = "service"
+id = "jellyfin"
+title = "Jellyfin"
+group = "media"
+href = "https://media.home.arpa"
+show_destination = true
+icon = "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/jellyfin.svg"
+x = 0
+y = 5
+width = 4
+height = 1
+ping.url = "https://media.home.arpa/health"

@@ -1,4 +1,10 @@
-import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from "@tabler/icons-react";
+import {
+  IconArrowDown,
+  IconArrowUp,
+  IconChevronDown,
+  IconPlus,
+  IconTrash,
+} from "@tabler/icons-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/features/settings/components/form-field";
@@ -29,7 +35,7 @@ function NodesSection({
 }) {
   return (
     <Card className="gap-0 border-border/70 bg-card/60 py-0 shadow-none">
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b border-border/70 px-5 py-4 sm:px-6">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b border-border/70 px-4 py-4 sm:px-6">
         <div className="space-y-1">
           <CardTitle className="text-base font-semibold">Servers</CardTitle>
           <p className="text-sm text-muted-foreground">
@@ -40,7 +46,7 @@ function NodesSection({
           <IconPlus size={16} aria-hidden="true" /> Add server
         </button>
       </CardHeader>
-      <CardContent className="grid gap-3 px-5 py-5 sm:px-6">
+      <CardContent className="grid min-w-0 gap-3 px-4 py-4 sm:px-6 sm:py-5">
         {nodes.length === 0 && (
           <p className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
             No servers yet. Add a local host or a node_exporter endpoint to show telemetry.
@@ -69,14 +75,17 @@ function NodesSection({
                   {node.name || "New server"}
                 </span>
                 <span className="block truncate text-xs text-muted-foreground">
-                  {[node.hostname, node.device_name, node.id].filter(Boolean).join(" · ")}
+                  {[node.hostname, node.device_name].filter(Boolean).join(" · ") ||
+                    "Metrics source"}
                 </span>
               </span>
-              <span className="text-xs text-muted-foreground group-open:hidden">Edit</span>
-              <span className="hidden text-xs text-muted-foreground group-open:inline">Close</span>
+              <IconChevronDown
+                className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+                aria-hidden="true"
+              />
             </summary>
             <div className="grid gap-4 border-t border-border/70 p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-3">
-              <Field label="Server name">
+              <Field label="Server name" required>
                 <Input
                   value={node.name}
                   required
@@ -100,15 +109,7 @@ function NodesSection({
                   className={inputClass}
                 />
               </Field>
-              <Field label="Server ID">
-                <Input
-                  value={node.id}
-                  required
-                  onChange={(event) => onChange(index, { id: event.target.value })}
-                  className={inputClass}
-                />
-              </Field>
-              <Field label="Metrics endpoint">
+              <Field label="Metrics endpoint" required>
                 <Input
                   value={node.endpoint}
                   required
@@ -117,7 +118,7 @@ function NodesSection({
                   className={inputClass}
                 />
               </Field>
-              <Field label="Poll interval (seconds)">
+              <Field label="Poll interval (seconds)" required>
                 <Input
                   type="number"
                   min={1}
@@ -131,6 +132,7 @@ function NodesSection({
                 />
               </Field>
               <IconField
+                className="sm:col-span-2 lg:col-span-3"
                 value={node.icon ?? ""}
                 uploading={uploading}
                 onChange={(icon) => onChange(index, { icon })}

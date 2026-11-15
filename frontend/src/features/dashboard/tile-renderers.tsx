@@ -1,0 +1,703 @@
+import { IconPhotoOff, IconStarFilled } from "@tabler/icons-react";
+import { useEffect, type CSSProperties, type ReactNode, useMemo, useState } from "react";
+import type { DashboardService, DashboardWidget } from "@/features/dashboard/schema";
+
+type WidgetData = Record<string, unknown>;
+
+function layoutStyle(item: DashboardService | DashboardWidget): CSSProperties {
+  const width = Math.max(1, Math.min(12, item.width ?? 4));
+  return {
+    "--tile-x": Math.min(item.x ?? 0, 12 - width),
+    "--tile-y": Math.min(item.y ?? 0, 10_000),
+    "--tile-width": width,
+    "--tile-height": Math.max(1, Math.min(12, item.height ?? (item.kind === "widget" ? 2 : 1))),
+  } as CSSProperties;
+}
+
+function useWidgetData(widgetName: string, itemId: string, refreshInterval: number | null) {
+  const [data, setData] = useState<WidgetData | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    const params = new URLSearchParams({ id: itemId });
+    const load = async () => {
+      try {
+        const response = await fetch(
+          `/api/widgets/${encodeURIComponent(widgetName)}?${params.toString()}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        const result: unknown = await response.json();
+        // Non-success responses carry a jsend "error" body whose message
+        // names what went wrong; prefer it over a bare status code.
+        const asMessage = (candidate: unknown): string | null =>
+          typeof candidate === "object" &&
+          candidate !== null &&
+          typeof (candidate as { message?: unknown }).message === "string"
+            ? ((candidate as { message: string }).message as string)
+            : null;
+        if (!response.ok) {
+          throw new Error(asMessage(result) ?? `Widget request failed (${response.status})`);
+        }
+        if (
+          !result ||
+          typeof result !== "object" ||
+          !("status" in result) ||
+          result.status !== "success" ||
+          !("data" in result) ||
+          !result.data ||
+          typeof result.data !== "object" ||
+          !("widget" in result.data) ||
+          !result.data.widget ||
+          typeof result.data.widget !== "object"
+        ) {
+          throw new Error("The server returned invalid widget data");
+        }
+        if (active) {
+          setData(result.data.widget as WidgetData);
+          setError("");
+        }
+      } catch (cause) {
+        if (active && !(cause instanceof DOMException && cause.name === "AbortError")) {
+          setError(cause instanceof Error ? cause.message : "Widget data could not be loaded");
+        }
+      }
+    };
+
+    void load();
+    const interval =
+      refreshInterval && refreshInterval > 0
+        ? window.setInterval(() => void load(), refreshInterval * 1_000)
+        : undefined;
+
+    return () => {
+      active = false;
+      controller.abort();
+      if (interval !== undefined) window.clearInterval(interval);
+    };
+  }, [widgetName, itemId, refreshInterval]);
+
+  return { data, error };
+}
+
+function PingStatus({ id }: { id: string }) {
+  const [isUp, setIsUp] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    const params = new URLSearchParams({ id });
+    const check = async () => {
+      try {
+        const response = await fetch(`/api/ping?${params.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const result = (await response.json()) as {
+          status?: string;
+          data?: { up?: unknown };
+        };
+        if (response.ok && result.status === "success" && typeof result.data?.up === "boolean") {
+          if (active) setIsUp(result.data.up);
+        }
+      } catch {
+        if (active) setIsUp(false);
+      }
+    };
+
+    void check();
+    const interval = window.setInterval(() => void check(), 30_000);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearInterval(interval);
+    };
+  }, [id]);
+
+  return (
+    <span
+      className="service-ping"
+      data-up={isUp === null ? undefined : String(isUp)}
+      aria-label={
+        isUp === null ? "Checking service status" : isUp ? "Service online" : "Service unavailable"
+      }
+      role="status"
+    >
+      <span className="status-dot" aria-hidden="true" />
+    </span>
+  );
+}
+
+function ServiceCard({
+  service,
+  editing = false,
+}: {
+  service: DashboardService;
+  editing?: boolean;
+}) {
+  const content = (
+    <>
+      {service.icon ? (
+        <img className="service-icon" src={service.icon} alt="" loading="lazy" decoding="async" />
+      ) : (
+        <span className="service-icon-fallback" aria-hidden="true">
+          {service.title.charAt(0).toLocaleUpperCase() || "S"}
+        </span>
+      )}
+      <span className="service-copy">
+        <span className="service-title">{service.title}</span>
+        {service.href && service.show_destination && (
+          <span className="service-subtitle">{service.href}</span>
+        )}
+      </span>
+      {service.has_ping ? (
+        <PingStatus id={service.id} />
+      ) : (
+        <span className="service-open-mark" aria-hidden="true">
+          ↗
+        </span>
+      )}
+    </>
+  );
+
+  const className = `service-card${editing ? " h-full" : " service-layout-item"}`;
+  const style = editing ? undefined : layoutStyle(service);
+  return !editing && service.href ? (
+    <a className={className} style={style} href={service.href} target="_blank" rel="noreferrer">
+      {content}
+    </a>
+  ) : (
+    <div className={className} style={style}>
+      {content}
+    </div>
+  );
+}
+
+function Loading() {
+  return <div className="widget-loading">Loading…</div>;
+}
+
+function ErrorMessage({ message }: { message: string }) {
+  return (
+    <div className="widget-error" role="alert">
+      {message}
+    </div>
+  );
+}
+
+function ClockWidget({ data }: { data: WidgetData }) {
+  const [now, setNow] = useState(() => new Date());
+  const zone = typeof data.time_zone === "string" && data.time_zone ? data.time_zone : "UTC";
+  const formatters = useMemo(() => {
+    try {
+      return {
+        time: new Intl.DateTimeFormat("en-GB", {
+          timeZone: zone,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        }),
+        date: new Intl.DateTimeFormat("en-GB", {
+          timeZone: zone,
+          weekday: "short",
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }),
+        offset: new Intl.DateTimeFormat("en", { timeZone: zone, timeZoneName: "shortOffset" }),
+      };
+    } catch {
+      return {
+        time: new Intl.DateTimeFormat("en-GB", {
+          timeZone: "UTC",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        }),
+        date: new Intl.DateTimeFormat("en-GB", {
+          timeZone: "UTC",
+          weekday: "short",
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }),
+        offset: new Intl.DateTimeFormat("en", { timeZone: "UTC", timeZoneName: "shortOffset" }),
+      };
+    }
+  }, [zone]);
+  const parts = formatters.time.formatToParts(now);
+  const hours = parts.find(({ type }) => type === "hour")?.value ?? "00";
+  const minutes = parts.find(({ type }) => type === "minute")?.value ?? "00";
+  const seconds = parts.find(({ type }) => type === "second")?.value ?? "00";
+  const offsetLabel =
+    formatters.offset.formatToParts(now).find(({ type }) => type === "timeZoneName")?.value ?? zone;
+
+  useEffect(() => {
+    if (typeof data.timestamp === "string") {
+      const serverTime = new Date(data.timestamp);
+      if (!Number.isNaN(serverTime.valueOf())) setNow(serverTime);
+    }
+    const timer = window.setInterval(() => setNow(new Date()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [data.timestamp]);
+
+  return (
+    <div className="clock-widget">
+      <div className="clock-topline">
+        <span className="clock-place">{zone}</span>
+        <span className="clock-offset">{offsetLabel}</span>
+      </div>
+      <time
+        className="clock-time widget-value"
+        dateTime={now.toISOString()}
+        aria-label={`${hours}:${minutes}:${seconds} ${zone}`}
+      >
+        <span>
+          {hours}:{minutes}
+        </span>
+        <span className="clock-seconds">:{seconds}</span>
+      </time>
+      <div className="clock-footer">
+        <time className="clock-date widget-secondary" dateTime={now.toISOString()}>
+          {formatters.date.format(now)}
+        </time>
+        <span className="clock-utc widget-secondary">
+          UTC{" "}
+          {now.toLocaleTimeString("en-GB", {
+            timeZone: "UTC",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          })}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function QuickLinksWidget({ data }: { data: WidgetData }) {
+  const links = Array.isArray(data.links)
+    ? (data.links as Array<{
+        title: string;
+        url: string;
+        icon?: string | null;
+      }>)
+    : [];
+
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1">
+        {links.map((link) => (
+          <a
+            key={`${link.title}-${link.url}`}
+            href={link.url}
+            target="_blank"
+            rel="noreferrer"
+            className="quick-link"
+          >
+            {link.icon ? (
+              <img
+                className="service-icon"
+                src={link.icon}
+                alt=""
+                loading="lazy"
+                decoding="async"
+              />
+            ) : (
+              <span className="quick-link-icon">
+                {link.title.charAt(0).toLocaleUpperCase() || "?"}
+              </span>
+            )}
+            <span className="quick-link-title">{link.title}</span>
+            <span className="service-open-mark" aria-hidden="true">
+              ↗
+            </span>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatBytes(bytes: number, unit: "MiB" | "GiB") {
+  const divisor = unit === "MiB" ? 1_048_576 : 1_073_741_824;
+  return `${(bytes / divisor).toFixed(0)}${unit === "MiB" ? "M" : "G"}`;
+}
+
+function formatUptime(seconds: number) {
+  const days = Math.floor(seconds / 86_400);
+  const hours = Math.floor((seconds % 86_400) / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  return days > 0 ? `${days}d ${hours}h ${minutes}m` : `${hours}h ${minutes}m`;
+}
+
+function StatRow({ label, percent, value }: { label: string; percent: number; value: string }) {
+  return (
+    <div className="widget-stat">
+      <div className="widget-stat-heading">
+        <span>{label}</span>
+        <span className="widget-value">{value}</span>
+      </div>
+      <div className="widget-meter">
+        <div
+          className="widget-meter-fill"
+          style={{ width: `${Math.max(0, Math.min(100, percent))}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function SystemStatsWidget({ data }: { data: WidgetData }) {
+  const stats = data.stats as {
+    cpu_usage_percent: number;
+    memory: { used_bytes: number; total_bytes: number; usage_percent: number };
+    disk: { mount: string; used_bytes: number; total_bytes: number; usage_percent: number };
+    load: { one: number } | null;
+    uptime_secs: number;
+  };
+
+  return (
+    <div className="system-stats-widget">
+      <div className="system-stats-heading">
+        <span className="widget-title">{String(data.name ?? "Server")}</span>
+        <div className="widget-secondary">
+          Load {stats.load ? stats.load.one.toFixed(2) : "n/a"}
+        </div>
+      </div>
+      <StatRow
+        label="CPU"
+        percent={stats.cpu_usage_percent}
+        value={`${stats.cpu_usage_percent.toFixed(1)}%`}
+      />
+      <StatRow
+        label="Memory"
+        percent={stats.memory.usage_percent}
+        value={`${stats.memory.usage_percent.toFixed(1)}% · ${formatBytes(stats.memory.used_bytes, "MiB")} / ${formatBytes(stats.memory.total_bytes, "MiB")}`}
+      />
+      <StatRow
+        label={`Disk (${stats.disk.mount})`}
+        percent={stats.disk.usage_percent}
+        value={`${stats.disk.usage_percent.toFixed(1)}% · ${formatBytes(stats.disk.used_bytes, "GiB")} / ${formatBytes(stats.disk.total_bytes, "GiB")}`}
+      />
+      <div className="system-stats-uptime widget-divider">
+        <span className="widget-secondary">Uptime</span>
+        <span className="widget-value">{formatUptime(stats.uptime_secs)}</span>
+      </div>
+    </div>
+  );
+}
+
+function WeatherWidget({ data }: { data: WidgetData }) {
+  const current = data.current as {
+    temperature: number;
+    apparent_temperature: number;
+    relative_humidity: number;
+    description: string;
+    icon: string;
+    wind_speed: number;
+    wind_direction: string;
+  };
+  const unit = data.units === "fahrenheit" ? "°F" : "°C";
+
+  return (
+    <div className="weather-widget">
+      <div className="text-center">
+        <div className="widget-secondary">
+          {Number(data.latitude).toFixed(2)}°, {Number(data.longitude).toFixed(2)}°
+        </div>
+      </div>
+      <div className="flex items-center justify-between">
+        <div className="flex-1">
+          <div className="weather-temperature widget-value">
+            {current.temperature.toFixed(0)}
+            {unit}
+          </div>
+          <div className="widget-secondary">
+            Feels {current.apparent_temperature.toFixed(0)}
+            {unit}
+          </div>
+          <div className="weather-description">{current.description}</div>
+        </div>
+        <div className="flex-shrink-0 text-3xl" aria-hidden="true">
+          {current.icon}
+        </div>
+      </div>
+      <div className="weather-details widget-divider">
+        <div className="text-center">
+          <div className="widget-secondary">Humidity</div>
+          <div className="weather-detail-value widget-value">{current.relative_humidity}%</div>
+        </div>
+        <div className="text-center">
+          <div className="widget-secondary">Wind</div>
+          <div className="weather-detail-value widget-value">
+            {current.wind_speed.toFixed(0)} {current.wind_direction}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type CalendarEntry = {
+  date: string;
+  series_url: string;
+  title: string;
+  season_number: number;
+  episode_number: number;
+  air_time: string;
+  status: string;
+};
+
+function SonarrCalendarWidget({ data }: { data: WidgetData }) {
+  const entries = Array.isArray(data.entries) ? (data.entries as CalendarEntry[]) : [];
+  const calendarUrl = typeof data.calendar_url === "string" ? data.calendar_url : "#";
+  const grouped = new Map<string, CalendarEntry[]>();
+  for (const entry of entries) grouped.set(entry.date, [...(grouped.get(entry.date) ?? []), entry]);
+
+  return entries.length === 0 ? (
+    <div className="grid min-h-full place-items-center text-xl font-bold">No entry</div>
+  ) : (
+    <div>
+      {[...grouped.entries()].map(([date, dayEntries]) => (
+        <div key={date}>
+          <div className="calendar-date">
+            <a className="widget-value" href={calendarUrl} target="_blank" rel="noreferrer">
+              {date}
+            </a>
+          </div>
+          {dayEntries.map((entry) => (
+            <div
+              key={`${entry.series_url}-${entry.season_number}-${entry.episode_number}`}
+              className={`px-2 my-2 ${entry.status}`}
+            >
+              <a
+                className="line-clamp-1 hover:brightness-125"
+                href={entry.series_url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {entry.title}
+              </a>
+              <span className="block widget-secondary">
+                {entry.season_number}x{String(entry.episode_number).padStart(2, "0")}
+              </span>
+              <span className="widget-secondary">{entry.air_time}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+type RandomShow = {
+  title: string;
+  series_url: string;
+  year: number | null;
+  rating: number | null;
+  genres: string[];
+  overview: string | null;
+  poster_url: string | null;
+  backdrop_url: string | null;
+};
+
+function JellyfinRandomShowWidget({ data }: { data: WidgetData }) {
+  if (data.empty === true) {
+    return (
+      <div className="grid min-h-full place-items-center text-xl font-bold">
+        No series in library
+      </div>
+    );
+  }
+
+  const show = data as RandomShow;
+
+  return (
+    <a className="jellyfin-widget" href={show.series_url || "#"} target="_blank" rel="noreferrer">
+      {show.backdrop_url && (
+        <img className="jellyfin-backdrop" src={show.backdrop_url} alt="" loading="lazy" />
+      )}
+      <div className="jellyfin-body">
+        <div className="jellyfin-poster">
+          {show.poster_url ? (
+            <img src={show.poster_url} alt="" loading="lazy" decoding="async" />
+          ) : (
+            <IconPhotoOff stroke={1.5} aria-hidden="true" />
+          )}
+        </div>
+        <div className="jellyfin-info">
+          <span className="jellyfin-title">{show.title}</span>
+          <span className="jellyfin-meta">
+            {show.year ? <span>{show.year}</span> : null}
+            {show.rating !== null && (
+              <span>
+                <IconStarFilled size={11} aria-hidden="true" /> {show.rating.toFixed(1)}
+              </span>
+            )}
+            {show.genres.length > 0 && <span>{show.genres.slice(0, 2).join(", ")}</span>}
+          </span>
+          {show.overview && <span className="jellyfin-overview">{show.overview}</span>}
+        </div>
+      </div>
+    </a>
+  );
+}
+
+function WidgetContent({ name, data }: { name: string; data: WidgetData }) {
+  switch (name) {
+    case "Clock":
+      return <ClockWidget data={data} />;
+    case "QuickLinks":
+      return <QuickLinksWidget data={data} />;
+    case "SystemStats":
+      return <SystemStatsWidget data={data} />;
+    case "Weather":
+      return <WeatherWidget data={data} />;
+    case "SonarrCalendar":
+      return <SonarrCalendarWidget data={data} />;
+    case "JellyfinRandomShow":
+      return <JellyfinRandomShowWidget data={data} />;
+    default:
+      return <ErrorMessage message={`Unsupported widget: ${name}`} />;
+  }
+}
+
+function WidgetFrame({
+  widget,
+  editing,
+  children,
+}: {
+  widget: DashboardWidget;
+  editing: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <article
+      className={`widget-frame${editing ? " h-full" : " service-layout-item"}`}
+      style={editing ? undefined : layoutStyle(widget)}
+      aria-label={`${widget.title} widget`}
+    >
+      <h3 className="widget-card-title">{widget.title}</h3>
+      <div className="widget-card-content">{children}</div>
+    </article>
+  );
+}
+
+function LiveWidgetCard({ widget }: { widget: DashboardWidget }) {
+  const { data, error } = useWidgetData(widget.name, widget.id, widget.refresh_interval_secs);
+  return (
+    <WidgetFrame widget={widget} editing={false}>
+      {error ? (
+        <ErrorMessage message={error} />
+      ) : !data ? (
+        <Loading />
+      ) : (
+        <WidgetContent name={widget.name} data={data} />
+      )}
+    </WidgetFrame>
+  );
+}
+
+function previewData(name: string): WidgetData {
+  switch (name) {
+    case "Clock":
+      return {
+        timestamp: "2026-11-14T12:34:56.000Z",
+        time_zone: "UTC",
+      };
+    case "QuickLinks":
+      return {
+        links: [
+          { title: "Documentation", url: "#", icon: null },
+          { title: "Status page", url: "#", icon: null },
+        ],
+      };
+    case "SystemStats":
+      return {
+        name: "Home server",
+        stats: {
+          cpu_usage_percent: 18.4,
+          memory: { used_bytes: 3_221_225_472, total_bytes: 8_589_934_592, usage_percent: 37.5 },
+          disk: {
+            mount: "/",
+            used_bytes: 322_122_547_200,
+            total_bytes: 1_099_511_627_776,
+            usage_percent: 29.3,
+          },
+          load: { one: 0.42 },
+          uptime_secs: 138_240,
+        },
+      };
+    case "Weather":
+      return {
+        latitude: 37.77,
+        longitude: -122.42,
+        units: "celsius",
+        current: {
+          temperature: 18,
+          apparent_temperature: 17,
+          relative_humidity: 62,
+          description: "Partly cloudy",
+          icon: "⛅",
+          wind_speed: 12,
+          wind_direction: "NW",
+        },
+      };
+    case "SonarrCalendar":
+      return {
+        calendar_url: "#",
+        entries: [
+          {
+            date: "2026-11-14",
+            series_url: "#",
+            title: "Example series",
+            season_number: 2,
+            episode_number: 4,
+            air_time: "20:30",
+            status: "upcoming",
+          },
+        ],
+      };
+    case "JellyfinRandomShow":
+      return {
+        title: "Example show",
+        series_url: "#",
+        year: 2020,
+        rating: 8.7,
+        genres: ["Drama", "Comedy"],
+        overview: "A sample overview for the preview of a randomly recommended series.",
+        poster_url: null,
+        backdrop_url: null,
+      };
+    default:
+      return {};
+  }
+}
+
+function PreviewWidgetCard({ widget }: { widget: DashboardWidget }) {
+  return (
+    <WidgetFrame widget={widget} editing>
+      <WidgetContent name={widget.name} data={previewData(widget.name)} />
+    </WidgetFrame>
+  );
+}
+
+function WidgetCard({ widget, editing = false }: { widget: DashboardWidget; editing?: boolean }) {
+  return editing ? <PreviewWidgetCard widget={widget} /> : <LiveWidgetCard widget={widget} />;
+}
+
+function WidgetPreview({ name }: { name: string }) {
+  const data = previewData(name);
+  return (
+    <div className="widget-preview">
+      <WidgetContent name={name} data={data} />
+      <span className="widget-preview-note">Sample preview</span>
+    </div>
+  );
+}
+
+export { ServiceCard, WidgetCard, WidgetContent, WidgetPreview, layoutStyle, previewData };

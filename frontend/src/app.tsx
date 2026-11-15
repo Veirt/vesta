@@ -3,7 +3,6 @@ import {
   IconClock,
   IconCpu,
   IconDatabase,
-  IconFolder,
   IconHome,
   IconLayoutGrid,
   IconMenu2,
@@ -12,7 +11,7 @@ import {
   IconSettings,
   IconX,
 } from "@tabler/icons-react";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -25,6 +24,7 @@ import {
 } from "@/components/ui/table";
 import { useDashboard } from "@/features/dashboard/use-dashboard";
 import type { DashboardNode } from "@/features/dashboard/schema";
+import { DashboardItems } from "@/features/dashboard/dashboard-items";
 import { SettingsPage } from "@/features/settings/settings-page";
 import { useTheme } from "@/features/settings/theme";
 
@@ -34,12 +34,6 @@ type MetricName = "cpu" | "memory" | "disk" | "load";
 const MetricTrend = lazy(() =>
   import("@/components/metric-trend").then((module) => ({ default: module.MetricTrend })),
 );
-
-declare global {
-  interface Window {
-    htmx?: { process: (element: Element) => void };
-  }
-}
 
 const metricMeta: Record<MetricName, { label: string; color: string }> = {
   cpu: { label: "CPU usage", color: "var(--chart-1)" },
@@ -51,7 +45,7 @@ const metricMeta: Record<MetricName, { label: string; color: string }> = {
 const navItems = [
   { href: "#overview", label: "Overview", Icon: IconHome },
   { href: "#nodes", label: "Servers", Icon: IconServer },
-  { href: "#service-groups", label: "Services", Icon: IconLayoutGrid },
+  { href: "#dashboard-items", label: "Apps and widgets", Icon: IconLayoutGrid },
 ];
 
 function formatBytes(bytes: number) {
@@ -157,13 +151,11 @@ function Status({ status }: { status: ReturnType<typeof nodeStatus> }) {
 }
 
 function Dashboard() {
-  const { nodes, groups, app, history, servicesHtml, serviceError, error } = useDashboard();
+  const { nodes, items, groups, app, history, error, loading } = useDashboard();
   const [selectedId, setSelectedId] = useState("");
   const [query, setQuery] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
-  const [serviceMatches, setServiceMatches] = useState(0);
-  const servicesRef = useRef<HTMLDivElement>(null);
 
   useTheme(app.theme);
 
@@ -180,34 +172,6 @@ function Dashboard() {
     document.body.classList.toggle("mobile-menu-open", mobileMenuOpen);
     return () => document.body.classList.remove("mobile-menu-open");
   }, [mobileMenuOpen]);
-
-  useEffect(() => {
-    const container = servicesRef.current;
-    if (!container || !servicesHtml) return;
-    const parsed = new DOMParser().parseFromString(servicesHtml, "text/html");
-    container.replaceChildren(
-      ...Array.from(parsed.body.childNodes, (node) => document.importNode(node, true)),
-    );
-    window.htmx?.process(container);
-  }, [servicesHtml]);
-
-  useEffect(() => {
-    const container = servicesRef.current;
-    if (!container) return;
-    const normalized = query.trim().toLocaleLowerCase();
-    const items = Array.from(container.querySelectorAll<HTMLElement>("[data-search-item]"));
-    let count = 0;
-    for (const item of items) {
-      const text = (item.dataset.searchText ?? item.textContent ?? "").toLocaleLowerCase();
-      item.hidden = Boolean(normalized) && !text.includes(normalized);
-      if (!item.hidden) count += 1;
-    }
-    for (const group of container.querySelectorAll<HTMLElement>("[data-service-group]")) {
-      const groupItems = Array.from(group.querySelectorAll<HTMLElement>("[data-search-item]"));
-      group.hidden = groupItems.length > 0 && groupItems.every((item) => item.hidden);
-    }
-    setServiceMatches(count);
-  }, [query, servicesHtml]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -232,6 +196,13 @@ function Dashboard() {
   const age = selectedNode ? nodeAge(selectedNode, now) : null;
   const selectedStatus = selectedNode ? nodeStatus(selectedNode, now) : "collecting";
   const searchText = query.trim().toLocaleLowerCase();
+  const itemMatches = items.filter(
+    (item) =>
+      !searchText ||
+      `${item.id} ${item.title} ${item.kind === "widget" ? item.name : (item.href ?? "")}`
+        .toLocaleLowerCase()
+        .includes(searchText),
+  ).length;
   const visibleNodes = useMemo(
     () =>
       nodes.filter(
@@ -240,7 +211,7 @@ function Dashboard() {
     [nodes, searchText],
   );
   const selectedHistory = selectedNode ? history[selectedNode.id] : undefined;
-  const filteredCount = visibleNodes.length + serviceMatches;
+  const filteredCount = visibleNodes.length + itemMatches;
   const bootedAt = stats
     ? new Date(Date.now() - stats.uptime_secs * 1_000).toLocaleString(undefined, {
         month: "short",
@@ -328,19 +299,6 @@ function Dashboard() {
               <Icon size={19} stroke={1.7} aria-hidden="true" />
             </a>
           ))}
-          {groups.length > 0 && <div className="my-2 h-px w-7 bg-border" aria-hidden="true" />}
-          {groups.map((group) => (
-            <a
-              key={group.id}
-              href={`#group-${encodeURIComponent(group.id)}`}
-              className="grid size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-              aria-label={group.name}
-              title={group.name}
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              <IconFolder size={17} stroke={1.7} aria-hidden="true" />
-            </a>
-          ))}
         </nav>
         <a
           href="/settings"
@@ -372,14 +330,14 @@ function Dashboard() {
               aria-hidden="true"
             />
             <label className="screen-reader-only" htmlFor="dashboard-search">
-              Search servers and services
+              Search servers, services, and widgets
             </label>
             <Input
               id="dashboard-search"
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search servers and services…"
+              placeholder="Search servers, services, and widgets…"
               className="h-10 border-border/70 bg-muted/40 pl-9 pr-12 text-sm shadow-none placeholder:text-muted-foreground/80 focus-visible:ring-1"
             />
             <kbd className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[0.65rem] text-muted-foreground">
@@ -625,19 +583,7 @@ function Dashboard() {
             </Card>
           </section>
 
-          <div ref={servicesRef} aria-live="polite">
-            {serviceError && (
-              <p className="text-sm text-destructive" role="alert">
-                {serviceError}
-              </p>
-            )}
-            {!servicesHtml && !serviceError && (
-              <div className="space-y-3" aria-label="Loading configured services">
-                <h2 className="text-lg font-semibold tracking-tight">Services</h2>
-                <p className="text-sm text-muted-foreground">Loading configured services…</p>
-              </div>
-            )}
-          </div>
+          <DashboardItems items={items} groups={groups} query={searchText} loading={loading} />
           <p className="screen-reader-only" role="status" aria-live="polite">
             {searchText ? `${filteredCount} matching results` : ""}
           </p>

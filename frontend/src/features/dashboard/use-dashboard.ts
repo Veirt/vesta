@@ -7,6 +7,7 @@ import {
   type DashboardData,
   type DashboardAppSettings,
   type DashboardGroup,
+  type DashboardItem,
   type DashboardNode,
   type Stats,
 } from "@/features/dashboard/schema";
@@ -39,42 +40,20 @@ function addSamples(history: History, id: string, stats: Stats, time: number): H
 
 function useDashboard() {
   const [nodes, setNodes] = useState<DashboardNode[]>([]);
+  const [items, setItems] = useState<DashboardItem[]>([]);
   const [groups, setGroups] = useState<DashboardGroup[]>([]);
   const [app, setApp] = useState<DashboardAppSettings>({
     dashboard_title: "Server Monitor",
     theme: "system",
   });
   const [history, setHistory] = useState<History>({});
-  const [servicesHtml, setServicesHtml] = useState("");
-  const [serviceError, setServiceError] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
   const [connection, setConnection] = useState<Connection>("connecting");
 
   useEffect(() => {
     let active = true;
     let source: EventSource | undefined;
-    let serviceRequest = 0;
-    let eventSnapshotReceived = false;
-
-    const refreshServices = async () => {
-      const request = ++serviceRequest;
-      try {
-        const response = await fetch("/api/dashboard/services", { cache: "no-store" });
-        if (!response.ok) throw new Error(`Service panel failed (${response.status})`);
-        const markup = await response.text();
-        if (active && request === serviceRequest) {
-          setServicesHtml(markup);
-          setServiceError("");
-        }
-      } catch (cause) {
-        if (active && request === serviceRequest) {
-          setServiceError(
-            cause instanceof Error ? cause.message : "Configured services could not be loaded",
-          );
-        }
-      }
-    };
-
     const applySnapshot = (data: DashboardData) => {
       if (!active) return;
       const receivedAt = Date.now();
@@ -83,6 +62,7 @@ function useDashboard() {
         receivedAt: node.stats ? receivedAt : null,
       }));
       setNodes(mapped);
+      setItems(data.items);
       setGroups(data.groups);
       setApp(data.app);
       setHistory((current) => {
@@ -104,8 +84,6 @@ function useDashboard() {
         const parsed = parseEvent(DashboardDataSchema, (event as MessageEvent<string>).data);
         if (parsed) {
           applySnapshot(parsed);
-          if (eventSnapshotReceived) void refreshServices();
-          eventSnapshotReceived = true;
         } else console.error("Ignoring invalid dashboard snapshot from event stream");
       });
       source.addEventListener("node", (event) => {
@@ -138,14 +116,15 @@ function useDashboard() {
         if (!active) return;
         applySnapshot(data);
         setError("");
+        setLoading(false);
         connect();
       } catch (cause) {
-        if (active)
+        if (active) {
           setError(cause instanceof Error ? cause.message : "Dashboard data could not be loaded");
+          setLoading(false);
+        }
         return;
       }
-
-      await refreshServices();
     };
 
     void boot();
@@ -155,7 +134,7 @@ function useDashboard() {
     };
   }, []);
 
-  return { nodes, groups, app, history, servicesHtml, serviceError, error, connection };
+  return { nodes, items, groups, app, history, error, loading, connection };
 }
 
 export { useDashboard };

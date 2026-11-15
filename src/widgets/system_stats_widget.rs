@@ -1,12 +1,9 @@
 use async_trait::async_trait;
-use maud::{Markup, html};
 use serde::Deserialize;
+use serde_json::{Value, json};
 
-use crate::config::Service;
 use crate::error::VestaResult;
-use crate::widget_system::{
-    WidgetContext, WidgetField, WidgetHandler, WidgetRef, stat_row, usage_bar, widget_scaffold_with,
-};
+use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetQuery};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
@@ -39,69 +36,6 @@ impl Default for SystemStatsWidget {
     }
 }
 
-fn fmt_mib(bytes: u64) -> String {
-    format!("{}M", bytes / 1024 / 1024)
-}
-
-fn fmt_gib(bytes: u64) -> String {
-    format!("{}G", bytes / 1024 / 1024 / 1024)
-}
-
-fn stats_body(name: &str, stats: &crate::metrics::node::NodeStats) -> Markup {
-    let load = stats
-        .load
-        .map(|l| format!("{:.2}", l.one))
-        .unwrap_or_else(|| "n/a".to_string());
-    html! {
-        div class="system-stats-widget" {
-            div class="system-stats-heading" {
-                h3 class="widget-title" {
-                    (name)
-                }
-                div class="widget-secondary" {
-                    "Load " (load)
-                }
-            }
-            (stat_row(
-                "CPU",
-                &format!("{:.1}%", stats.cpu_usage_percent),
-                Some(usage_bar(stats.cpu_usage_percent)),
-            ))
-            (stat_row(
-                "Memory",
-                &format!("{:.1}% · {} / {}",
-                    stats.memory_usage_percent(),
-                    fmt_mib(stats.memory_used_bytes),
-                    fmt_mib(stats.memory_total_bytes)),
-                Some(usage_bar(stats.memory_usage_percent())),
-            ))
-            (stat_row(
-                &format!("Disk ({})", stats.disk_mount),
-                &format!("{:.1}% · {} / {}",
-                    stats.disk_usage_percent(),
-                    fmt_gib(stats.disk_used_bytes),
-                    fmt_gib(stats.disk_total_bytes)),
-                Some(usage_bar(stats.disk_usage_percent())),
-            ))
-            div class="system-stats-uptime widget-divider" {
-                span class="widget-secondary" { "Uptime" }
-                span class="widget-value" { (format_uptime(stats.uptime_secs)) }
-            }
-        }
-    }
-}
-
-fn format_uptime(secs: u64) -> String {
-    let days = secs / 86_400;
-    let hours = (secs % 86_400) / 3_600;
-    let mins = (secs % 3_600) / 60;
-    if days > 0 {
-        format!("{days}d {hours}h {mins}m")
-    } else {
-        format!("{hours}h {mins}m")
-    }
-}
-
 #[async_trait]
 impl WidgetHandler for SystemStatsWidget {
     fn name(&self) -> &'static str {
@@ -110,6 +44,14 @@ impl WidgetHandler for SystemStatsWidget {
 
     fn description(&self) -> &'static str {
         "Shows CPU, memory, disk, load, and uptime for one configured server."
+    }
+
+    fn default_size(&self) -> (u8, u8) {
+        (6, 4)
+    }
+
+    fn min_size(&self) -> (u8, u8) {
+        (4, 4)
     }
 
     fn fields(&self) -> Vec<WidgetField> {
@@ -137,27 +79,16 @@ impl WidgetHandler for SystemStatsWidget {
 
     type Config = Config;
 
-    fn render(&self, mount: &WidgetRef, service: &Service, config: &Config) -> Markup {
-        let frame = html! {
-            div class="widget-loading" {
-                p { "Waiting for first poll…" }
-            }
-        };
-        widget_scaffold_with(
-            service,
-            mount,
-            self.name(),
-            Some(config.refresh_interval),
-            frame,
-        )
+    fn refresh_interval_secs(&self, config: &Config) -> Option<u64> {
+        Some(config.refresh_interval)
     }
 
     async fn handle_request(
         &self,
         ctx: WidgetContext,
-        _mount: WidgetRef,
+        _query: WidgetQuery,
         config: Config,
-    ) -> VestaResult<Markup> {
+    ) -> VestaResult<Value> {
         let node_id = if config.node.is_empty() {
             ctx.nodes.node_ids().await.first().cloned().ok_or_else(|| {
                 crate::error::VestaError::InvalidWidgetConfig(
@@ -178,7 +109,29 @@ impl WidgetHandler for SystemStatsWidget {
             .map(|n| n.name.clone())
             .unwrap_or_else(|| node_id.clone());
 
-        Ok(stats_body(&node_name, &stats))
+        Ok(json!({
+            "name": node_name,
+            "stats": {
+                "cpu_usage_percent": stats.cpu_usage_percent,
+                "memory": {
+                    "used_bytes": stats.memory_used_bytes,
+                    "total_bytes": stats.memory_total_bytes,
+                    "usage_percent": stats.memory_usage_percent(),
+                },
+                "disk": {
+                    "mount": stats.disk_mount,
+                    "used_bytes": stats.disk_used_bytes,
+                    "total_bytes": stats.disk_total_bytes,
+                    "usage_percent": stats.disk_usage_percent(),
+                },
+                "load": stats.load.map(|load| json!({
+                    "one": load.one,
+                    "five": load.five,
+                    "fifteen": load.fifteen,
+                })),
+                "uptime_secs": stats.uptime_secs,
+            },
+        }))
     }
 }
 
@@ -200,12 +153,5 @@ mod tests {
                 .unwrap();
         assert_eq!(config.refresh_interval, 10);
         assert_eq!(config.node, "nas");
-    }
-
-    #[test]
-    fn formats_uptime() {
-        assert_eq!(format_uptime(0), "0h 0m");
-        assert_eq!(format_uptime(3_600), "1h 0m");
-        assert_eq!(format_uptime(93_660), "1d 2h 1m");
     }
 }

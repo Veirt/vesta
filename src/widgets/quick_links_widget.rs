@@ -1,14 +1,14 @@
 use async_trait::async_trait;
-use maud::{Markup, html};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
-use crate::config::{Service, WidgetConfig};
+use crate::config::WidgetConfig;
 use crate::error::VestaResult;
 use crate::widget_system::{
-    WidgetContext, WidgetField, WidgetHandler, WidgetRef, parse_widget_options, widget_scaffold,
+    WidgetContext, WidgetField, WidgetHandler, WidgetQuery, parse_widget_options,
 };
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Link {
     pub title: String,
     pub url: String,
@@ -68,30 +68,6 @@ impl Default for QuickLinksWidget {
     }
 }
 
-fn link_row(link: &Link) -> Markup {
-    html! {
-        a href=(link.url) target="_blank" rel="noreferrer"
-          class="quick-link" {
-            @if let Some(icon) = &link.icon {
-                img src=(icon) alt="" class="service-icon" loading="lazy" decoding="async" {}
-            } @else {
-                div class="quick-link-icon" {
-                    span {
-                        (link.title.chars().next().unwrap_or('?').to_uppercase())
-                    }
-                }
-            }
-            span class="quick-link-title" {
-                (link.title)
-            }
-            svg class="service-row-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" {
-                path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                     d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" {}
-            }
-        }
-    }
-}
-
 #[async_trait]
 impl WidgetHandler for QuickLinksWidget {
     fn name(&self) -> &'static str {
@@ -100,6 +76,14 @@ impl WidgetHandler for QuickLinksWidget {
 
     fn description(&self) -> &'static str {
         "Shows a compact list of links with optional remote or uploaded icons."
+    }
+
+    fn default_size(&self) -> (u8, u8) {
+        (3, 2)
+    }
+
+    fn min_size(&self) -> (u8, u8) {
+        (3, 2)
     }
 
     fn fields(&self) -> Vec<WidgetField> {
@@ -120,28 +104,13 @@ impl WidgetHandler for QuickLinksWidget {
         Config::from_raw(raw)
     }
 
-    fn render(&self, mount: &WidgetRef, service: &Service, _config: &Config) -> Markup {
-        widget_scaffold(service, mount, self.name(), None)
-    }
-
     async fn handle_request(
         &self,
         _ctx: WidgetContext,
-        _mount: WidgetRef,
+        _query: WidgetQuery,
         config: Config,
-    ) -> VestaResult<Markup> {
-        Ok(html! {
-            div class="space-y-2" {
-                h3 class="widget-title mb-3" {
-                    "Quick Links"
-                }
-                div class="space-y-1" {
-                    @for link in &config.links {
-                        (link_row(link))
-                    }
-                }
-            }
-        })
+    ) -> VestaResult<Value> {
+        Ok(json!({ "links": config.links }))
     }
 }
 

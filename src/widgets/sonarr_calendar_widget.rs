@@ -1,14 +1,12 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Local, Utc};
-use indexmap::IndexMap;
-use maud::{Markup, html};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use std::collections::HashSet;
 
-use crate::config::Service;
 use crate::error::{VestaError, VestaResult};
-use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetRef, widget_scaffold};
+use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetQuery};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
@@ -156,6 +154,14 @@ impl WidgetHandler for SonarrCalendarWidget {
         "Shows upcoming Sonarr episodes and download status."
     }
 
+    fn default_size(&self) -> (u8, u8) {
+        (4, 4)
+    }
+
+    fn min_size(&self) -> (u8, u8) {
+        (3, 3)
+    }
+
     fn fields(&self) -> Vec<WidgetField> {
         vec![
             WidgetField {
@@ -181,16 +187,12 @@ impl WidgetHandler for SonarrCalendarWidget {
 
     type Config = Config;
 
-    fn render(&self, mount: &WidgetRef, service: &Service, _config: &Config) -> Markup {
-        widget_scaffold(service, mount, self.name(), None)
-    }
-
     async fn handle_request(
         &self,
         _ctx: WidgetContext,
-        _mount: WidgetRef,
+        _query: WidgetQuery,
         config: Config,
-    ) -> VestaResult<Markup> {
+    ) -> VestaResult<Value> {
         let (calendar, queue) = tokio::join!(
             self.fetch_calendar(&config),
             self.fetch_download_queue(&config),
@@ -203,47 +205,25 @@ impl WidgetHandler for SonarrCalendarWidget {
         }
 
         let now = Utc::now();
-        let grouped: IndexMap<String, Vec<&CalendarEntry>> =
-            calendar.iter().fold(IndexMap::new(), |mut acc, entry| {
-                let date = entry
-                    .air_date_utc
-                    .with_timezone(&Local)
-                    .format("%Y-%m-%d")
-                    .to_string();
-                acc.entry(date).or_default().push(entry);
-                acc
-            });
+        let entries = calendar
+            .iter()
+            .map(|entry| {
+                json!({
+                    "date": entry.air_date_utc.with_timezone(&Local).format("%Y-%m-%d").to_string(),
+                    "series_url": format!("{}/series/{}", config.url, entry.series.title_slug),
+                    "title": entry.series.title,
+                    "season_number": entry.season_number,
+                    "episode_number": entry.episode_number,
+                    "air_time": format_air_time(entry),
+                    "status": entry_class(entry, &now),
+                })
+            })
+            .collect::<Vec<_>>();
 
-        Ok(html! {
-            @if grouped.is_empty() {
-                div class="flex justify-center items-center min-w-full min-h-full text-xl font-bold" {
-                    "No entry"
-                }
-            } @else {
-                @for (date, entries) in grouped {
-                    div class="calendar-date" {
-                        a href=(format!("{}/calendar", config.url))
-                            class="widget-value" {
-                            (date)
-                        }
-                    }
-                    @for entry in entries {
-                        div class="px-2 my-2" class=(entry_class(entry, &now)) {
-                            a href=(format!("{}/series/{}", config.url, entry.series.title_slug))
-                                class="line-clamp-1 hover:brightness-125" {
-                                (entry.series.title)
-                            }
-                            span class="block widget-secondary" {
-                                (format!("{}x{:02}", entry.season_number, entry.episode_number))
-                            }
-                            span class="widget-secondary" {
-                                (format_air_time(entry))
-                            }
-                        }
-                    }
-                }
-            }
-        })
+        Ok(json!({
+            "calendar_url": format!("{}/calendar", config.url),
+            "entries": entries,
+        }))
     }
 }
 

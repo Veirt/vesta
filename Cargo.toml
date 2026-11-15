@@ -13,7 +13,6 @@ axum = "0.8.9"
 chrono = { version = "0.4.45", features = ["clock", "serde"], default-features = false }
 hex = "0.4.3"
 indexmap = { version = "2.14.2", features = ["serde"] }
-maud = { version = "0.27.0", features = ["axum"] }
 moka = { version = "0.12.16", features = ["future"] }
 prometheus-parse = "0.2.5"
 reqwest = { version = "0.13.5", features = ["json", "rustls", "query"], default-features = false }

@@ -1,4 +1,5 @@
 import { IconPlus, IconTrash } from "@tabler/icons-react";
+import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/features/settings/components/form-field";
 import { IconField } from "@/features/settings/components/icon-field";
@@ -7,10 +8,163 @@ import {
   destructiveButtonClass,
   inputClass,
 } from "@/features/settings/components/styles";
-import type { EditableNode, EditableService } from "@/features/settings/models";
+import type { EditableWidget } from "@/features/settings/models";
 import type { WidgetDescriptor, WidgetField } from "@/features/settings/schema";
 
 type QuickLink = { title: string; url: string; icon: string };
+
+type RemoteOption = { value: string; label: string };
+
+function errorMessage(result: unknown, status: number): string {
+  if (
+    result &&
+    typeof result === "object" &&
+    "message" in result &&
+    typeof result.message === "string"
+  ) {
+    return result.message;
+  }
+  return `The request failed (${status}).`;
+}
+
+async function loadRemoteOptions(
+  widgetName: string,
+  fieldKey: string,
+  config: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<RemoteOption[]> {
+  const response = await fetch(`/api/widgets/${encodeURIComponent(widgetName)}/options`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ field: fieldKey, config }),
+    signal,
+  });
+  const result: unknown = await response.json();
+  if (!response.ok) throw new Error(errorMessage(result, response.status));
+  const body = (result && typeof result === "object" ? result : {}) as {
+    status?: unknown;
+    data?: { options?: unknown } | null;
+  };
+  if (body.status !== "success" || !Array.isArray(body.data?.options)) {
+    throw new Error("The server returned an invalid options list.");
+  }
+  return ((body.data?.options as unknown[]) ?? []).flatMap((option): RemoteOption[] => {
+    if (!option || typeof option !== "object") return [];
+    const record = option as Record<string, unknown>;
+    return typeof record.value === "string" && typeof record.label === "string"
+      ? [{ value: record.value, label: record.label }]
+      : [];
+  });
+}
+
+/**
+ * A select whose options come from the widget's own external system,
+ * resolved against the URL/API key currently typed in the editor; refetches
+ * when those change and clears a saved selection that the server lost.
+ */
+function RemoteOptionsField({
+  widgetName,
+  field,
+  config,
+  value,
+  required,
+  onChange,
+}: {
+  widgetName: string;
+  field: WidgetField;
+  config: Record<string, unknown>;
+  value: unknown;
+  required: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [options, setOptions] = useState<RemoteOption[]>([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const keyValue = typeof config.key === "string" ? config.key : "";
+  const urlValue = typeof config.url === "string" ? config.url : "";
+
+  useEffect(() => {
+    if (!urlValue.trim() || !keyValue.trim()) {
+      setOptions([]);
+      setError("");
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      loadRemoteOptions(widgetName, field.key, config, controller.signal)
+        .then((loaded) => {
+          setOptions(loaded);
+          setError("");
+        })
+        .catch((cause: unknown) => {
+          if (cause instanceof DOMException && cause.name === "AbortError") return;
+          setOptions([]);
+          setError(cause instanceof Error ? cause.message : "The request failed.");
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, 600);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+    // `config` is intentionally read at fetch time only; the trigger
+    // dependencies are the values the option list is derived from.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlValue, keyValue, widgetName, field.key, attempt]);
+
+  const currentValue = typeof value === "string" ? value : "";
+  const known = currentValue === "" || options.some((option) => option.value === currentValue);
+
+  return (
+    <Field
+      label={field.label}
+      description={
+        options.length === 0 && !error && !loading
+          ? `${field.description} Enter the URL and API key above to list them.`
+          : field.description
+      }
+      required={required}
+    >
+      <div className="flex items-center gap-2">
+        <span className="relative grow">
+          <select
+            className="h-9 w-full rounded-md border border-input bg-background px-3 pr-8 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            value={currentValue}
+            required={required}
+            onChange={(event) => onChange(event.target.value)}
+          >
+            <option value="">All libraries</option>
+            {options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          {loading && (
+            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+              loading…
+            </span>
+          )}
+        </span>
+        {error && (
+          <button className={buttonClass} type="button" onClick={() => setAttempt(attempt + 1)}>
+            Retry
+          </button>
+        )}
+      </div>
+      {error && <p className="text-xs leading-5 text-destructive">{error}</p>}
+      {options.length > 0 && !known && (
+        <p className="text-xs leading-5 text-muted-foreground">
+          The saved selection is no longer offered by the server; pick a library again.
+        </p>
+      )}
+    </Field>
+  );
+}
 
 function parseLinks(value: unknown): QuickLink[] {
   if (!Array.isArray(value)) return [];
@@ -53,7 +207,7 @@ function QuickLinksField({
           className="grid gap-3 rounded-md border border-border/70 bg-background/50 p-3 sm:grid-cols-2"
           key={index}
         >
-          <Field label={`Link ${index + 1} title`}>
+          <Field label={`Link ${index + 1} title`} required>
             <Input
               value={link.title}
               required
@@ -67,7 +221,7 @@ function QuickLinksField({
               className={inputClass}
             />
           </Field>
-          <Field label={`Link ${index + 1} destination`}>
+          <Field label={`Link ${index + 1} destination`} required>
             <Input
               value={link.url}
               required
@@ -118,21 +272,21 @@ function QuickLinksField({
 
 function WidgetConfigFields({
   descriptor,
-  service,
+  widget,
   nodes,
   uploading,
   onChange,
   onUpload,
 }: {
   descriptor: WidgetDescriptor;
-  service: EditableService;
-  nodes: EditableNode[];
+  widget: EditableWidget;
+  nodes: Array<{ id: string; name: string }>;
   uploading: boolean;
   onChange: (config: Record<string, unknown>) => void;
   onUpload: (file: File) => Promise<string | null>;
 }) {
   function updateField(field: WidgetField, value: unknown) {
-    onChange({ ...service.widget_config, [field.key]: value });
+    onChange({ ...widget.config, [field.key]: value });
   }
 
   if (descriptor.fields.length === 0) {
@@ -144,7 +298,20 @@ function WidgetConfigFields({
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       {descriptor.fields.map((field) => {
-        const value = service.widget_config[field.key] ?? field.default ?? "";
+        const value = widget.config[field.key] ?? field.default ?? "";
+        if (field.kind === "remote_select") {
+          return (
+            <RemoteOptionsField
+              key={field.key}
+              widgetName={descriptor.name}
+              field={field}
+              config={widget.config}
+              value={value}
+              required={field.required}
+              onChange={(next) => updateField(field, next)}
+            />
+          );
+        }
         if (field.kind === "links") {
           return (
             <div className="sm:col-span-2" key={field.key}>
@@ -160,7 +327,12 @@ function WidgetConfigFields({
         }
         if (field.kind === "node") {
           return (
-            <Field key={field.key} label={field.label} description={field.description}>
+            <Field
+              key={field.key}
+              label={field.label}
+              description={field.description}
+              required={field.required}
+            >
               <select
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={String(value)}
@@ -169,7 +341,7 @@ function WidgetConfigFields({
               >
                 <option value="">First configured server</option>
                 {nodes.map((node) => (
-                  <option key={node.editor_id} value={node.id}>
+                  <option key={node.id} value={node.id}>
                     {node.name}
                   </option>
                 ))}
@@ -179,7 +351,12 @@ function WidgetConfigFields({
         }
         if (field.kind === "select") {
           return (
-            <Field key={field.key} label={field.label} description={field.description}>
+            <Field
+              key={field.key}
+              label={field.label}
+              description={field.description}
+              required={field.required}
+            >
               <select
                 className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={String(value)}
@@ -205,7 +382,12 @@ function WidgetConfigFields({
                 : "text";
         const inputValue = value === null || value === undefined ? "" : String(value);
         return (
-          <Field key={field.key} label={field.label} description={field.description}>
+          <Field
+            key={field.key}
+            label={field.label}
+            description={field.description}
+            required={field.required}
+          >
             <Input
               type={inputType}
               value={inputValue}

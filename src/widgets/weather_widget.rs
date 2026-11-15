@@ -1,13 +1,10 @@
 use async_trait::async_trait;
-use maud::{Markup, html};
 use serde::Deserialize;
+use serde_json::{Value, json};
 
-use crate::config::Service;
 use crate::error::VestaResult;
 use crate::services::weather_service::{WeatherQuery, WeatherService};
-use crate::widget_system::{
-    WidgetContext, WidgetField, WidgetHandler, WidgetOption, WidgetRef, widget_scaffold,
-};
+use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetOption, WidgetQuery};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
@@ -105,57 +102,6 @@ fn wind_direction(degrees: u32) -> &'static str {
     }
 }
 
-fn temp_unit(units: &str) -> &'static str {
-    if units == "fahrenheit" { "°F" } else { "°C" }
-}
-
-fn weather_body(config: &Config, data: &crate::services::weather_service::WeatherData) -> Markup {
-    let unit = temp_unit(&config.units);
-    let current = &data.current;
-    html! {
-        div class="weather-widget" {
-            div class="text-center" {
-                h3 class="widget-title" {
-                    "Weather"
-                }
-                div class="widget-secondary" {
-                    (format!("{:.2}°, {:.2}°", config.latitude, config.longitude))
-                }
-            }
-            div class="flex items-center justify-between" {
-                div class="flex-1" {
-                    div class="weather-temperature widget-value" {
-                        (format!("{:.0}{}", current.temperature_2m, unit))
-                    }
-                    div class="widget-secondary" {
-                        "Feels " (format!("{:.0}{}", current.apparent_temperature, unit))
-                    }
-                    div class="weather-description" {
-                        (description(current.weather_code))
-                    }
-                }
-                div class="flex-shrink-0 text-3xl" {
-                    (icon(current.weather_code))
-                }
-            }
-            div class="weather-details widget-divider" {
-                div class="text-center" {
-                    div class="widget-secondary" { "Humidity" }
-                    div class="weather-detail-value widget-value" {
-                        (current.relative_humidity_2m) "%"
-                    }
-                }
-                div class="text-center" {
-                    div class="widget-secondary" { "Wind" }
-                    div class="weather-detail-value widget-value" {
-                        (format!("{:.0} {}", current.wind_speed_10m, wind_direction(current.wind_direction_10m)))
-                    }
-                }
-            }
-        }
-    }
-}
-
 #[async_trait]
 impl WidgetHandler for WeatherWidget {
     fn name(&self) -> &'static str {
@@ -164,6 +110,14 @@ impl WidgetHandler for WeatherWidget {
 
     fn description(&self) -> &'static str {
         "Shows current weather for a latitude and longitude using Open-Meteo."
+    }
+
+    fn default_size(&self) -> (u8, u8) {
+        (4, 3)
+    }
+
+    fn min_size(&self) -> (u8, u8) {
+        (3, 3)
     }
 
     fn fields(&self) -> Vec<WidgetField> {
@@ -218,18 +172,34 @@ impl WidgetHandler for WeatherWidget {
 
     type Config = Config;
 
-    fn render(&self, mount: &WidgetRef, service: &Service, config: &Config) -> Markup {
-        widget_scaffold(service, mount, self.name(), Some(config.refresh_interval))
+    fn refresh_interval_secs(&self, config: &Config) -> Option<u64> {
+        Some(config.refresh_interval)
     }
 
     async fn handle_request(
         &self,
         _ctx: WidgetContext,
-        _mount: WidgetRef,
+        _query: WidgetQuery,
         config: Config,
-    ) -> VestaResult<Markup> {
+    ) -> VestaResult<Value> {
         let data = self.weather.fetch(&config.query()).await?;
-        Ok(weather_body(&config, &data))
+        let current = data.current;
+        Ok(json!({
+            "latitude": config.latitude,
+            "longitude": config.longitude,
+            "units": config.units,
+            "current": {
+                "temperature": current.temperature_2m,
+                "apparent_temperature": current.apparent_temperature,
+                "relative_humidity": current.relative_humidity_2m,
+                "weather_code": current.weather_code,
+                "wind_speed": current.wind_speed_10m,
+                "wind_direction_degrees": current.wind_direction_10m,
+                "description": description(current.weather_code),
+                "icon": icon(current.weather_code),
+                "wind_direction": wind_direction(current.wind_direction_10m),
+            },
+        }))
     }
 }
 

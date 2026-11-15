@@ -16,8 +16,7 @@ pub struct PingResult {
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct PingKey {
-    pub group: String,
-    pub title: String,
+    pub id: String,
 }
 
 /// HEAD-then-GET availability checks with a short-lived negative/positive
@@ -49,6 +48,14 @@ impl PingService {
         let is_up = self.perform_ping(config).await.unwrap_or(false);
         self.cache.insert(key.clone(), PingResult { is_up }).await;
         Ok(is_up)
+    }
+
+    pub async fn test_url(&self, url: &str) -> bool {
+        self.perform_ping(&PingConfig {
+            url: url.to_string(),
+        })
+        .await
+        .unwrap_or(false)
     }
 
     async fn perform_ping(&self, config: &PingConfig) -> VestaResult<bool> {
@@ -90,8 +97,7 @@ mod tests {
     async fn cached_result_short_circuits() {
         let service = PingService::new(Client::new());
         let key = PingKey {
-            group: "g".into(),
-            title: "t".into(),
+            id: "service".into(),
         };
         service
             .cache
