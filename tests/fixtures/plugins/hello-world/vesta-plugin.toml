@@ -1,0 +1,47 @@
+id = "hello-world"
+name = "Hello World"
+version = "1.0.0"
+description = "Shows a counter widget."
+
+[[widgets]]
+id = "counter"
+title = "Counter"
+description = "Configured via the label field; add or subtract on click."
+entry = "index.html"
+width = 3
+height = 2
+min_width = 3
+min_height = 2
+
+[[widgets.fields]]
+key = "start_value"
+label = "Start value"
+kind = "number"
+default = 0
+description = "The value the counter starts from."
+
+[[widgets.fields]]
+key = "label"
+label = "Label"
+kind = "text"
+required = true
+description = "Text shown above the counter."
+
+[[widgets.fields]]
+key = "theme"
+label = "Theme"
+kind = "select"
+default = "auto"
+description = "Color scheme."
+
+[[widgets.fields.options]]
+value = "auto"
+label = "Follow host"
+
+[[widgets.fields.options]]
+value = "dark"
+label = "Dark"
+
+[[widgets.fields.options]]
+value = "light"
+label = "Light"

@@ -11,6 +11,7 @@ async-stream = "0.3.6"
 async-trait = "0.1.92"
 axum = "0.8.9"
 chrono = { version = "0.4.45", features = ["clock", "serde"], default-features = false }
+gix = { version = "0.76", default-features = false, features = ["blocking-network-client", "blocking-http-transport-reqwest-rust-tls", "worktree-mutation", "index"] }
 hex = "0.4.3"
 indexmap = { version = "2.14.2", features = ["serde"] }
 moka = { version = "0.12.16", features = ["future"] }

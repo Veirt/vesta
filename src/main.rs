@@ -7,6 +7,7 @@ mod error;
 mod http_client;
 mod metrics;
 mod ping;
+mod plugins;
 mod response;
 mod services;
 mod settings_api;
@@ -21,7 +22,7 @@ use axum::Router;
 use axum::extract::{DefaultBodyLimit, Extension, Path, Query};
 use axum::middleware;
 use axum::response::IntoResponse;
-use axum::routing::{get, post, put};
+use axum::routing::{delete, get, post, put};
 use tower_http::compression::CompressionLayer;
 use tower_http::services::ServeDir;
 use tracing_subscriber::EnvFilter;
@@ -47,6 +48,7 @@ use widgets::weather_widget::WeatherWidget;
 struct Settings {
     config_path: String,
     database_path: String,
+    plugins_dir: String,
     bind_addr: String,
     static_dir: String,
     cookie_secure: bool,
@@ -57,6 +59,7 @@ impl Settings {
         Self {
             config_path: env_or("VESTA_CONFIG", "./config.toml"),
             database_path: env_or("VESTA_DATABASE", "./data/vesta.sqlite"),
+            plugins_dir: env_or("VESTA_PLUGINS", "./data/plugins"),
             bind_addr: env_or("VESTA_BIND", "0.0.0.0:3000"),
             static_dir: env_or("VESTA_STATIC_DIR", "static"),
             cookie_secure: env_or("VESTA_COOKIE_SECURE", "false") == "true",
@@ -73,24 +76,42 @@ pub struct AppState {
     pub(crate) database: Arc<Database>,
     pub(crate) nodes: Arc<NodeService>,
     pub(crate) ping: PingService,
-    pub(crate) widget_registry: Arc<WidgetRegistry>,
+    pub(crate) widget_registry: plugins::SharedWidgetRegistry,
+    pub(crate) plugins: Arc<plugins::manager::PluginManager>,
+    pub(crate) http_client: reqwest::Client,
     pub(crate) widget_ctx: WidgetContext,
     pub(crate) cookie_secure: bool,
 }
 
 impl AppState {
+    fn builtin_registry(http_client: reqwest::Client) -> WidgetRegistry {
+        WidgetRegistry::new()
+            .register(SonarrCalendarWidget::new(http_client.clone()))
+            .register(JellyfinRandomShowWidget::new(http_client.clone()))
+            .register(SystemStatsWidget::new())
+            .register(WeatherWidget::new(http_client.clone()))
+            .register(ClockWidget::new())
+            .register(QuickLinksWidget::new())
+    }
+
+    /// Rebuild the widget registry from the built-ins and every installed
+    /// plugin. Called at startup and whenever a plugin is installed or
+    /// removed, so both request handling and config validation switch over.
+    pub(crate) fn rebuild_widget_registry(&self) {
+        self.widget_registry.replace(plugins::build_registry(
+            Self::builtin_registry(self.http_client.clone()),
+            &self.plugins,
+        ));
+    }
+
     async fn new(settings: &Settings) -> VestaResult<Arc<Self>> {
         let http_client = create_default_client()?;
         let database = Arc::new(Database::open(&settings.database_path).await?);
-        let widget_registry = Arc::new(
-            WidgetRegistry::new()
-                .register(SonarrCalendarWidget::new(http_client.clone()))
-                .register(JellyfinRandomShowWidget::new(http_client.clone()))
-                .register(SystemStatsWidget::new())
-                .register(WeatherWidget::new(http_client.clone()))
-                .register(ClockWidget::new())
-                .register(QuickLinksWidget::new()),
-        );
+        let plugins = Arc::new(plugins::manager::PluginManager::new(&settings.plugins_dir)?);
+        let widget_registry = plugins::SharedWidgetRegistry::new(plugins::build_registry(
+            Self::builtin_registry(http_client.clone()),
+            &plugins,
+        ));
 
         let config = Arc::new(ConfigManager::new(
             &settings.config_path,
@@ -109,6 +130,8 @@ impl AppState {
             nodes,
             ping,
             widget_registry,
+            plugins,
+            http_client,
             widget_ctx,
             cookie_secure: settings.cookie_secure,
         }))
@@ -122,6 +145,7 @@ async fn widget_handler(
 ) -> Result<impl IntoResponse, VestaError> {
     let data = state
         .widget_registry
+        .current()
         .handle_request(&widget_name, state.widget_ctx.clone(), query)
         .await?;
     Ok(jsend::success(data))
@@ -139,6 +163,14 @@ fn build_router(state: Arc<AppState>, static_dir: &str) -> Router {
             put(settings_api::save_dashboard_items),
         )
         .route("/api/settings/ping-test", post(settings_api::test_ping_url))
+        .route(
+            "/api/plugins",
+            get(settings_api::list_plugins).post(settings_api::install_plugin),
+        )
+        .route(
+            "/api/plugins/{plugin_id}",
+            delete(settings_api::uninstall_plugin),
+        )
         .route("/api/nodes", get(api::list_nodes))
         .route("/api/services", get(api::get_service))
         .route("/api/widget", get(api::get_widget))
@@ -164,6 +196,10 @@ fn build_router(state: Arc<AppState>, static_dir: &str) -> Router {
         .merge(settings_routes)
         .route("/", get(dashboard))
         .route("/settings", get(dashboard))
+        .route(
+            "/api/plugins/{plugin_id}/assets/{*path}",
+            get(settings_api::plugin_asset),
+        )
         .nest_service("/static", ServeDir::new(static_dir))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .layer(CompressionLayer::new())
@@ -210,7 +246,7 @@ async fn main() {
     tracing::info!(addr = %settings.bind_addr, "vesta listening");
     tracing::debug!(
         database = %settings.database_path,
-        widgets = ?state.widget_registry.names(),
+        widgets = ?state.widget_registry.current().names(),
         "registered widgets"
     );
 

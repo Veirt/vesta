@@ -23,6 +23,7 @@ pub struct WidgetResponseData {
 #[derive(Clone, Debug, Serialize)]
 pub struct WidgetDescriptor {
     pub name: String,
+    pub title: String,
     pub description: &'static str,
     pub default_width: u8,
     pub default_height: u8,
@@ -73,6 +74,23 @@ pub struct WidgetContext {
 pub trait WidgetHandler: Send + Sync {
     /// Registry key, matching `widget.name` in the config (e.g. "SystemStats").
     fn name(&self) -> &'static str;
+
+    /// Human-readable label for menus and catalogs; defaults to the key split
+    /// at inner uppercase letters ("SonarrCalendar" -> "Sonarr Calendar").
+    fn title(&self) -> String {
+        let name = self.name();
+        let mut title = String::with_capacity(name.len() + 4);
+        for (index, character) in name.char_indices() {
+            if index > 0
+                && character.is_uppercase()
+                && title.chars().last().is_some_and(|previous| previous != ' ')
+            {
+                title.push(' ');
+            }
+            title.push(character);
+        }
+        title
+    }
 
     fn description(&self) -> &'static str {
         "Configure this built-in widget."
@@ -283,6 +301,7 @@ impl<W: WidgetHandler + 'static> WidgetHandlerDyn for DynWidget<W> {
         let (min_width, min_height) = self.inner.min_size();
         WidgetDescriptor {
             name: self.inner.name().to_string(),
+            title: self.inner.title(),
             description: self.inner.description(),
             default_width,
             default_height,

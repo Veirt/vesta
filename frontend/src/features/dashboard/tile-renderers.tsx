@@ -1,5 +1,5 @@
 import { IconPhotoOff, IconStarFilled } from "@tabler/icons-react";
-import { useEffect, type CSSProperties, type ReactNode, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, type CSSProperties, type ReactNode, useState } from "react";
 import type { DashboardService, DashboardWidget } from "@/features/dashboard/schema";
 
 type WidgetData = Record<string, unknown>;
@@ -547,7 +547,91 @@ function JellyfinRandomShowWidget({ data }: { data: WidgetData }) {
   );
 }
 
-function WidgetContent({ name, data }: { name: string; data: WidgetData }) {
+const PLUGIN_NAME_PREFIX = "Plugin:";
+
+function parsePluginWidgetName(name: string): { pluginId: string; widgetId: string } | null {
+  const rest = name.slice(PLUGIN_NAME_PREFIX.length);
+  const separator = rest.indexOf(":");
+  if (separator <= 0 || separator === rest.length - 1) return null;
+  return { pluginId: rest.slice(0, separator), widgetId: rest.slice(separator + 1) };
+}
+
+/// Embeds a plugin's static asset bundle in a sandboxed iframe (opaque
+/// origin) and publishes the tile's configuration through the postMessage
+/// contract: `{ type: "vesta:config", title, config }`, sent when the frame
+/// loads and re-sent whenever the saved configuration changes.
+function PluginIframe({
+  pluginId,
+  entry,
+  title,
+  config,
+}: {
+  pluginId: string;
+  entry: string;
+  title: string;
+  config: WidgetData;
+}) {
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const [frameLoaded, setFrameLoaded] = useState(false);
+  const configKey = useMemo(() => JSON.stringify(config ?? {}), [config]);
+
+  useEffect(() => {
+    if (!frameLoaded) return;
+    frameRef.current?.contentWindow?.postMessage(
+      { type: "vesta:config", title, config: JSON.parse(configKey) },
+      "*",
+    );
+  }, [frameLoaded, configKey, title]);
+
+  const src = `/api/plugins/${encodeURIComponent(pluginId)}/assets/${entry
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/")}`;
+
+  return (
+    <iframe
+      className="plugin-widget-frame"
+      ref={frameRef}
+      src={src}
+      title={`${title} plugin widget`}
+      sandbox="allow-scripts allow-forms"
+      onLoad={() => setFrameLoaded(true)}
+    />
+  );
+}
+
+function PluginWidgetContent({
+  name,
+  data,
+  title,
+}: {
+  name: string;
+  data: WidgetData;
+  title?: string;
+}) {
+  const parsed = parsePluginWidgetName(name);
+  const entry = typeof data.entry === "string" && data.entry.length > 0 ? data.entry : null;
+  const config = (data.config ?? {}) as WidgetData;
+
+  if (!parsed || !entry) {
+    return (
+      <ErrorMessage message="This plugin widget has no saved configuration yet. Add it to the dashboard to render." />
+    );
+  }
+  return (
+    <PluginIframe
+      pluginId={parsed.pluginId}
+      entry={entry}
+      title={title ?? parsed.widgetId}
+      config={config}
+    />
+  );
+}
+
+function WidgetContent({ name, data, title }: { name: string; data: WidgetData; title?: string }) {
+  if (name.startsWith(PLUGIN_NAME_PREFIX)) {
+    return <PluginWidgetContent name={name} data={data} title={title} />;
+  }
   switch (name) {
     case "Clock":
       return <ClockWidget data={data} />;
@@ -596,7 +680,7 @@ function LiveWidgetCard({ widget }: { widget: DashboardWidget }) {
       ) : !data ? (
         <Loading />
       ) : (
-        <WidgetContent name={widget.name} data={data} />
+        <WidgetContent name={widget.name} data={data} title={widget.title} />
       )}
     </WidgetFrame>
   );
@@ -681,7 +765,7 @@ function previewData(name: string): WidgetData {
 function PreviewWidgetCard({ widget }: { widget: DashboardWidget }) {
   return (
     <WidgetFrame widget={widget} editing>
-      <WidgetContent name={widget.name} data={previewData(widget.name)} />
+      <WidgetContent name={widget.name} data={previewData(widget.name)} title={widget.title} />
     </WidgetFrame>
   );
 }
@@ -694,7 +778,7 @@ function WidgetPreview({ name }: { name: string }) {
   const data = previewData(name);
   return (
     <div className="widget-preview">
-      <WidgetContent name={name} data={data} />
+      <WidgetContent name={name} data={data} title={name} />
       <span className="widget-preview-note">Sample preview</span>
     </div>
   );

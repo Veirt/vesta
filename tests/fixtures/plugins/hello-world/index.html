@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Counter widget</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        align-items: center;
+        justify-content: space-evenly;
+        height: 100vh;
+      }
+      .label {
+        font-size: 0.85rem;
+        opacity: 0.75;
+        text-align: center;
+      }
+      .count {
+        font-size: 2rem;
+        font-variant-numeric: tabular-nums;
+      }
+      .controls {
+        display: flex;
+        gap: 0.5rem;
+      }
+      button {
+        font: inherit;
+        padding: 0.15rem 0.9rem;
+        cursor: pointer;
+      }
+      body.theme-dark { background: #0b0b0d; color: #e7e7ea; }
+      body.theme-light { background: #f7f7f8; color: #17171a; }
+    </style>
+  </head>
+  <body>
+    <span class="label" id="label">Label</span>
+    <output class="count" id="count">0</output>
+    <div class="controls">
+      <button type="button" id="minus" aria-label="Decrease">−</button>
+      <button type="button" id="plus" aria-label="Increase">+</button>
+    </div>
+    <script>
+      let value = 0;
+      const count = document.getElementById("count");
+      const label = { el: document.getElementById("label") };
+      // Vesta plugin contract v1: the host posts {type:"vesta:config",
+      // title, config} on load and whenever the tile config changes.
+      window.addEventListener("message", (event) => {
+        const message = event.data;
+        if (!message || message.type !== "vesta:config") return;
+        const config = message.config || {};
+        value = Number(config.start_value ?? 0) || 0;
+        count.textContent = String(value);
+        label.el.textContent = message.title || config.label || "Counter";
+        document.body.className =
+          config.theme === "dark" ? "theme-dark" : config.theme === "light" ? "theme-light" : "";
+      });
+      function step(delta) {
+        value += delta;
+        count.textContent = String(value);
+      }
+      document.getElementById("minus").addEventListener("click", () => step(-1));
+      document.getElementById("plus").addEventListener("click", () => step(1));
+    </script>
+  </body>
+</html>

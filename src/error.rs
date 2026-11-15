@@ -38,6 +38,12 @@ pub enum VestaError {
     #[error("Invalid widget config: {0}")]
     InvalidWidgetConfig(String),
 
+    #[error("Plugin error: {0}")]
+    Plugin(String),
+
+    #[error("Plugin not found: id='{id}'")]
+    PluginNotFound { id: String },
+
     #[error("Metrics error: {0}")]
     Metrics(#[from] MetricsError),
 
@@ -68,6 +74,8 @@ impl IntoResponse for VestaError {
             VestaError::InvalidWidgetConfig(_) => {
                 (StatusCode::BAD_REQUEST, "invalid_widget_config")
             }
+            VestaError::Plugin(_) => (StatusCode::BAD_REQUEST, "plugin_error"),
+            VestaError::PluginNotFound { .. } => (StatusCode::NOT_FOUND, "plugin_not_found"),
             VestaError::Metrics(_) => (StatusCode::BAD_GATEWAY, "metrics_error"),
             VestaError::ApiError { status, .. } => (*status, "api_error"),
         };

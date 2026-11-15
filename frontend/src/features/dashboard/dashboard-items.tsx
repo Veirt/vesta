@@ -835,7 +835,7 @@ function TileEditorDialog({
                 {descriptor ? (
                   <div className="grid gap-3">
                     <div>
-                      <h4 className="text-sm font-medium">{descriptor.name} settings</h4>
+                      <h4 className="text-sm font-medium">{descriptor.title} settings</h4>
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
                         {descriptor.description}
                       </p>
@@ -1080,15 +1080,24 @@ function DashboardItems({
 
   useEffect(() => {
     let active = true;
-    fetchAuthStatus()
-      .then((status) => {
-        if (active) setAuthenticated(status.authenticated);
-      })
-      .catch(() => {
-        if (active) setAuthenticated(false);
-      });
+
+    const refreshAuth = () => {
+      fetchAuthStatus()
+        .then((status) => {
+          if (active) setAuthenticated(status.authenticated);
+        })
+        .catch(() => {
+          if (active) setAuthenticated(false);
+        });
+    };
+
+    refreshAuth();
+    window.addEventListener("focus", refreshAuth);
+    document.addEventListener("visibilitychange", refreshAuth);
     return () => {
       active = false;
+      window.removeEventListener("focus", refreshAuth);
+      document.removeEventListener("visibilitychange", refreshAuth);
     };
   }, []);
 
@@ -1274,7 +1283,7 @@ function DashboardItems({
               ) : (
                 editor.widgets.map((widget) => (
                   <DropdownMenuItem key={widget.name} onSelect={() => addWidget(widget.name)}>
-                    {widget.name.replace(/([a-z])([A-Z])/g, "$1 $2")}
+                    {widget.title}
                   </DropdownMenuItem>
                 ))
               )}

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { AppearanceSection } from "@/features/settings/components/appearance-section";
 import { NodesSection } from "@/features/settings/components/nodes-section";
+import { PluginsSection } from "@/features/settings/components/plugins-section";
 import { WidgetCatalog } from "@/features/settings/components/widget-catalog";
 import { buttonClass, primaryButtonClass } from "@/features/settings/components/styles";
 import { useSettingsEditor } from "@/features/settings/use-settings-editor";
@@ -9,6 +10,7 @@ const sections = [
   { id: "appearance", label: "Appearance", group: "General" },
   { id: "servers", label: "Servers", group: "Infrastructure" },
   { id: "widgets", label: "Widgets", group: "Dashboard" },
+  { id: "plugins", label: "Plugins", group: "Dashboard" },
 ] as const;
 
 type SectionId = (typeof sections)[number]["id"];
@@ -172,6 +174,7 @@ function SettingsEditor() {
               />
             )}
             {activeSection === "widgets" && <WidgetCatalog widgets={editor.widgets} />}
+            {activeSection === "plugins" && <PluginsSection />}
           </section>
         </div>
       )}

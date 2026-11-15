@@ -1,0 +1,250 @@
+use async_trait::async_trait;
+
+use crate::config::WidgetConfig;
+use crate::error::{VestaError, VestaResult};
+use crate::plugins::manifest::{PluginFieldSpec, PluginOptionSpec, PluginWidgetSpec};
+use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetOption, WidgetQuery};
+use serde_json::{Value, json};
+
+/// Registry name prefix for plugin widgets:
+/// `Plugin:<plugin_id>:<widget_id>`.
+pub const PLUGIN_NAME_PREFIX: &str = "Plugin:";
+
+/// A plugin widget registered at process start (and whenever plugins are
+/// installed or removed). The handler carries no backend behavior: its data
+/// response is a pointer to the static asset bundle the frontend embeds in a
+/// sandboxed iframe.
+#[derive(Clone)]
+pub struct PluginWidgetHandler {
+    plugin_id: String,
+    spec: PluginWidgetSpec,
+}
+
+impl PluginWidgetHandler {
+    pub fn new(plugin_id: &str, spec: PluginWidgetSpec) -> Self {
+        Self {
+            plugin_id: plugin_id.to_string(),
+            spec,
+        }
+    }
+
+    fn widget_name(&self) -> String {
+        format!("{}{}:{}", PLUGIN_NAME_PREFIX, self.plugin_id, self.spec.id)
+    }
+}
+
+/// The registry stores field metadata as `&'static str`. Plugin specs live
+/// exactly as long as the process lives once registered, so interning them at
+/// registration time is sound and keeps the descriptor type unchanged.
+fn intern(value: &str) -> &'static str {
+    Box::leak(value.to_string().into_boxed_str())
+}
+
+fn intern_field(field: &PluginFieldSpec) -> WidgetField {
+    WidgetField {
+        key: intern(&field.key),
+        label: intern(&field.label),
+        kind: intern(&field.kind),
+        required: field.required,
+        description: intern(field.description.as_deref().unwrap_or("")),
+        default: field.default.clone(),
+        options: field.options.iter().map(intern_option).collect(),
+    }
+}
+
+fn intern_option(option: &PluginOptionSpec) -> WidgetOption {
+    WidgetOption {
+        value: intern(&option.value),
+        label: intern(&option.label),
+    }
+}
+
+#[async_trait]
+impl WidgetHandler for PluginWidgetHandler {
+    fn name(&self) -> &'static str {
+        intern(&self.widget_name())
+    }
+
+    fn title(&self) -> String {
+        self.spec.title.clone()
+    }
+
+    fn description(&self) -> &'static str {
+        intern(self.spec.description.as_deref().unwrap_or("Plugin widget."))
+    }
+
+    fn fields(&self) -> Vec<WidgetField> {
+        self.spec.fields.iter().map(intern_field).collect()
+    }
+
+    fn default_size(&self) -> (u8, u8) {
+        (self.spec.width, self.spec.height)
+    }
+
+    fn min_size(&self) -> (u8, u8) {
+        (self.spec.min_width, self.spec.min_height)
+    }
+
+    type Config = WidgetConfig;
+
+    /// Validate the raw options map against the manifest: required fields must
+    /// be present and non-empty. Everything else passes through untouched —
+    /// interpretation belongs to the trusted plugin code.
+    fn parse_config(&self, raw: Option<&WidgetConfig>) -> VestaResult<Self::Config> {
+        let config = raw.cloned().unwrap_or_default();
+        for field in &self.spec.fields {
+            if !field.required {
+                continue;
+            }
+            let present = match config.get(&field.key) {
+                Some(Value::String(text)) => !text.trim().is_empty(),
+                Some(Value::Null) | None => false,
+                Some(_) => true,
+            };
+            if !present {
+                return Err(VestaError::InvalidWidgetConfig(format!(
+                    "widget '{}': field '{}' is required",
+                    self.spec.title, field.label
+                )));
+            }
+        }
+        Ok(config)
+    }
+
+    fn refresh_interval_secs(&self, _config: &Self::Config) -> Option<u64> {
+        self.spec.refresh_interval_secs
+    }
+
+    async fn handle_request(
+        &self,
+        _ctx: WidgetContext,
+        _query: WidgetQuery,
+        config: Self::Config,
+    ) -> VestaResult<Value> {
+        Ok(json!({
+            "plugin_id": self.plugin_id,
+            "widget_id": self.spec.id,
+            "entry": self.spec.entry,
+            "config": config,
+        }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    fn spec(fields: Vec<PluginFieldSpec>) -> PluginWidgetSpec {
+        PluginWidgetSpec {
+            id: "counter".to_string(),
+            title: "Counter".to_string(),
+            description: Some("A sample counter.".to_string()),
+            entry: "index.html".to_string(),
+            width: 3,
+            height: 2,
+            min_width: 3,
+            min_height: 2,
+            refresh_interval_secs: Some(66),
+            fields,
+        }
+    }
+
+    fn config_of(entries: &[(&str, Value)]) -> WidgetConfig {
+        entries
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.clone()))
+            .collect::<HashMap<String, Value>>()
+    }
+
+    fn handler() -> PluginWidgetHandler {
+        PluginWidgetHandler::new("hello-world", spec(vec![]))
+    }
+
+    #[test]
+    fn widget_name_uses_prefixed_three_part_key() {
+        assert_eq!(handler().name(), "Plugin:hello-world:counter");
+        assert!(!handler().name().starts_with("Plugin:{}"));
+    }
+
+    #[test]
+    fn descriptor_comes_from_the_manifest_spec() {
+        let handler = handler();
+        assert_eq!(handler.description(), "A sample counter.");
+        assert_eq!(handler.default_size(), (3, 2));
+        assert_eq!(handler.min_size(), (3, 2));
+        assert_eq!(handler.refresh_interval_secs(&config_of(&[])), Some(66));
+        assert!(handler.fields().is_empty());
+    }
+
+    #[test]
+    fn required_fields_must_be_present_and_non_empty() {
+        let handler = PluginWidgetHandler::new(
+            "hello-world",
+            spec(vec![PluginFieldSpec {
+                key: "label".to_string(),
+                label: "Label".to_string(),
+                kind: "text".to_string(),
+                required: true,
+                description: None,
+                default: None,
+                options: vec![],
+            }]),
+        );
+        for bad in [
+            config_of(&[]),
+            config_of(&[("label", Value::Null)]),
+            config_of(&[("label", json!("   "))]),
+        ] {
+            let error = handler.parse_config(Some(&bad)).unwrap_err();
+            assert!(error.to_string().contains("required"), "{error}");
+        }
+        handler
+            .parse_config(Some(&config_of(&[("label", json!(" ok "))])))
+            .unwrap();
+        handler
+            .parse_config(Some(&config_of(&[("label", json!(42))])))
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn data_response_points_at_the_asset_bundle() {
+        // Real context object; PluginWidgetHandler never touches it.
+        let registry = crate::widget_system::WidgetRegistry::new();
+        let config_path = std::env::temp_dir().join(format!(
+            "vesta-plugin-ctx-{}.toml",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let manager = Arc::new(
+            crate::config_manager::ConfigManager::new(
+                config_path,
+                crate::plugins::SharedWidgetRegistry::new(registry),
+            )
+            .unwrap(),
+        );
+        let nodes = crate::metrics::service::NodeService::start(
+            &[],
+            crate::http_client::create_default_client().unwrap(),
+        );
+        let ctx = WidgetContext {
+            nodes: nodes.clone(),
+            config: manager,
+        };
+
+        let response = PluginWidgetHandler::new("hello-world", spec(vec![]))
+            .handle_request(
+                ctx,
+                WidgetQuery {
+                    id: "item-1".to_string(),
+                },
+                config_of(&[("start_value", json!("0"))]),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response["plugin_id"], json!("hello-world"));
+        assert_eq!(response["widget_id"], json!("counter"));
+        assert_eq!(response["entry"], json!("index.html"));
+        assert_eq!(response["config"]["start_value"], json!("0"));
+    }
+}

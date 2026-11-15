@@ -3,9 +3,12 @@ import {
   ApiErrorSchema,
   AuthStatusResponseSchema,
   IconUploadResponseSchema,
+  InstalledPluginResponseSchema,
   MessageResponseSchema,
   PingTestResponseSchema,
+  PluginsResponseSchema,
   SettingsResponseSchema,
+  type Plugin,
   type SettingsData,
   type SettingsPayload,
 } from "@/features/settings/schema";
@@ -98,9 +101,34 @@ async function uploadIcon(file: File) {
   return (await decode(response, IconUploadResponseSchema)).data;
 }
 
+async function listPlugins(): Promise<Plugin[]> {
+  const response = await fetch("/api/plugins", { cache: "no-store" });
+  return (await decode(response, PluginsResponseSchema)).data.plugins;
+}
+
+async function installPlugin(url: string): Promise<Plugin> {
+  const response = await fetch("/api/plugins", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  return (await decode(response, InstalledPluginResponseSchema)).data;
+}
+
+async function uninstallPlugin(id: string) {
+  const response = await fetch(`/api/plugins/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+  await decode(response, MessageResponseSchema);
+}
+
 export {
   fetchAuthStatus,
   fetchSettings,
+  installPlugin,
+  listPlugins,
+  uninstallPlugin,
   saveDashboardItems,
   saveSettings,
   signOut,

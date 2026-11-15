@@ -1,0 +1,7 @@
+id = "broken-plugin"
+name = "Broken Plugin"
+
+[[widgets]]
+id = "counter"
+title = "Counter"
+entry = "../../outside.html"

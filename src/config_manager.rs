@@ -24,19 +24,22 @@ pub struct ConfigManager {
     path: PathBuf,
     snapshot: RwLock<Arc<SettingsSnapshot>>,
     write_gate: Mutex<()>,
-    registry: Arc<WidgetRegistry>,
+    registry: crate::plugins::SharedWidgetRegistry,
     updates: watch::Sender<u64>,
 }
 
 impl ConfigManager {
-    pub fn new(path: impl Into<PathBuf>, registry: Arc<WidgetRegistry>) -> VestaResult<Self> {
+    pub fn new(
+        path: impl Into<PathBuf>,
+        registry: crate::plugins::SharedWidgetRegistry,
+    ) -> VestaResult<Self> {
         let path = path.into();
-        let config = read_config(&path, &registry)?;
+        let config = read_config(&path, &registry.current())?;
         let mut dashboard = config.dashboard();
-        normalize_layout(&mut dashboard, &registry);
+        normalize_layout(&mut dashboard, &registry.current());
         normalize_groups(&mut dashboard);
         let app = config.app;
-        validate(&dashboard, &app, &registry)?;
+        validate(&dashboard, &app, &registry.current())?;
         let (updates, _) = watch::channel(0);
 
         Ok(Self {
@@ -75,9 +78,10 @@ impl ConfigManager {
     }
 
     pub async fn save(&self, mut dashboard: Dashboard, app: AppSettings) -> VestaResult<()> {
-        normalize_layout(&mut dashboard, &self.registry);
+        let registry = self.registry.current();
+        normalize_layout(&mut dashboard, &registry);
         normalize_groups(&mut dashboard);
-        validate(&dashboard, &app, &self.registry)?;
+        validate(&dashboard, &app, &registry)?;
         let _write = self.write_gate.lock().await;
         write_config(&self.path, &dashboard, &app)?;
 

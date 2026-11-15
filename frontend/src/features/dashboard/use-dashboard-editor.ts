@@ -257,7 +257,7 @@ function useDashboardEditor(enabled: boolean) {
       kind: "widget",
       editor_id: createItemId("editor-widget", "widget"),
       id: nextId(name, items),
-      title: name.replace(/([a-z])([A-Z])/g, "$1 $2"),
+      title: descriptor.title || name,
       group: null,
       name,
       config: defaultConfig(descriptor),

@@ -44,6 +44,7 @@ pub async fn widget_options(
 ) -> Result<impl IntoResponse, VestaError> {
     let options = state
         .widget_registry
+        .current()
         .field_options(&widget_name, &request.field, &request.config)
         .await?;
     Ok(jsend::success(json!({ "options": options })))
@@ -154,7 +155,7 @@ fn dashboard_items_payload(
                 "y": widget.y,
                 "width": widget.width,
                 "height": widget.height,
-                "refresh_interval_secs": state.widget_registry.refresh_interval_secs(widget),
+                "refresh_interval_secs": state.widget_registry.current().refresh_interval_secs(widget),
             }),
         })
         .collect()
@@ -300,7 +301,7 @@ pub async fn health(
             "nodes": config.nodes.len(),
         },
         "widgets": {
-            "registered": state.widget_registry.names(),
+            "registered": state.widget_registry.current().names(),
             "in_use": widgets_in_use,
         }
     })))

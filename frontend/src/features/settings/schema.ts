@@ -66,6 +66,7 @@ const WidgetFieldSchema = v.object({
 });
 const WidgetDescriptorSchema = v.object({
   name: v.string(),
+  title: v.string(),
   description: v.string(),
   default_width: v.number(),
   default_height: v.number(),
@@ -106,6 +107,44 @@ const IconUploadResponseSchema = v.object({
   data: UploadedIconSchema,
 });
 const ApiErrorSchema = v.object({ message: v.string() });
+const PluginWidgetManifestSchema = v.object({
+  id: v.string(),
+  title: v.string(),
+  description: v.optional(v.nullable(v.string())),
+  entry: v.string(),
+  width: v.number(),
+  height: v.number(),
+  refresh_interval_secs: v.optional(v.nullable(v.number())),
+  fields: v.array(
+    v.object({
+      key: v.string(),
+      label: v.string(),
+      kind: v.string(),
+      required: v.boolean(),
+      description: v.optional(v.nullable(v.string())),
+      default: v.optional(v.unknown()),
+      options: v.optional(v.array(v.object({ value: v.string(), label: v.string() }))),
+    }),
+  ),
+});
+const PluginSchema = v.object({
+  id: v.string(),
+  name: v.string(),
+  version: v.optional(v.nullable(v.string())),
+  description: v.optional(v.nullable(v.string())),
+  source_url: v.string(),
+  commit: v.string(),
+  installed_at: v.string(),
+  widgets: v.array(PluginWidgetManifestSchema),
+});
+const PluginsResponseSchema = v.object({
+  status: v.literal("success"),
+  data: v.object({ plugins: v.array(PluginSchema) }),
+});
+const InstalledPluginResponseSchema = v.object({
+  status: v.literal("success"),
+  data: PluginSchema,
+});
 
 type Theme = v.InferOutput<typeof ThemeSchema>;
 type AppSettings = v.InferOutput<typeof AppSettingsSchema>;
@@ -122,9 +161,15 @@ type SettingsPayload = {
   app: AppSettings;
 };
 type AuthStatus = v.InferOutput<typeof AuthStatusResponseSchema>["data"];
+type Plugin = v.InferOutput<typeof PluginSchema>;
+type PluginWidget = v.InferOutput<typeof PluginWidgetManifestSchema>;
 
 export {
   ApiErrorSchema,
+  InstalledPluginResponseSchema,
+  PluginWidgetManifestSchema,
+  PluginSchema,
+  PluginsResponseSchema,
   AuthStatusResponseSchema,
   IconUploadResponseSchema,
   MessageResponseSchema,
@@ -134,6 +179,8 @@ export {
 export type {
   AppSettings,
   AuthStatus,
+  Plugin,
+  PluginWidget,
   DashboardItemSettings,
   DashboardGroupSettings,
   ServiceSettings,

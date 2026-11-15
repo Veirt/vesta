@@ -70,9 +70,13 @@ Built-in handlers are listed in Settings with structured controls based on each 
 - `Weather`
 - `SonarrCalendar`
 
-`SystemStats` is no longer offered for new tiles, but remains available to render saved configurations made with earlier versions. The React dashboard renders service cards and widgets from JSON APIs. Widget data is available at `GET /api/widgets/{widget}?id=…`; service availability is available at `GET /api/ping?id=…`. Authenticated Settings APIs save dashboard layout and test availability-check URLs. Live server telemetry is delivered over Server-Sent Events. GitHub URL installation and third-party widget execution are **not implemented**. A future installer should use a versioned, permission-limited sandbox boundary rather than execute repository code inside the Vesta process.
+`SystemStats` is no longer offered for new tiles, but remains available to render saved configurations made with earlier versions. The React dashboard renders service cards and widgets from JSON APIs. Widget data is available at `GET /api/widgets/{widget}?id=…`; service availability is available at `GET /api/ping?id=…`. Authenticated Settings APIs save dashboard layout and test availability-check URLs. Live server telemetry is delivered over Server-Sent Events.
 
-Planned but not included yet: WAN latency/speed testing, Jellyfin recommended/random anime posters, notes/todo scratchpad, AdGuard widgets, and GitHub-installed plugins.
+### Plugins
+
+Third-party widgets are delivered by **plugins**: git repositories containing a `vesta-plugin.toml` manifest and static web bundles. Install one by URL in Settings → Plugins (HTTPS, SSH, git, or a local path); its widgets appear in the Add tile menu immediately. Bundles are served from `/api/plugins/<id>/assets/…` with a restrictive CSP and embedded as sandboxed iframes (opaque origin), configured through a versioned `postMessage` contract. Plugin code runs in your browser — only install repositories you trust. See [`docs/plugins.md`](docs/plugins.md) for the manifest reference and contract.
+
+Planned but not included yet: WAN latency/speed testing and notes/todo scratchpad.
 
 ## Development
 
