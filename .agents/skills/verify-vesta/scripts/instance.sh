@@ -162,6 +162,7 @@ start() {
     nohup env \
       VESTA_CONFIG="$RUN_DIR/config.toml" \
       VESTA_DATABASE="$RUN_DIR/data/vesta.sqlite" \
+      VESTA_PLUGINS="$RUN_DIR/data/plugins" \
       VESTA_BIND="127.0.0.1:$port" \
       VESTA_STATIC_DIR="$ROOT/static" \
       VESTA_COOKIE_SECURE=false \

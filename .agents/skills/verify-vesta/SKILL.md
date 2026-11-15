@@ -41,7 +41,7 @@ Whenever startup or browser behavior looks wrong, run this read-only check befor
 
 It verifies that the recorded PID is still this run's Vesta binary, `ss` attributes the listening port to that PID, `/api/health?detailed=true` reports the Cargo package version, `/settings` and both built frontend assets are served, SQLite was initialized, `/api/auth/status` is coherent for either first-run setup or an existing administrator, and unauthenticated `/api/settings` requests are rejected. A doctor failure means the instance is not ready to drive; read the preserved `server.log` and `build.log` in `$EVIDENCE_DIR`, then clean up the run before retrying.
 
-The Playwright session itself can also restart between driver calls (a new browser pid in the output); its HTTP-only session cookie is then lost and the next `/settings` snapshot shows the sign-in form. Treat that as a session restart, not a fresh-instance precondition failure: sign in again with the disposable password and continue the journey.
+The Playwright session itself can also restart between driver calls (a new browser pid in the output); its HTTP-only session cookie is then lost and the next `/settings` snapshot shows the sign-in form. Treat that as a session restart, not a fresh-instance precondition failure: sign in again with the disposable password and continue the journey. Two reliable ways to avoid losing the session mid-journey: keep one browser session (navigate in-page via `eval '() => { location.href = "…"; }'` instead of a second `open`, which can relaunch the browser), and prefer refreshing auth-gated state with `location.reload()` after signing back in.
 
 ## Drive
 
