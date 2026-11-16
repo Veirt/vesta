@@ -1,4 +1,4 @@
-import { minSizeFor } from "@/features/dashboard/tile-sizes";
+import { groupSpanOf, minSizeFor } from "@/features/dashboard/tile-sizes";
 import type {
   EditableDashboardGroup,
   EditableDashboardItem,
@@ -93,6 +93,7 @@ function validateDashboardItems(
   items: EditableDashboardItem[],
   widgets: WidgetDescriptor[],
   nodes: Array<{ id: string }>,
+  groups: EditableDashboardGroup[],
 ): ValidationIssue[] {
   const nodeIds = new Set(nodes.map(({ id }) => id));
   const issues: ValidationIssue[] = [];
@@ -106,7 +107,7 @@ function validateDashboardItems(
     if (item.group && (item.group.trim() !== item.group || item.group.length > 64)) {
       add("Group names must contain 1 to 64 characters.");
     }
-    const min = minSizeFor(item, widgets);
+    const min = minSizeFor(item, widgets, groupSpanOf(groups, item.group));
     if (item.width < min.width || item.height < min.height) {
       add(`Tiles must be at least ${min.width}×${min.height} grid units.`);
     }

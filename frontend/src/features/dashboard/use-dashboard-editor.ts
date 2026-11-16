@@ -15,6 +15,7 @@ import type {
 import {
   clampTileSize,
   DEFAULT_GROUP_SPAN,
+  groupSpanOf,
   MIN_GROUP_SPAN,
   minSizeFor,
   widgetMinSize,
@@ -304,7 +305,7 @@ function useDashboardEditor(enabled: boolean) {
     setItems((current) => {
       const selected = current.find((item) => item.editor_id === editorId);
       if (!selected) return current;
-      const min = minSizeFor(selected, widgets);
+      const min = minSizeFor(selected, widgets, groupSpanOf(groups, selected.group));
       const fixed = clampTileSize(width, height, min);
       const updated = current.map((item) =>
         item.editor_id === editorId
@@ -415,7 +416,7 @@ function useDashboardEditor(enabled: boolean) {
       const next = current.map((item) => {
         const entry = byId.get(item.editor_id);
         if (!entry) return item;
-        const min = minSizeFor(item, widgets);
+        const min = minSizeFor(item, widgets, groupSpanOf(groups, item.group));
         const x = Math.round(entry.x * factor);
         const y = entry.y;
         const size = clampTileSize(entry.w * factor, entry.h, min);

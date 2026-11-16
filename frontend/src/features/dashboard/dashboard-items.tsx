@@ -44,6 +44,7 @@ import { ServiceCard, WidgetCard } from "@/features/dashboard/tile-renderers";
 import { useDashboardEditor, type LayoutEntry } from "@/features/dashboard/use-dashboard-editor";
 import {
   DEFAULT_GROUP_SPAN,
+  groupSpanOf,
   MIN_GROUP_SPAN,
   minSizeFor,
   type TileSize,
@@ -797,7 +798,11 @@ function TileEditorDialog({
                 onCreate={onCreateGroup}
               />
             </Field>
-            <TileSizeField item={item} min={minSizeFor(item, widgets)} onResize={onResize} />
+            <TileSizeField
+              item={item}
+              min={minSizeFor(item, widgets, groupSpanOf(groups, item.group))}
+              onResize={onResize}
+            />
             {item.kind === "service" ? (
               <>
                 <Field label="Destination URL" description="Where the service tile opens.">
@@ -1127,7 +1132,7 @@ function DashboardItems({
     ? selectedGroupItems.findIndex((item) => item.editor_id === selected.editor_id)
     : -1;
   const validationIssues = [
-    ...validateDashboardItems(editor.items, editor.widgets, editor.nodes),
+    ...validateDashboardItems(editor.items, editor.widgets, editor.nodes, editor.groups),
     ...validateDashboardGroups(editor.groups),
   ];
   const visibleSections = groupDashboardItems(normalizedQuery ? visibleItems : items, groups, true);
@@ -1369,7 +1374,7 @@ function DashboardItems({
                   section={section}
                   groupDragActive={draggingGroupId !== null}
                   isGroupDragSource={draggingGroupId === section.id}
-                  minSizeFor={(item) => minSizeFor(item, editor.widgets)}
+                  minSizeFor={(item) => minSizeFor(item, editor.widgets, section.width)}
                   onGroupDragStart={() => {
                     // The Ungrouped section needs its metadata slot before any
                     // reorder or width change can find it in the groups array.

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -290,16 +291,52 @@ fn decode_toml_value<T: serde::de::DeserializeOwned>(
         .map_err(|error| format!("invalid {label}: {error}"))
 }
 
-const SERVICE_MIN_SIZE: (u8, u8) = (3, 1);
+/// Default column span (of 12) for groups without an explicit width; matches
+/// `DEFAULT_GROUP_SPAN` in `frontend/src/features/dashboard/tile-sizes.ts`.
+const DEFAULT_GROUP_SPAN: u8 = 6;
+const UNKNOWN_WIDGET_MIN_SIZE: (u8, u8) = (3, 2);
 
-fn item_min_size(item: &DashboardItem, registry: &WidgetRegistry) -> (u8, u8) {
+/// Service links can shrink as their group grows: a tile of width `w` spans
+/// `w`/12 of the group's box, so wider groups may host narrower tiles while
+/// staying usable. Keep in sync with `serviceMinSize` in
+/// `frontend/src/features/dashboard/tile-sizes.ts`.
+fn service_min_size(group_span: u8) -> (u8, u8) {
+    match group_span {
+        10..=12 => (1, 1),
+        7..=9 => (2, 1),
+        _ => (3, 1),
+    }
+}
+
+fn group_span_map(dashboard: &Dashboard) -> HashMap<String, u8> {
+    dashboard
+        .groups
+        .iter()
+        .map(|group| (group.id.clone(), group.width.unwrap_or(DEFAULT_GROUP_SPAN)))
+        .collect()
+}
+
+fn group_span(spans: &HashMap<String, u8>, group_id: &str) -> u8 {
+    spans.get(group_id).copied().unwrap_or(DEFAULT_GROUP_SPAN)
+}
+
+fn item_min_size(
+    item: &DashboardItem,
+    spans: &HashMap<String, u8>,
+    registry: &WidgetRegistry,
+) -> (u8, u8) {
     match item {
-        DashboardItem::Service(_) => SERVICE_MIN_SIZE,
-        DashboardItem::Widget(widget) => registry.min_size(&widget.name).unwrap_or((3, 2)),
+        DashboardItem::Service(service) => {
+            service_min_size(group_span(spans, service.group.as_deref().unwrap_or("")))
+        }
+        DashboardItem::Widget(widget) => registry
+            .min_size(&widget.name)
+            .unwrap_or(UNKNOWN_WIDGET_MIN_SIZE),
     }
 }
 
 fn normalize_layout(dashboard: &mut Dashboard, registry: &WidgetRegistry) {
+    let spans = group_span_map(dashboard);
     let mut occupied = std::collections::HashMap::<String, std::collections::HashSet<_>>::new();
     for item in &mut dashboard.items {
         let group = match item {
@@ -309,7 +346,7 @@ fn normalize_layout(dashboard: &mut Dashboard, registry: &WidgetRegistry) {
         let occupied = occupied.entry(group.to_string()).or_default();
         let (x, y, width, height) = item.layout();
         let (default_width, default_height) = item.default_size();
-        let (min_width, min_height) = item_min_size(item, registry);
+        let (min_width, min_height) = item_min_size(item, &spans, registry);
         let width = width.unwrap_or(default_width).clamp(min_width, 12);
         let height = height.unwrap_or(default_height).clamp(min_height, 12);
         let (x, y) = match (x, y) {
@@ -410,6 +447,7 @@ fn validate(
     app: &AppSettings,
     registry: &WidgetRegistry,
 ) -> VestaResult<()> {
+    let spans = group_span_map(dashboard);
     validate_nodes(&dashboard.nodes)
         .map_err(|error| VestaError::InvalidDashboard(error.to_string()))?;
     for node in &dashboard.nodes {
@@ -541,7 +579,7 @@ fn validate(
                 "dashboard tile '{id}' has an invalid saved layout"
             )));
         }
-        let (min_width, min_height) = item_min_size(item, registry);
+        let (min_width, min_height) = item_min_size(item, &spans, registry);
         if width < min_width || height < min_height {
             return Err(VestaError::InvalidDashboard(format!(
                 "dashboard tile '{id}' is smaller than its minimum size of {min_width}×{min_height}"
@@ -718,6 +756,51 @@ mod tests {
         assert_eq!((x, y, width, height), (Some(0), Some(0), Some(3), Some(1)));
         let (x, y, width, height) = dashboard.items[1].layout();
         assert_eq!((x, y, width, height), (Some(3), Some(0), Some(6), Some(2)));
+        let app = crate::config::AppSettings::default();
+        assert!(validate(&dashboard, &app, &registry).is_ok());
+    }
+
+    #[test]
+    fn service_minimum_width_relaxes_as_the_group_widens() {
+        let registry = WidgetRegistry::new();
+        let mut dashboard = crate::config::Dashboard::default();
+        for (group_id, span) in [("narrow", 3u8), ("half", 6), ("wide", 12)] {
+            dashboard.groups.push(DashboardGroup {
+                id: group_id.to_string(),
+                title: group_id.to_string(),
+                description: None,
+                icon: None,
+                width: Some(span),
+            });
+        }
+        for group_id in ["narrow", "half", "wide"] {
+            dashboard.items.push(DashboardItem::Service(Service {
+                id: format!("tiny-{group_id}"),
+                title: "Tiny".to_string(),
+                group: Some(group_id.to_string()),
+                icon: None,
+                href: Some("https://example.test".to_string()),
+                show_destination: true,
+                x: Some(0),
+                y: Some(0),
+                width: Some(1),
+                height: Some(1),
+                ping: None,
+            }));
+        }
+
+        normalize_layout(&mut dashboard, &registry);
+
+        let expected: Vec<(&str, u8)> = vec![("narrow", 3), ("half", 3), ("wide", 1)];
+        for (group_id, width) in expected {
+            let item = dashboard
+                .items
+                .iter()
+                .find(|item| item.id() == format!("tiny-{group_id}"))
+                .unwrap();
+            let (_, _, actual_width, _) = item.layout();
+            assert_eq!(actual_width, Some(width), "{group_id} group");
+        }
         let app = crate::config::AppSettings::default();
         assert!(validate(&dashboard, &app, &registry).is_ok());
     }
