@@ -19,6 +19,7 @@ Settings → Plugins, or:
 ```
 POST /api/plugins        {"url": "https://example.com/vesta-plugin.git"}
 GET  /api/plugins
+PUT  /api/plugins/<id>
 DELETE /api/plugins/<id>
 ```
 
@@ -28,6 +29,12 @@ DELETE /api/plugins/<id>
 - Installing or removing a plugin rebuilds the widget registry immediately; no
   restart is required.
 - A plugin cannot be removed while dashboard tiles still use its widgets.
+- `PUT /api/plugins/<id>` updates an installed plugin in place: Vesta re-clones
+  from the URL recorded at install time, refuses the update if the fetched
+  manifest declares a different plugin id (that is a different plugin — install
+  it separately), and atomically swaps the directory with rollback if the move
+  fails. Tile configs survive; the same-id manifest changes (new fields, new
+  versions) apply on the registry rebuild.
 - Plugins are stored under the `VESTA_PLUGINS` directory (default
   `./data/plugins`).
 

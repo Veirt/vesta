@@ -218,17 +218,24 @@ pub async fn list_plugins(
 }
 
 /// Installs a plugin from a git URL and reloads the widget registry so its
-/// widgets become available immediately.
+/// widgets become available immediately. The manager rejects empty URLs;
+/// the route is admin-gated.
 pub async fn install_plugin(
     Extension(state): Extension<std::sync::Arc<AppState>>,
     Json(input): Json<PluginInstallInput>,
 ) -> Result<impl IntoResponse, VestaError> {
-    if input.url.trim().is_empty() {
-        return Err(VestaError::Plugin(
-            "a git repository URL is required".to_string(),
-        ));
-    }
     let record = state.plugins.install(input.url.trim()).await?;
+    state.rebuild_widget_registry();
+    Ok(jsend::success(plugin_payload(&record)))
+}
+
+/// Re-fetches an installed plugin from its recorded source URL and swaps the
+/// tree in place, then reloads the widget registry.
+pub async fn update_plugin(
+    Extension(state): Extension<std::sync::Arc<AppState>>,
+    Path(plugin_id): Path<String>,
+) -> Result<impl IntoResponse, VestaError> {
+    let record = state.plugins.update(&plugin_id).await?;
     state.rebuild_widget_registry();
     Ok(jsend::success(plugin_payload(&record)))
 }
@@ -259,7 +266,7 @@ pub async fn plugin_asset(
     Extension(state): Extension<std::sync::Arc<AppState>>,
     Path((plugin_id, path)): Path<(String, String)>,
 ) -> Result<Response, VestaError> {
-    let root = state.plugins.plugin_dir(&plugin_id);
+    let root = state.plugins.plugin_dir(&plugin_id)?;
     let file = crate::plugins::assets::resolve_asset_path(&root, &path).ok_or(
         VestaError::PluginNotFound {
             id: format!("{}/{}", plugin_id, path),
@@ -277,6 +284,10 @@ pub async fn plugin_asset(
         (
             axum::http::header::CONTENT_SECURITY_POLICY,
             "frame-ancestors 'self'".to_string(),
+        ),
+        (
+            axum::http::header::X_CONTENT_TYPE_OPTIONS,
+            "nosniff".to_string(),
         ),
     ];
     Ok((headers, bytes).into_response())

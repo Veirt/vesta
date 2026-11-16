@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { installPlugin, listPlugins, uninstallPlugin } from "@/features/settings/api";
+import { installPlugin, listPlugins, uninstallPlugin, updatePlugin } from "@/features/settings/api";
 import type { Plugin } from "@/features/settings/schema";
 import {
   buttonClass,
@@ -46,6 +46,21 @@ function PluginsSection() {
       await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The plugin could not be installed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleUpdate(id: string) {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const plugin = await updatePlugin(id);
+      setNotice(`${plugin.name} updated to v${plugin.version ?? "unknown"}.`);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The plugin could not be updated");
     } finally {
       setBusy(false);
     }
@@ -145,14 +160,24 @@ function PluginsSection() {
                     <span className="ml-2 text-xs text-muted-foreground">v{plugin.version}</span>
                   )}
                 </h3>
-                <button
-                  className={destructiveButtonClass}
-                  type="button"
-                  onClick={() => void handleRemove(plugin.id)}
-                  disabled={busy}
-                >
-                  Remove
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    className={buttonClass}
+                    type="button"
+                    onClick={() => void handleUpdate(plugin.id)}
+                    disabled={busy}
+                  >
+                    Update
+                  </button>
+                  <button
+                    className={destructiveButtonClass}
+                    type="button"
+                    onClick={() => void handleRemove(plugin.id)}
+                    disabled={busy}
+                  >
+                    Remove
+                  </button>
+                </div>
               </div>
               {plugin.description && (
                 <p className="text-sm leading-5 text-muted-foreground">{plugin.description}</p>

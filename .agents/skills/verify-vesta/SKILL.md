@@ -47,6 +47,8 @@ The Playwright session itself can also restart between driver calls (a new brows
 
 Use the accessible snapshot after each page transition; refs expire when the page changes. Click buttons/links by the role and accessible name shown there, and fill labeled fields by their accessible name or stable selector. Simulate user actions through visible controls, with app-state reads via `eval` for assertions only; raw `mousemove`/`mousedown` sequences with explicit viewport coordinates are the exception, for live drag/resize checks where the pointer path is itself the behavior under test (see [`features/services-widgets.md`](features/services-widgets.md)).
 
+`click` and `fill` targets must be a snapshot ref (`e29`), a CSS selector, or a Playwright locator such as `getByRole('button', { name: 'Sign in' })` — the shorthand `click 'button "Sign in"'` (role + quoted name) is not a valid target and errors. `browser.sh` commands resolve relative `--filename` paths from the evidence directory (`browser.sh` chdirs there), not from the repo root.
+
 Start a named Playwright session and inspect the actual first-run page:
 
 ```bash

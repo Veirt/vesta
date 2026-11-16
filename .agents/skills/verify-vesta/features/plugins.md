@@ -6,9 +6,10 @@ Vesta installs external plugins from git URLs. A plugin is a git repo with a `ve
 
 - Install from a git URL (HTTPS, SSH, or local path) via the visible install form; validation errors from a missing/invalid manifest surface as a clear status message.
 - Installed plugins are listed with name, version, and widget titles; the widget catalog and Add-tile menu include plugin widgets next to built-ins.
+- Update re-fetches the installed plugin from its recorded source URL and swaps the tree in place behind a visible **Update** button (`PUT /api/plugins/<id>`): the version and commit shown in the installed list change, the asset route serves the swapped-in tree with no restart, and hidden temp/backup trees are cleaned up. An update whose fetched manifest declares a different plugin id is refused with an explicit error and the installed tree is kept.
 - Plugin widget tiles accept the manifest-declared config fields (text/number/select), validate them with the same dialog validation as built-ins, persist a `Plugin:<plugin_id>:<widget_id>` tile in `config.toml`, and render in a sandboxed iframe that receives the tile title and config on load and on each change.
 - Uninstall is refused with an explicit error while any dashboard tile still uses the plugin; after removing the tiles, uninstall succeeds and the plugin disappears from the widget catalog.
-- Asset serving rejects path traversal and serves only the manifest's declared assets.
+- Asset serving rejects path traversal (both in the plugin id and the asset path) and serves only the manifest's declared assets; responses carry `X-Content-Type-Options: nosniff`, `Cache-Control: no-cache`, and `Content-Security-Policy: frame-ancestors 'self'`.
 
 ## How to get to it (user POV)
 
@@ -33,6 +34,14 @@ cd /tmp/vesta-plugin-repo/hello-plugin && git init -q && git add -A && git -c us
 ./.agents/skills/verify-vesta/scripts/browser.sh "$RUN_ID" snapshot   # expect "<Name> <version> installed."
 ./.agents/skills/verify-vesta/scripts/browser.sh "$RUN_ID" screenshot --filename=01-plugin-installed.png
 
+# Update in place: commit a new manifest version to the same remote, then press Update
+cd /tmp/vesta-plugin-repo/hello-plugin && git -c user.email=v@v -c user.name=v \
+  commit -qam "version bump" --allow-empty  # plus a real vesta-plugin.toml version edit
+cd - >/dev/null
+./.agents/skills/verify-vesta/scripts/browser.sh "$RUN_ID" click 'getByRole("button", { name: "Update" })'
+./.agents/skills/verify-vesta/scripts/browser.sh "$RUN_ID" snapshot   # expect "<Name> updated to v<new>."
+curl -s -o /dev/null -w '%{http_code}\n' -b admin-cookies.txt "$BASE_URL/api/plugins/hello-world/assets/index.html"  # swapped-in tree serves
+
 # Saved-tile proof: tile persists as Plugin:<plugin_id>:<widget_id> with its config
 grep -n 'Plugin:hello-world' "$SCRATCH_DIR/config.toml"
 
@@ -46,6 +55,9 @@ curl -s -o /dev/null -w '%{http_code}\n' "$BASE_URL/api/plugins/hello-world/asse
 ```
 
 ## Assertions in user-visible terms
+
+- Status text confirms the exact plugin name and version after install, and the new version after Update (`"<Name> updated to v<x.y.z>."`); the installed list's commit line changes too.
+- Update on an unknown id returns `404 plugin_not_found`; unauthenticated `PUT /api/plugins/<id>` is `401`; a traversal plugin id (`..%2f…`) on the asset route is `404`.
 
 - Status text confirms the exact plugin name and version after install.
 - The Add-tile menu lists the plugin widget by its manifest title, and its edit dialog shows the manifest's config fields with working validation.

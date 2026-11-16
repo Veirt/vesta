@@ -22,7 +22,7 @@ use axum::Router;
 use axum::extract::{DefaultBodyLimit, Extension, Path, Query};
 use axum::middleware;
 use axum::response::IntoResponse;
-use axum::routing::{delete, get, post, put};
+use axum::routing::{get, post, put};
 use tower_http::compression::CompressionLayer;
 use tower_http::services::ServeDir;
 use tracing_subscriber::EnvFilter;
@@ -169,7 +169,7 @@ fn build_router(state: Arc<AppState>, static_dir: &str) -> Router {
         )
         .route(
             "/api/plugins/{plugin_id}",
-            delete(settings_api::uninstall_plugin),
+            put(settings_api::update_plugin).delete(settings_api::uninstall_plugin),
         )
         .route("/api/nodes", get(api::list_nodes))
         .route("/api/services", get(api::get_service))

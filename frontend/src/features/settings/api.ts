@@ -115,6 +115,14 @@ async function installPlugin(url: string): Promise<Plugin> {
   return (await decode(response, InstalledPluginResponseSchema)).data;
 }
 
+async function updatePlugin(id: string): Promise<Plugin> {
+  const response = await fetch(`/api/plugins/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { Accept: "application/json" },
+  });
+  return (await decode(response, InstalledPluginResponseSchema)).data;
+}
+
 async function uninstallPlugin(id: string) {
   const response = await fetch(`/api/plugins/${encodeURIComponent(id)}`, {
     method: "DELETE",
@@ -129,6 +137,7 @@ export {
   installPlugin,
   listPlugins,
   uninstallPlugin,
+  updatePlugin,
   saveDashboardItems,
   saveSettings,
   signOut,

@@ -81,7 +81,7 @@ impl PluginManager {
         if !is_valid_slug(id) {
             return Ok(None);
         }
-        let dir = self.plugin_dir(id);
+        let dir = self.plugin_dir(id)?;
         if !dir.is_dir() {
             return Ok(None);
         }
@@ -90,19 +90,89 @@ impl PluginManager {
         Ok(Some(PluginRecord { manifest, source }))
     }
 
-    pub fn plugin_dir(&self, id: &str) -> PathBuf {
-        self.root.join(id)
+    /// Directory for one installed plugin. This is the single choke point
+    /// where a plugin id becomes a filesystem path, so non-slug ids — which
+    /// could otherwise escape the plugins root via `..` — are rejected here
+    /// for every caller.
+    pub fn plugin_dir(&self, id: &str) -> VestaResult<PathBuf> {
+        if !is_valid_slug(id) {
+            return Err(plugin_not_found(id));
+        }
+        Ok(self.root.join(id))
     }
 
     /// Shallow-clone `url`, validate its manifest, strip `.git`, then move the
-    /// tree into place under the manifest's plugin id. The clone runs on a
-    /// blocking worker with a shared interrupt flag; on timeout the worker is
-    /// told to stop and its temporary directory cleaned up once it exits.
+    /// tree into place under the manifest's plugin id.
     pub async fn install(&self, url: &str) -> VestaResult<PluginRecord> {
         if url.trim().is_empty() {
             return Err(plugin_error("a git repository URL is required"));
         }
         let _gate = self.gate.lock().await;
+        let (temp_dir, record) = self.fetch_plugin(url).await?;
+        let destination = self.plugin_dir(&record.manifest.id)?;
+        if destination.exists() {
+            std::fs::remove_dir_all(&temp_dir).ok();
+            return Err(plugin_error(format!(
+                "plugin '{}' is already installed: remove it before installing again",
+                record.manifest.id
+            )));
+        }
+        if let Err(error) = std::fs::rename(&temp_dir, &destination) {
+            std::fs::remove_dir_all(&temp_dir).ok();
+            return Err(error.into());
+        }
+        Ok(record)
+    }
+
+    /// Re-fetch an installed plugin from its recorded source URL and swap the
+    /// tree in place. The fetched manifest must declare the same plugin id:
+    /// an id change means a different plugin, which must be installed
+    /// separately. Dashboard tiles keep working — the registry rebuild after
+    /// the swap picks up the new widget specs, and old tiles fail validation
+    /// only if their fields no longer exist.
+    pub async fn update(&self, id: &str) -> VestaResult<PluginRecord> {
+        let _gate = self.gate.lock().await;
+        let current = self.record(id)?.ok_or_else(|| plugin_not_found(id))?;
+        let (temp_dir, fresh) = self.fetch_plugin(&current.source.source_url).await?;
+        if fresh.manifest.id != current.manifest.id {
+            std::fs::remove_dir_all(&temp_dir).ok();
+            return Err(plugin_error(format!(
+                "updated manifest declares plugin id '{}' but '{}' is installed; install it under the new id instead",
+                fresh.manifest.id, current.manifest.id
+            )));
+        }
+        let destination = self.plugin_dir(id)?;
+        let backup = self
+            .root
+            .join(format!(".old-{}", uuid::Uuid::new_v4().simple()));
+        // Swap with rollback: the installed tree returns if the new one
+        // cannot move into place.
+        if let Err(error) = std::fs::rename(&destination, &backup)
+            .and_then(|()| std::fs::rename(&temp_dir, &destination))
+        {
+            std::fs::rename(&backup, &destination).ok();
+            std::fs::remove_dir_all(&temp_dir).ok();
+            return Err(error.into());
+        }
+        std::fs::remove_dir_all(&backup).ok();
+        Ok(fresh)
+    }
+
+    /// Remove an installed plugin's directory.
+    pub fn uninstall(&self, id: &str) -> VestaResult<()> {
+        if self.record(id)?.is_none() {
+            return Err(plugin_not_found(id));
+        }
+        std::fs::remove_dir_all(self.plugin_dir(id)?)?;
+        Ok(())
+    }
+
+    /// Clone `url` into a hidden temporary directory under the plugins root
+    /// and validate its manifest. Returns the record and the temporary path;
+    /// the caller moves the tree and owns its cleanup. The clone runs on a
+    /// blocking worker with a shared interrupt flag; on timeout the worker is
+    /// told to stop and its temporary directory cleaned up once it exits.
+    async fn fetch_plugin(&self, url: &str) -> VestaResult<(PathBuf, PluginRecord)> {
         let temp_dir = self
             .root
             .join(format!(".tmp-{}", uuid::Uuid::new_v4().simple()));
@@ -118,16 +188,7 @@ impl PluginManager {
         match tokio::time::timeout(CLONE_TIMEOUT, pinned.as_mut()).await {
             Ok(Ok(Ok(record))) => {
                 std::fs::remove_dir_all(temp_dir.join(".git")).ok();
-                let destination = self.plugin_dir(&record.manifest.id);
-                if destination.exists() {
-                    std::fs::remove_dir_all(&temp_dir).ok();
-                    return Err(plugin_error(format!(
-                        "plugin '{}' is already installed: remove it before installing again",
-                        record.manifest.id
-                    )));
-                }
-                std::fs::rename(&temp_dir, &destination)?;
-                Ok(record)
+                Ok((temp_dir, record))
             }
             Ok(Ok(Err(message))) => {
                 std::fs::remove_dir_all(&temp_dir).ok();
@@ -150,15 +211,6 @@ impl PluginManager {
                 )))
             }
         }
-    }
-
-    /// Remove an installed plugin's directory.
-    pub fn uninstall(&self, id: &str) -> VestaResult<()> {
-        if self.record(id)?.is_none() {
-            return Err(plugin_not_found(id));
-        }
-        std::fs::remove_dir_all(self.plugin_dir(id))?;
-        Ok(())
     }
 }
 
@@ -381,6 +433,122 @@ mod tests {
         let manager = manager();
         let error = manager.install("   ").await.unwrap_err();
         assert!(error.to_string().contains("URL is required"), "{error}");
+    }
+
+    /// `plugin_dir` is the only place a plugin id becomes a path, so it must
+    /// refuse anything that could escape the plugins root.
+    #[test]
+    fn plugin_dir_rejects_non_slug_ids() {
+        let manager = manager();
+        for bad in ["../escape", "C:\\temp", "Bad-Id", "a/b", ""] {
+            assert!(
+                manager.plugin_dir(bad).is_err(),
+                "expected plugin_dir('{bad}') rejection"
+            );
+        }
+        assert!(manager.plugin_dir("hello-world").is_ok());
+    }
+
+    #[tokio::test]
+    async fn update_refetches_and_swaps_the_plugin_tree() {
+        let manager = manager();
+        let repo = fixture_repo(&fixture_dir("hello-world"), "update");
+        manager.install(&repo.to_string_lossy()).await.unwrap();
+        let old_commit = manager
+            .record("hello-world")
+            .unwrap()
+            .unwrap()
+            .source
+            .commit;
+
+        // Bump the version in the remote repository, then update in place.
+        let manifest_path = repo.join(crate::plugins::manifest::MANIFEST_FILE);
+        let manifest = std::fs::read_to_string(&manifest_path).unwrap();
+        std::fs::write(
+            &manifest_path,
+            manifest.replace("version = \"1.0.0\"", "version = \"1.0.1\""),
+        )
+        .unwrap();
+        git(&["add", "."], &repo);
+        git(
+            &[
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@test",
+                "commit",
+                "-qm",
+                "bump",
+            ],
+            &repo,
+        );
+
+        let updated = manager.update("hello-world").await.unwrap();
+        assert_eq!(updated.manifest.version.as_deref(), Some("1.0.1"));
+        assert_ne!(updated.source.commit, old_commit);
+        assert!(
+            manager
+                .plugin_dir("hello-world")
+                .unwrap()
+                .join("index.html")
+                .is_file()
+        );
+        assert!(manager.record("hello-world").unwrap().is_some());
+
+        // The swap left no backup or temporary trees behind.
+        let leftovers: Vec<_> = std::fs::read_dir(manager.root())
+            .unwrap()
+            .map(Result::unwrap)
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with('.'))
+            .collect();
+        assert!(leftovers.is_empty(), "swap leftovers: {leftovers:?}");
+        std::fs::remove_dir_all(&repo).ok();
+    }
+
+    /// A new manifest id is a different plugin, not an update; the installed
+    /// tree must stay untouched.
+    #[tokio::test]
+    async fn update_refuses_a_changed_plugin_id_and_keeps_the_installed_tree() {
+        let manager = manager();
+        let repo = fixture_repo(&fixture_dir("hello-world"), "id-change");
+        manager.install(&repo.to_string_lossy()).await.unwrap();
+
+        let manifest_path = repo.join(crate::plugins::manifest::MANIFEST_FILE);
+        let manifest = std::fs::read_to_string(&manifest_path).unwrap();
+        std::fs::write(
+            &manifest_path,
+            manifest.replace("id = \"hello-world\"", "id = \"renamed-plugin\""),
+        )
+        .unwrap();
+        git(&["add", "."], &repo);
+        git(
+            &[
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@test",
+                "commit",
+                "-qm",
+                "rename",
+            ],
+            &repo,
+        );
+
+        let error = manager.update("hello-world").await.unwrap_err();
+        assert!(
+            error.to_string().contains("renamed-plugin"),
+            "expected id mismatch, got: {error}"
+        );
+        assert!(manager.record("hello-world").unwrap().is_some());
+        assert!(manager.record("renamed-plugin").unwrap().is_none());
+        std::fs::remove_dir_all(&repo).ok();
+    }
+
+    #[tokio::test]
+    async fn update_unknown_id_is_not_found() {
+        let manager = manager();
+        let error = manager.update("ghost").await.unwrap_err();
+        assert!(error.to_string().contains("not found"), "{error}");
     }
 
     /// Exercises the full HTTPS clone path (rustls TLS, shallow fetch, temp
