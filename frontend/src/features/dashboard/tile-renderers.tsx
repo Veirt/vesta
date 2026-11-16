@@ -1,4 +1,4 @@
-import { IconPhotoOff, IconStarFilled } from "@tabler/icons-react";
+import { IconPhotoOff } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, type CSSProperties, type ReactNode, useState } from "react";
 import type { DashboardService, DashboardWidget } from "@/features/dashboard/schema";
 
@@ -495,12 +495,9 @@ function SonarrCalendarWidget({ data }: { data: WidgetData }) {
 }
 
 type RandomShow = {
+  display: "backdrop" | "poster";
   title: string;
   series_url: string;
-  year: number | null;
-  rating: number | null;
-  genres: string[];
-  overview: string | null;
   poster_url: string | null;
   backdrop_url: string | null;
 };
@@ -515,34 +512,25 @@ function JellyfinRandomShowWidget({ data }: { data: WidgetData }) {
   }
 
   const show = data as RandomShow;
+  const posterMode = show.display === "poster";
+  const art = posterMode
+    ? (show.poster_url ?? show.backdrop_url)
+    : (show.backdrop_url ?? show.poster_url);
 
   return (
-    <a className="jellyfin-widget" href={show.series_url || "#"} target="_blank" rel="noreferrer">
-      {show.backdrop_url && (
-        <img className="jellyfin-backdrop" src={show.backdrop_url} alt="" loading="lazy" />
+    <a
+      className={`jellyfin-widget ${posterMode ? "jellyfin-poster-mode" : "jellyfin-backdrop-mode"}`}
+      href={show.series_url || "#"}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={show.title}
+    >
+      {art ? (
+        <img className="jellyfin-art" src={art} alt="" loading="lazy" decoding="async" />
+      ) : (
+        <IconPhotoOff className="jellyfin-art-fallback" stroke={1.5} aria-hidden="true" />
       )}
-      <div className="jellyfin-body">
-        <div className="jellyfin-poster">
-          {show.poster_url ? (
-            <img src={show.poster_url} alt="" loading="lazy" decoding="async" />
-          ) : (
-            <IconPhotoOff stroke={1.5} aria-hidden="true" />
-          )}
-        </div>
-        <div className="jellyfin-info">
-          <span className="jellyfin-title">{show.title}</span>
-          <span className="jellyfin-meta">
-            {show.year ? <span>{show.year}</span> : null}
-            {show.rating !== null && (
-              <span>
-                <IconStarFilled size={11} aria-hidden="true" /> {show.rating.toFixed(1)}
-              </span>
-            )}
-            {show.genres.length > 0 && <span>{show.genres.slice(0, 2).join(", ")}</span>}
-          </span>
-          {show.overview && <span className="jellyfin-overview">{show.overview}</span>}
-        </div>
-      </div>
+      {posterMode && show.title && <span className="jellyfin-poster-title">{show.title}</span>}
     </a>
   );
 }
@@ -748,12 +736,9 @@ function previewData(name: string): WidgetData {
       };
     case "JellyfinRandomShow":
       return {
+        display: "backdrop",
         title: "Example show",
         series_url: "#",
-        year: 2020,
-        rating: 8.7,
-        genres: ["Drama", "Comedy"],
-        overview: "A sample overview for the preview of a randomly recommended series.",
         poster_url: null,
         backdrop_url: null,
       };

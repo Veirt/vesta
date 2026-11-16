@@ -354,7 +354,12 @@ function DashboardEditGroup({
   onDrag: (event: Event) => void;
   onDragStop: () => void;
 }) {
-  const { width, containerRef, mounted } = useContainerWidth({ initialWidth: 640 });
+  // measureBeforeMount so the grid never renders at the initialWidth and then
+  // animates every tile to the measured width on entering edit mode.
+  const { width, containerRef, mounted } = useContainerWidth({
+    initialWidth: 640,
+    measureBeforeMount: true,
+  });
   const cols = width < 440 ? 1 : 12;
   const resizeStart = useRef<{ clientX: number; span: number; groupWidth: number } | null>(null);
   const tileResize = useRef<TileResizeState | null>(null);

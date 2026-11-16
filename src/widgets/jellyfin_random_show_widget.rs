@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::error::{VestaError, VestaResult};
-use crate::widget_system::{DynamicOption, WidgetContext, WidgetField, WidgetHandler, WidgetQuery};
+use crate::widget_system::{
+    DynamicOption, WidgetContext, WidgetField, WidgetHandler, WidgetOption, WidgetQuery,
+};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
@@ -15,22 +17,18 @@ pub struct Config {
     /// Media library to draw the random series from; empty selects all.
     #[serde(default)]
     pub library: Option<String>,
+    /// How the artwork fills the tile: `backdrop` (wide art) or `poster`
+    /// (portrait art with the title revealed on hover).
+    #[serde(default)]
+    pub display: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 struct Series {
     #[serde(alias = "Id")]
     id: String,
     #[serde(alias = "Name")]
     name: String,
-    #[serde(alias = "Overview", default)]
-    overview: Option<String>,
-    #[serde(alias = "CommunityRating", default)]
-    community_rating: Option<f64>,
-    #[serde(alias = "ProductionYear", default)]
-    production_year: Option<u32>,
-    #[serde(alias = "Genres", default)]
-    genres: Vec<String>,
     #[serde(alias = "ImageTags", rename(serialize = "image_tags"), default)]
     image_tags: ImageTags,
     #[serde(
@@ -41,7 +39,7 @@ struct Series {
     backdrop_image_tags: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 struct ImageTags {
     #[serde(alias = "Primary", default)]
     primary: Option<String>,
@@ -56,26 +54,30 @@ struct ItemsPage {
 /// Shape consumed by the frontend tile renderer.
 #[derive(Serialize, Debug)]
 struct RandomShow {
+    display: &'static str,
     title: String,
     series_url: String,
-    year: Option<u32>,
-    rating: Option<f64>,
-    genres: Vec<String>,
-    overview: Option<String>,
     poster_url: Option<String>,
     backdrop_url: Option<String>,
+}
+
+fn display_mode(config: &Config) -> &'static str {
+    match config.display.as_deref() {
+        Some("poster") => "poster",
+        _ => "backdrop",
+    }
 }
 
 fn image_url(base: &str, path: &str) -> String {
     format!("{}{}", base.trim_end_matches('/'), path)
 }
 
-fn to_show(base: &str, series: Series) -> RandomShow {
+fn to_show(base: &str, series: Series, display: &'static str) -> RandomShow {
     let poster_url = series.image_tags.primary.as_ref().map(|_| {
         image_url(
             base,
             &format!(
-                "/Items/{}/Images/Primary?maxWidth=328&quality=90",
+                "/Items/{}/Images/Primary?maxWidth=600&quality=90",
                 series.id
             ),
         )
@@ -86,22 +88,15 @@ fn to_show(base: &str, series: Series) -> RandomShow {
         Some(image_url(
             base,
             &format!(
-                "/Items/{}/Images/Backdrop/0?maxWidth=960&quality=70",
+                "/Items/{}/Images/Backdrop/0?maxWidth=1280&quality=80",
                 series.id
             ),
         ))
     };
     RandomShow {
+        display,
         title: series.name,
         series_url: image_url(base, &format!("/web/index.html#!/details?id={}", series.id)),
-        year: series.production_year,
-        rating: series
-            .community_rating
-            .map(|rating| (rating * 10.0).round() / 10.0),
-        genres: series.genres,
-        overview: series
-            .overview
-            .filter(|overview| !overview.trim().is_empty()),
         poster_url,
         backdrop_url,
     }
@@ -168,13 +163,16 @@ impl JellyfinRandomShowWidget {
         Ok(response)
     }
 
+    /// Random items guaranteed to carry a primary image. The larger limit
+    /// lets poster/backdrop preferences pick a series that actually fits the
+    /// configured display mode instead of landing on a cover-less special.
     async fn fetch_random_series(&self, config: &Config) -> VestaResult<ItemsPage> {
         let mut params = vec![
             ("SortBy", "Random"),
             ("IncludeItemTypes", "Series"),
             ("Recursive", "true"),
-            ("Limit", "1"),
-            ("Fields", "Overview,Genres,CommunityRating,ProductionYear"),
+            ("Limit", "30"),
+            ("HasPrimaryImage", "true"),
             ("ImageTypeLimit", "1"),
             ("EnableImageTypes", "Primary,Backdrop,Thumb"),
         ];
@@ -279,6 +277,24 @@ impl WidgetHandler for JellyfinRandomShowWidget {
                 default: None,
                 options: Vec::new(),
             },
+            WidgetField {
+                key: "display",
+                label: "Display",
+                kind: "select",
+                required: true,
+                description: "Backdrop fills the tile with wide artwork. Poster fills it with the cover art and reveals the title on hover.",
+                default: Some(serde_json::json!("backdrop")),
+                options: vec![
+                    WidgetOption {
+                        value: "backdrop",
+                        label: "Backdrop",
+                    },
+                    WidgetOption {
+                        value: "poster",
+                        label: "Poster",
+                    },
+                ],
+            },
         ]
     }
 
@@ -292,9 +308,21 @@ impl WidgetHandler for JellyfinRandomShowWidget {
     ) -> VestaResult<Value> {
         let page = self.fetch_random_series(&config).await?;
         let base = config.url.trim_end_matches('/');
-        match page.items.into_iter().next() {
+        let display = display_mode(&config);
+        // The server already guarantees every item has a primary image; in
+        // backdrop mode prefer a series that also has backdrop art so wide
+        // tiles never fall back to the portrait primary image.
+        let series = match display {
+            "backdrop" => page
+                .items
+                .iter()
+                .find(|series| !series.backdrop_image_tags.is_empty())
+                .or_else(|| page.items.first()),
+            _ => page.items.first(),
+        };
+        match series {
             Some(series) => {
-                let show = to_show(base, series);
+                let show = to_show(base, series.clone(), display);
                 Ok(serde_json::to_value(&show)?)
             }
             None => Ok(json!({ "empty": true })),
@@ -327,6 +355,7 @@ impl WidgetHandler for JellyfinRandomShowWidget {
 #[cfg(test)]
 mod tests {
     use super::{ItemsPage, Series, to_show};
+    use crate::widgets::jellyfin_random_show_widget::display_mode;
     use serde_json::json;
 
     #[test]
@@ -378,9 +407,21 @@ mod tests {
         let series = &page.items[0];
         assert_eq!(series.id, "abc123");
         assert_eq!(series.name, "Example Show");
-        assert_eq!(series.community_rating, Some(8.66));
-        assert_eq!(series.production_year, Some(2020));
         assert_eq!(series.image_tags.primary.as_deref(), Some("tag1"));
+    }
+
+    #[test]
+    fn display_mode_accepts_poster_and_defaults_to_backdrop() {
+        let config = |display: Option<&str>| super::Config {
+            url: "https://jellyfin.example.com".into(),
+            key: "key".into(),
+            library: None,
+            display: display.map(str::to_string),
+        };
+        assert_eq!(display_mode(&config(None)), "backdrop");
+        assert_eq!(display_mode(&config(Some("backdrop"))), "backdrop");
+        assert_eq!(display_mode(&config(Some("poster"))), "poster");
+        assert_eq!(display_mode(&config(Some("nonsense"))), "backdrop");
     }
 
     #[test]
@@ -388,30 +429,25 @@ mod tests {
         let series = Series {
             id: "abc123".to_string(),
             name: "Example Show".to_string(),
-            overview: Some("A test overview.".to_string()),
-            community_rating: Some(8.66),
-            production_year: Some(2020),
-            genres: vec!["Drama".to_string()],
             image_tags: crate::widgets::jellyfin_random_show_widget::ImageTags {
                 primary: Some("tag1".to_string()),
             },
             backdrop_image_tags: vec!["tag2".to_string()],
         };
 
-        let show = to_show("https://jellyfin.example.com/", series);
+        let show = to_show("https://jellyfin.example.com/", series, "backdrop");
+        assert_eq!(show.display, "backdrop");
         assert_eq!(show.title, "Example Show");
-        assert_eq!(show.year, Some(2020));
-        assert_eq!(show.rating, Some(8.7));
         assert_eq!(
             show.poster_url.as_deref(),
             Some(
-                "https://jellyfin.example.com/Items/abc123/Images/Primary?maxWidth=328&quality=90"
+                "https://jellyfin.example.com/Items/abc123/Images/Primary?maxWidth=600&quality=90"
             )
         );
         assert_eq!(
             show.backdrop_url.as_deref(),
             Some(
-                "https://jellyfin.example.com/Items/abc123/Images/Backdrop/0?maxWidth=960&quality=70"
+                "https://jellyfin.example.com/Items/abc123/Images/Backdrop/0?maxWidth=1280&quality=80"
             )
         );
         assert!(
@@ -425,18 +461,12 @@ mod tests {
         let series = Series {
             id: "abc123".to_string(),
             name: "No Images".to_string(),
-            overview: Some(" ".to_string()),
-            community_rating: None,
-            production_year: None,
-            genres: Vec::new(),
             image_tags: Default::default(),
             backdrop_image_tags: Vec::new(),
         };
 
-        let show = to_show("https://jellyfin.example.com", series);
+        let show = to_show("https://jellyfin.example.com", series, "poster");
         assert!(show.poster_url.is_none());
         assert!(show.backdrop_url.is_none());
-        assert!(show.overview.is_none());
-        assert!(show.rating.is_none());
     }
 }
