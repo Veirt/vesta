@@ -8,7 +8,7 @@ export const DEFAULT_GROUP_SPAN = 6;
 export const MIN_GROUP_SPAN = 3;
 
 const UNKNOWN_WIDGET_MIN_SIZE: TileSize = { width: 3, height: 2 };
-const MAX_GRID_SIZE = 12;
+export const MAX_GRID_SIZE = 12;
 
 /**
  * Service links can shrink as their group grows: a tile of width w always

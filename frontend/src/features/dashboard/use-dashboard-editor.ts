@@ -16,6 +16,7 @@ import {
   clampTileSize,
   DEFAULT_GROUP_SPAN,
   groupSpanOf,
+  MAX_GRID_SIZE,
   MIN_GROUP_SPAN,
   minSizeFor,
   widgetMinSize,
@@ -104,6 +105,31 @@ function reflowGroup(items: EditableDashboardItem[]) {
 
 function sameGroup(left: EditableDashboardItem, right: EditableDashboardItem) {
   return (left.group ?? "") === (right.group ?? "");
+}
+
+/**
+ * Largest size the tile can grow to at its current position without touching a
+ * neighbour. Growing further would force react-grid-layout's vertical
+ * compactor to evict the blocking tile into a lower row (and shuffle the rest
+ * of the group), so resizes stop at this boundary instead.
+ */
+function maxFreeSize(
+  item: EditableDashboardItem,
+  neighbours: EditableDashboardItem[],
+): { width: number; height: number } {
+  let width = MAX_GRID_SIZE - item.x;
+  let height = MAX_GRID_SIZE;
+  for (const other of neighbours) {
+    const rowsOverlap = other.y < item.y + item.height && other.y + other.height > item.y;
+    if (rowsOverlap && other.x >= item.x + item.width) {
+      width = Math.min(width, other.x - item.x);
+    }
+    const colsOverlap = other.x < item.x + item.width && other.x + other.width > item.x;
+    if (colsOverlap && other.y >= item.y + item.height) {
+      height = Math.min(height, other.y - item.y);
+    }
+  }
+  return { width, height };
 }
 
 function useDashboardEditor(enabled: boolean) {
@@ -306,8 +332,13 @@ function useDashboardEditor(enabled: boolean) {
       const selected = current.find((item) => item.editor_id === editorId);
       if (!selected) return current;
       const min = minSizeFor(selected, widgets, groupSpanOf(groups, selected.group));
-      const fixed = clampTileSize(width, height, min);
-      const updated = current.map((item) =>
+      const neighbours = current.filter(
+        (item) => item.editor_id !== editorId && sameGroup(item, selected),
+      );
+      const free = maxFreeSize(selected, neighbours);
+      const fixed = clampTileSize(Math.min(width, free.width), Math.min(height, free.height), min);
+      if (selected.width === fixed.width && selected.height === fixed.height) return current;
+      return current.map((item) =>
         item.editor_id === editorId
           ? {
               ...item,
@@ -317,9 +348,6 @@ function useDashboardEditor(enabled: boolean) {
             }
           : item,
       );
-      const reflowed = reflowGroup(sortItems(updated.filter((item) => sameGroup(item, selected))));
-      const positions = new Map(reflowed.map((item) => [item.editor_id, item]));
-      return updated.map((item) => positions.get(item.editor_id) ?? item);
     });
     setNotice("");
   }
