@@ -254,14 +254,14 @@ function useDashboardEditor(enabled: boolean) {
     setNotice("");
   }
 
-  function addService() {
-    const position = nextPosition(items, null);
+  function addService(group?: string | null) {
+    const position = nextPosition(items, group ?? null);
     const service: EditableService = {
       kind: "service",
       editor_id: createItemId("editor-service", "service"),
       id: nextId("service", items),
       title: "New service",
-      group: null,
+      group: group ?? null,
       href: "",
       show_destination: true,
       icon: "",
@@ -275,17 +275,17 @@ function useDashboardEditor(enabled: boolean) {
     return service.editor_id;
   }
 
-  function addWidget(name: string) {
+  function addWidget(name: string, group?: string | null) {
     const descriptor = widgets.find((widget) => widget.name === name);
     if (!descriptor) return null;
     const min = widgetMinSize(widgets, name);
-    const position = nextPosition(items, null);
+    const position = nextPosition(items, group ?? null);
     const widget: EditableWidget = {
       kind: "widget",
       editor_id: createItemId("editor-widget", "widget"),
       id: nextId(name, items),
       title: descriptor.title || name,
-      group: null,
+      group: group ?? null,
       name,
       config: defaultConfig(descriptor),
       width: Math.max(min.width, descriptor.default_width),

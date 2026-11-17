@@ -333,11 +333,14 @@ function DashboardEditGroup({
   onGroupResize,
   onTileResize,
   onEditGroup,
+  onAddService,
+  onAddWidget,
   onEdit,
   onLayoutChange,
   onDragStart,
   onDrag,
   onDragStop,
+  widgets,
 }: {
   section: EditSection;
   groupDragActive: boolean;
@@ -349,11 +352,14 @@ function DashboardEditGroup({
   onGroupResize: (width: number) => void;
   onTileResize: (editorId: string, width: number, height: number) => void;
   onEditGroup: () => void;
+  onAddService: () => void;
+  onAddWidget: (name: string) => void;
   onEdit: (editorId: string) => void;
   onLayoutChange: (layout: ReadonlyArray<LayoutEntry>, cols: number) => void;
   onDragStart: () => void;
   onDrag: (event: Event) => void;
   onDragStop: () => void;
+  widgets: WidgetDescriptor[];
 }) {
   // measureBeforeMount so the grid never renders at the initialWidth and then
   // animates every tile to the measured width on entering edit mode.
@@ -477,6 +483,31 @@ function DashboardEditGroup({
             )}
           </div>
         </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="dashboard-group-edit-button"
+              type="button"
+              aria-label={`Add a tile to ${headingLabel}`}
+            >
+              <IconPlus size={15} aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={onAddService}>Add service</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Widgets</DropdownMenuLabel>
+            {widgets.length === 0 ? (
+              <DropdownMenuItem disabled>No widgets available</DropdownMenuItem>
+            ) : (
+              widgets.map((widget) => (
+                <DropdownMenuItem key={widget.name} onSelect={() => onAddWidget(widget.name)}>
+                  {widget.title}
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
         {section.id && (
           <button
             className="dashboard-group-edit-button"
@@ -490,7 +521,7 @@ function DashboardEditGroup({
       </div>
       {section.items.length === 0 && (
         <p className="dashboard-group-empty">
-          No tiles in this section yet. Assign a tile to add it.
+          No tiles in this section yet. Add one with the + button above.
         </p>
       )}
       {cols === 1 ? (
@@ -1285,7 +1316,7 @@ function DashboardItems({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
-              <DropdownMenuItem onSelect={addService}>Add service</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => addService()}>Add service</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuLabel>Widgets</DropdownMenuLabel>
               {editor.widgets.length === 0 ? (
@@ -1375,6 +1406,7 @@ function DashboardItems({
                   groupDragActive={draggingGroupId !== null}
                   isGroupDragSource={draggingGroupId === section.id}
                   minSizeFor={(item) => minSizeFor(item, editor.widgets, section.width)}
+                  widgets={editor.widgets}
                   onGroupDragStart={() => {
                     // The Ungrouped section needs its metadata slot before any
                     // reorder or width change can find it in the groups array.
@@ -1396,6 +1428,14 @@ function DashboardItems({
                     editor.resizeItem(editorId, width, height)
                   }
                   onEditGroup={() => setSelectedGroupId(section.id)}
+                  onAddService={() => {
+                    const editorId = editor.addService(section.id || null);
+                    if (editorId) setSelectedEditorId(editorId);
+                  }}
+                  onAddWidget={(name) => {
+                    const editorId = editor.addWidget(name, section.id || null);
+                    if (editorId) setSelectedEditorId(editorId);
+                  }}
                   onEdit={setSelectedEditorId}
                   onLayoutChange={handleLayoutChange}
                   onDragStart={() => setDraggingTile(true)}
