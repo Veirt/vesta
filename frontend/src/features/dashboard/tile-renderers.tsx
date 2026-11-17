@@ -978,4 +978,4 @@ function WidgetPreview({ name }: { name: string }) {
   );
 }
 
-export { ServiceCard, WidgetCard, WidgetContent, WidgetPreview, layoutStyle, previewData };
+export { ServiceCard, WidgetCard, WidgetContent, WidgetPreview };

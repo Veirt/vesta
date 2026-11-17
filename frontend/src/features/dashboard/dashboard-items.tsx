@@ -294,10 +294,14 @@ function groupDashboardItems<T extends GroupableItem>(
   // The id-less Ungrouped section keeps its metadata position when one exists,
   // otherwise it stays first for legacy saved groups.
   const sectionOrder: string[] = metadata.has("") ? [] : [""];
+  const orderedIds = new Set(sectionOrder);
   for (const group of groups) {
-    if (!sectionOrder.includes(group.id)) sectionOrder.push(group.id);
+    if (!orderedIds.has(group.id)) {
+      orderedIds.add(group.id);
+      sectionOrder.push(group.id);
+    }
   }
-  const seen = new Set(sectionOrder);
+  const seen = orderedIds;
   for (const key of grouped.keys()) {
     if (!seen.has(key)) sectionOrder.push(key);
   }
@@ -1354,8 +1358,8 @@ function DashboardItems({
         >
           <p>Fix these dashboard details before saving:</p>
           <ul className="list-inside list-disc">
-            {validationIssues.map((issue, index) => (
-              <li key={`${issue.id}-${index}`}>
+            {validationIssues.map((issue) => (
+              <li key={`${issue.id}-${issue.message}`}>
                 {issue.title || "Untitled tile"}: {issue.message}
               </li>
             ))}

@@ -54,6 +54,15 @@ function useDashboard() {
   useEffect(() => {
     let active = true;
     let source: EventSource | undefined;
+    // boot()'s fetch may resolve after an early unmount, so connect() has to
+    // hand its stream to the already-run cleanup via this flag: without it a
+    // late EventSource leaks.
+    let closed = false;
+    const close = () => {
+      active = false;
+      closed = true;
+      source?.close();
+    };
     const applySnapshot = (data: DashboardData) => {
       if (!active) return;
       const receivedAt = Date.now();
@@ -77,6 +86,7 @@ function useDashboard() {
     };
 
     const connect = () => {
+      if (closed) return;
       source = new EventSource("/api/nodes/events");
       source.onopen = () => active && setConnection("live");
       source.onerror = () => active && setConnection("reconnecting");
@@ -128,10 +138,7 @@ function useDashboard() {
     };
 
     void boot();
-    return () => {
-      active = false;
-      source?.close();
-    };
+    return close;
   }, []);
 
   return { nodes, items, groups, app, history, error, loading, connection };

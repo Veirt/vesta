@@ -2,7 +2,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WidgetPreview } from "@/features/dashboard/tile-renderers";
 import type { WidgetDescriptor } from "@/features/settings/schema";
 
-function WidgetCatalog({ widgets }: { widgets: WidgetDescriptor[] }) {
+function WidgetCatalog({
+  widgets,
+  onOpenPlugins,
+}: {
+  widgets: WidgetDescriptor[];
+  onOpenPlugins: () => void;
+}) {
   return (
     <Card className="gap-0 border-border/70 bg-card/60 py-0 shadow-none">
       <CardHeader className="border-b border-border/70 px-5 py-4 sm:px-6">
@@ -46,9 +52,13 @@ function WidgetCatalog({ widgets }: { widgets: WidgetDescriptor[] }) {
         )}
         <p className="border-t border-border/70 pt-3 text-sm leading-6 text-muted-foreground">
           Third-party widgets come from plugins: install one from a git URL on the{" "}
-          <a className="text-primary underline-offset-4 hover:underline" href="#plugins">
+          <button
+            className="text-primary underline-offset-4 hover:underline"
+            type="button"
+            onClick={onOpenPlugins}
+          >
             Plugins
-          </a>{" "}
+          </button>{" "}
           tab, and its widgets appear here and in the dashboard's Add tile menu. Plugin code runs in
           your browser, so only install repositories you trust.
         </p>

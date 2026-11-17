@@ -173,7 +173,12 @@ function SettingsEditor() {
                 onUpload={editor.uploadImage}
               />
             )}
-            {activeSection === "widgets" && <WidgetCatalog widgets={editor.widgets} />}
+            {activeSection === "widgets" && (
+              <WidgetCatalog
+                widgets={editor.widgets}
+                onOpenPlugins={() => selectSection("plugins")}
+              />
+            )}
             {activeSection === "plugins" && <PluginsSection />}
           </section>
         </div>
