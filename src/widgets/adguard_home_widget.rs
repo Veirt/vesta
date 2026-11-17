@@ -223,6 +223,10 @@ impl WidgetHandler for AdGuardHomeWidget {
         "AdGuard"
     }
 
+    fn title(&self) -> String {
+        "AdGuard Home".to_string()
+    }
+
     fn description(&self) -> &'static str {
         "Shows AdGuard Home DNS query statistics and protection status."
     }
