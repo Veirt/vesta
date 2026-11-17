@@ -2,6 +2,7 @@
   "type": "module",
   "scripts": {
     "dev": "vp dev",
+    "commitlint": "commitlint",
     "build": "vp build",
     "preview": "vp preview",
     "check": "vp check frontend/src vite.config.ts package.json components.json tsconfig.json frontend/index.html src/style.css && tsc --noEmit",
