@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { cn } from "cn";
-import * as RechartsPrimitive from "recharts";
+import type * as RechartsPrimitive from "recharts";
 import type { TooltipValueType } from "recharts";
 
 // Format: { THEME_NAME: CSS_SELECTOR }
@@ -38,6 +38,12 @@ function useChart() {
   return context;
 }
 
+// recharts is heavy, so every runtime use is behind React.lazy and only
+// fetched when a chart actually mounts.
+const ResponsiveContainer = React.lazy(() =>
+  import("recharts").then((m) => ({ default: m.ResponsiveContainer })),
+);
+
 function ChartContainer({
   id,
   className,
@@ -69,9 +75,9 @@ function ChartContainer({
         {...props}
       >
         <ChartStyle id={chartId} config={config} />
-        <RechartsPrimitive.ResponsiveContainer initialDimension={initialDimension}>
-          {children}
-        </RechartsPrimitive.ResponsiveContainer>
+        <React.Suspense fallback={null}>
+          <ResponsiveContainer initialDimension={initialDimension}>{children}</ResponsiveContainer>
+        </React.Suspense>
       </div>
     </ChartContext.Provider>
   );
@@ -106,7 +112,7 @@ ${colorConfig
   );
 };
 
-const ChartTooltip = RechartsPrimitive.Tooltip;
+const ChartTooltip = React.lazy(() => import("recharts").then((m) => ({ default: m.Tooltip })));
 
 function ChartTooltipContent({
   active,
@@ -291,7 +297,7 @@ function ChartTooltipBody({
   );
 }
 
-const ChartLegend = RechartsPrimitive.Legend;
+const ChartLegend = React.lazy(() => import("recharts").then((m) => ({ default: m.Legend })));
 
 function ChartLegendContent({
   className,

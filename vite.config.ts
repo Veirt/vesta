@@ -5,8 +5,12 @@ import { defineConfig } from "vite";
 
 const frontendRoot = path.resolve(import.meta.dirname, "frontend");
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   root: frontendRoot,
+  // The built bundle is served by the Rust server under /static/ui/ (see
+  // src/templates.rs). Dynamic-import chunk preloads are resolved against
+  // `base`, so it must match in the built app; dev keeps the default /.
+  base: command === "build" ? "/static/ui/" : "/",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -34,4 +38,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

@@ -1,5 +1,8 @@
-import { Area, AreaChart } from "recharts";
+import { lazy, Suspense } from "react";
 import { ChartContainer, type ChartConfig } from "@/components/ui/chart";
+
+const AreaChart = lazy(() => import("recharts").then((m) => ({ default: m.AreaChart })));
+const Area = lazy(() => import("recharts").then((m) => ({ default: m.Area })));
 
 type MetricName = "cpu" | "memory" | "disk" | "load";
 type Sample = { time: number; value: number };
@@ -23,23 +26,25 @@ function MetricTrend({ name, data }: { name: MetricName; data: Sample[] }) {
       role="img"
       aria-label={`${metricMeta[name].label} recent scrape samples`}
     >
-      <AreaChart data={data} margin={{ top: 4, right: 1, left: 1, bottom: 1 }}>
-        <defs>
-          <linearGradient id={`metric-fill-${name}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--color-value)" stopOpacity={0.3} />
-            <stop offset="100%" stopColor="var(--color-value)" stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <Area
-          dataKey="value"
-          stroke="var(--color-value)"
-          strokeWidth={1.75}
-          fill={`url(#metric-fill-${name})`}
-          dot={false}
-          activeDot={false}
-          isAnimationActive={false}
-        />
-      </AreaChart>
+      <Suspense fallback={null}>
+        <AreaChart data={data} margin={{ top: 4, right: 1, left: 1, bottom: 1 }}>
+          <defs>
+            <linearGradient id={`metric-fill-${name}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--color-value)" stopOpacity={0.3} />
+              <stop offset="100%" stopColor="var(--color-value)" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <Area
+            dataKey="value"
+            stroke="var(--color-value)"
+            strokeWidth={1.75}
+            fill={`url(#metric-fill-${name})`}
+            dot={false}
+            activeDot={false}
+            isAnimationActive={false}
+          />
+        </AreaChart>
+      </Suspense>
     </ChartContainer>
   );
 }
