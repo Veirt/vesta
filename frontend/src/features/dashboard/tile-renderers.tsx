@@ -502,6 +502,98 @@ type RandomShow = {
   backdrop_url: string | null;
 };
 
+type ProwlarrIndexerRow = {
+  name: string;
+  enable: boolean;
+  queries: number;
+  grabs: number;
+  failed_queries: number;
+  average_response_time: number | null;
+};
+
+function parseProwlarrIndexer(value: unknown): ProwlarrIndexerRow | null {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.name !== "string" || record.name.length === 0) return null;
+  return {
+    name: record.name,
+    enable: record.enable === true,
+    queries:
+      typeof record.queries === "number" && Number.isFinite(record.queries) ? record.queries : 0,
+    grabs: typeof record.grabs === "number" && Number.isFinite(record.grabs) ? record.grabs : 0,
+    failed_queries:
+      typeof record.failed_queries === "number" && Number.isFinite(record.failed_queries)
+        ? record.failed_queries
+        : 0,
+    average_response_time:
+      typeof record.average_response_time === "number" &&
+      Number.isFinite(record.average_response_time)
+        ? record.average_response_time
+        : null,
+  };
+}
+
+function ProwlarrWidget({ data }: { data: WidgetData }) {
+  const indexers = Array.isArray(data.indexers)
+    ? (data.indexers as unknown[]).map(parseProwlarrIndexer).filter((row) => row !== null)
+    : [];
+  const totals = (typeof data.totals === "object" && data.totals !== null ? data.totals : {}) as {
+    queries?: unknown;
+    grabs?: unknown;
+    average_response_time?: unknown;
+  };
+  const totalQueries = typeof totals.queries === "number" ? totals.queries : 0;
+  const totalGrabs = typeof totals.grabs === "number" ? totals.grabs : 0;
+  const totalResponseTime =
+    typeof totals.average_response_time === "number" ? totals.average_response_time : null;
+
+  return indexers.length === 0 ? (
+    <div className="grid min-h-full place-items-center text-xl font-bold">No indexers</div>
+  ) : (
+    <div className="flex h-full flex-col">
+      <div className="flex flex-col justify-around">
+        {indexers.map((indexer) => (
+          <div key={indexer.name} className="flex items-center justify-between gap-2 py-0.5">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span
+                className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                  indexer.failed_queries > 0
+                    ? "bg-red-500"
+                    : indexer.enable
+                      ? "bg-emerald-500"
+                      : "bg-zinc-500"
+                }`}
+              />
+              <span
+                className={`truncate ${indexer.failed_queries > 0 ? "" : indexer.enable ? "" : "text-zinc-500"}`}
+              >
+                {indexer.name}
+              </span>
+            </span>
+            <span
+              className={`widget-secondary shrink-0 whitespace-nowrap tabular-nums ${
+                indexer.failed_queries > 0 ? "text-red-500" : ""
+              }`}
+            >
+              {indexer.failed_queries > 0
+                ? `${indexer.queries}q · ${indexer.failed_queries} failed`
+                : `${indexer.queries}q · ${indexer.grabs}g`}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="widget-divider mt-auto flex items-center justify-between gap-2 pt-1">
+        <span className="truncate">
+          {totalQueries}q · {totalGrabs}g
+        </span>
+        <span className="widget-secondary shrink-0 whitespace-nowrap">
+          {totalResponseTime !== null ? `${Math.round(totalResponseTime)} ms` : "—"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function JellyfinRandomShowWidget({ data }: { data: WidgetData }) {
   if (data.empty === true) {
     return (
@@ -633,6 +725,8 @@ function WidgetContent({ name, data, title }: { name: string; data: WidgetData; 
       return <SonarrCalendarWidget data={data} />;
     case "JellyfinRandomShow":
       return <JellyfinRandomShowWidget data={data} />;
+    case "Prowlarr":
+      return <ProwlarrWidget data={data} />;
     default:
       return <ErrorMessage message={`Unsupported widget: ${name}`} />;
   }
@@ -741,6 +835,16 @@ function previewData(name: string): WidgetData {
         series_url: "#",
         poster_url: null,
         backdrop_url: null,
+      };
+    case "Prowlarr":
+      return {
+        indexers: [
+          { name: "Example tracker", enable: true, queries: 128, grabs: 42 },
+          { name: "Backup tracker", enable: true, queries: 96, grabs: 17 },
+          { name: "Broken tracker", enable: true, queries: 31, grabs: 0, failed_queries: 7 },
+          { name: "Retired tracker", enable: false, queries: 0, grabs: 0 },
+        ],
+        totals: { queries: 255, grabs: 59, average_response_time: 124.7 },
       };
     default:
       return {};

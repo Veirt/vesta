@@ -39,6 +39,7 @@ use templates::dashboard;
 use widget_system::{WidgetContext, WidgetQuery, WidgetRegistry};
 use widgets::clock_widget::ClockWidget;
 use widgets::jellyfin_random_show_widget::JellyfinRandomShowWidget;
+use widgets::prowlarr_widget::ProwlarrWidget;
 use widgets::quick_links_widget::QuickLinksWidget;
 use widgets::sonarr_calendar_widget::SonarrCalendarWidget;
 use widgets::system_stats_widget::SystemStatsWidget;
@@ -87,6 +88,7 @@ impl AppState {
     fn builtin_registry(http_client: reqwest::Client) -> WidgetRegistry {
         WidgetRegistry::new()
             .register(SonarrCalendarWidget::new(http_client.clone()))
+            .register(ProwlarrWidget::new(http_client.clone()))
             .register(JellyfinRandomShowWidget::new(http_client.clone()))
             .register(SystemStatsWidget::new())
             .register(WeatherWidget::new(http_client.clone()))
