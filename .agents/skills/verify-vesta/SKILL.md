@@ -41,13 +41,13 @@ Whenever startup or browser behavior looks wrong, run this read-only check befor
 
 It verifies that the recorded PID is still this run's Vesta binary, `ss` attributes the listening port to that PID, `/api/health?detailed=true` reports the Cargo package version, `/settings` and both built frontend assets are served, SQLite was initialized, `/api/auth/status` is coherent for either first-run setup or an existing administrator, and unauthenticated `/api/settings` requests are rejected. A doctor failure means the instance is not ready to drive; read the preserved `server.log` and `build.log` in `$EVIDENCE_DIR`, then clean up the run before retrying.
 
-The Playwright session itself can also restart between driver calls (a new browser pid in the output); its HTTP-only session cookie is then lost and the next `/settings` snapshot shows the sign-in form. Treat that as a session restart, not a fresh-instance precondition failure: sign in again with the disposable password and continue the journey. Two reliable ways to avoid losing the session mid-journey: keep one browser session (navigate in-page via `eval '() => { location.href = "…"; }'` instead of a second `open`, which can relaunch the browser), and prefer refreshing auth-gated state with `location.reload()` after signing back in.
+The Playwright session itself can also restart between driver calls (a new browser pid in the output); its HTTP-only session cookie is then lost and the next `/settings` snapshot shows the sign-in form. Treat that as a session restart, not a fresh-instance precondition failure: sign in again with the disposable password and continue the journey. Two reliable ways to avoid losing the session mid-journey: keep one browser session, and navigate with `goto <url>` — it preserves the HTTP-only session cookie, while a second `open` can start a fresh context that drops it (`cookie-list` printing `No cookies found` is the tell). Drive navigation with `goto` and visible controls, not raw `eval`: this playwright-cli build returns no value from `eval`, prints an error stack for it, and even `location.href` assignments through it proved unreliable; use `eval` only for read-only assertions, and fall back to snapshot + click when it fails. After signing back in, revisit auth-gated pages with `goto` rather than trusting the stale view.
 
 ## Drive
 
 Use the accessible snapshot after each page transition; refs expire when the page changes. Click buttons/links by the role and accessible name shown there, and fill labeled fields by their accessible name or stable selector. Simulate user actions through visible controls, with app-state reads via `eval` for assertions only; raw `mousemove`/`mousedown` sequences with explicit viewport coordinates are the exception, for live drag/resize checks where the pointer path is itself the behavior under test (see [`features/services-widgets.md`](features/services-widgets.md)).
 
-`click` and `fill` targets must be a snapshot ref (`e29`), a CSS selector, or a Playwright locator such as `getByRole('button', { name: 'Sign in' })` — the shorthand `click 'button "Sign in"'` (role + quoted name) is not a valid target and errors. `browser.sh` commands resolve relative `--filename` paths from the evidence directory (`browser.sh` chdirs there), not from the repo root.
+`click` and `fill` targets must be a snapshot ref (`e29`), a CSS selector, or a Playwright locator such as `getByRole('button', { name: 'Sign in' })` — the shorthand `click 'button "Sign in"'` (role + quoted name) is not a valid target and errors. `browser.sh` commands resolve relative `--filename` paths from the evidence directory (`browser.sh` chdirs there), not from the repo root. Refs also go stale after in-page re-renders (fills saving drafts, dialogs opening), not only after page transitions: if a `click` on a freshly typed form does nothing, re-snapshot and click the fresh ref. Filling by ref is `fill <ref> <text>`; `type <text>` is a different command (it types into the focused element and does not take a ref). Invoke `browser.sh`/`instance.sh` from the repository root — their relative script path breaks when the cwd moves (e.g. after chdir-ing into an evidence dir).
 
 Start a named Playwright session and inspect the actual first-run page:
 
@@ -93,7 +93,7 @@ print("Saved TOML matches the dashboard title and light theme selected in Settin
 PY
 ```
 
-Appearance is the default editor section. The label-based selectors above match the actual labels in `appearance-section.tsx`. Avoid snapshots while either password field contains the temporary password; submit first, then capture the authenticated page. Inspect `02-settings-draft.snapshot.txt` for the unsaved status, `Verification Home`, and selected Light theme; after Save, confirm `Changes saved to config.toml.` in `03-settings-saved.snapshot.txt`. After navigation, the dashboard page title and heading must show `Verification Home`.
+Appearance is the default editor section. The label-based selectors above match the actual labels in `appearance-section.tsx`. Creating the administrator account does not sign you in: after the create succeeds, the panel switches to the `Sign in` form and the journey continues by filling the password again and clicking `Sign in` (see [`features/authentication.md`](features/authentication.md)). Avoid snapshots while either password field contains the temporary password; submit first, then capture the authenticated page. Inspect `02-settings-draft.snapshot.txt` for the unsaved status, `Verification Home`, and selected Light theme; after Save, confirm `Changes saved to config.toml.` in `03-settings-saved.snapshot.txt`. After navigation, the dashboard page title and heading must show `Verification Home`.
 
 Feature journeys and their user-visible success criteria live in [`features/README.md`](features/README.md). Start with [`features/appearance-settings.md`](features/appearance-settings.md) for the seed journey.
 
@@ -115,6 +115,14 @@ test -s "$EVIDENCE_DIR/config.toml"
 ```
 
 Run cleanup after every failed attempt too. It signals only the PID whose command line and run marker match this run, removes the private run directory, and leaves `artifacts/verification/vesta/$RUN_ID/` untouched. Evidence must still exist after cleanup; never delete the evidence directory as part of teardown.
+
+## Console triage
+
+The snapshot footer reports console errors, but it does not attribute them. Read the run's console logs to match an error to the action that exposed it: favicon.ico 404s are noise, while a 404 or failed load appearing right after a page transition or lazy-chunk mount (for example an asset the built HTML references at a path the server does not host) is a real finding — treat the UI as silently degraded until the cause is fixed or ruled out.
+
+## Seeding server state over the API
+
+The UI journey is the default, but when verifying rendering against specific server-side state, seed it directly at the public API boundary: authenticate once by submitting the visible sign-in form (the browser context then holds a `vesta_session` cookie), confirm with `cookie-list`, and drive writes with `curl -H "Cookie: vesta_session=<token>"` against the same origin (for example `PUT /api/settings` with the intended dashboard shape). Verify the effect in the browser afterwards; do not reach past the public API or touch internal state.
 
 ## Helpers
 
