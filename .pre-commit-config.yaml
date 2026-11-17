@@ -1,0 +1,54 @@
+# prek - https://github.com/j178/prek
+#
+# Install the git hook shims once per clone: `prek install` (+ `-t pre-push` if wanted).
+# Note: worktrees share the main git dir, so the shims are active for every
+# checkout of this repository, including the primary one in ~/dev/vesta.
+#
+#rust check first, then frontend. commitlint runs at commit-msg.
+repos:
+  - repo: meta
+    hooks:
+      - id: check-useless-excludes
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude_types: [svg]
+      - id: end-of-file-fixer
+        exclude_types: [svg]
+      - id: check-toml
+      - id: check-yaml
+      - id: check-merge-conflict
+
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt --check
+        entry: cargo fmt --all -- --check
+        language: system
+        pass_filenames: false
+        files: \.rs$
+      - id: frontend-lint
+        name: vite-plus lint (vp lint)
+        entry: bun run lint
+        language: system
+        pass_filenames: false
+        files: ^(frontend/src/|vite\.config\.ts|package\.json|tsconfig\.json)
+      - id: frontend-check
+        name: vite-plus check + tsc --noEmit
+        entry: bun run check
+        language: system
+        pass_filenames: false
+        files: ^(frontend/src/|vite\.config\.ts|package\.json|tsconfig\.json|components\.json|frontend/index\.html)
+      - id: commitlint
+        name: conventional commit message (commitlint)
+        stages: [commit-msg]
+        entry: bunx --no-install commitlint --edit
+        language: system
+      - id: react-doctor
+        name: react-doctor (staged scan, errors block)
+        entry: bunx --no-install react-doctor --staged --no-supply-chain --no-score
+        language: system
+        pass_filenames: false
+        files: \.(ts|tsx|js|jsx)$
