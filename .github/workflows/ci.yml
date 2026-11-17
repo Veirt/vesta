@@ -34,6 +34,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
         with:
           toolchain: "1.99.1"
+          components: rustfmt, clippy
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
