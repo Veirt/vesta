@@ -231,6 +231,7 @@ impl DashboardItem {
                 "Weather" => (4, 3),
                 "SonarrCalendar" => (4, 4),
                 "Prowlarr" => (4, 2),
+                "AdGuard" => (4, 2),
                 _ => (4, 2),
             },
         }
@@ -250,6 +251,7 @@ mod tests {
             ("Weather", (4, 3)),
             ("SonarrCalendar", (4, 4)),
             ("Prowlarr", (4, 2)),
+            ("AdGuard", (4, 2)),
         ] {
             let item = DashboardItem::Widget(Widget {
                 id: "widget".to_string(),

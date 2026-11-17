@@ -1,3 +1,4 @@
+pub mod adguard_home_widget;
 pub mod clock_widget;
 pub mod jellyfin_random_show_widget;
 pub mod prowlarr_widget;

@@ -37,6 +37,7 @@ use response::jsend;
 use services::ping_service::PingService;
 use templates::dashboard;
 use widget_system::{WidgetContext, WidgetQuery, WidgetRegistry};
+use widgets::adguard_home_widget::AdGuardHomeWidget;
 use widgets::clock_widget::ClockWidget;
 use widgets::jellyfin_random_show_widget::JellyfinRandomShowWidget;
 use widgets::prowlarr_widget::ProwlarrWidget;
@@ -87,6 +88,7 @@ pub struct AppState {
 impl AppState {
     fn builtin_registry(http_client: reqwest::Client) -> WidgetRegistry {
         WidgetRegistry::new()
+            .register(AdGuardHomeWidget::new(http_client.clone()))
             .register(SonarrCalendarWidget::new(http_client.clone()))
             .register(ProwlarrWidget::new(http_client.clone()))
             .register(JellyfinRandomShowWidget::new(http_client.clone()))

@@ -594,6 +594,90 @@ function ProwlarrWidget({ data }: { data: WidgetData }) {
   );
 }
 
+type AdGuardTopDomain = {
+  domain: string;
+  count: number;
+};
+
+function parseAdGuardTopDomain(value: unknown): AdGuardTopDomain | null {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.domain !== "string" || record.domain.length === 0) return null;
+  return {
+    domain: record.domain,
+    count: typeof record.count === "number" && Number.isFinite(record.count) ? record.count : 0,
+  };
+}
+
+function percentDisplay(percent: number): string {
+  const rounded = Math.round(percent * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}%`;
+}
+
+function AdGuardWidget({ data }: { data: WidgetData }) {
+  const numDnsQueries =
+    typeof data.num_dns_queries === "number" && Number.isFinite(data.num_dns_queries)
+      ? data.num_dns_queries
+      : 0;
+  const numBlocked =
+    typeof data.num_blocked_filtering === "number" && Number.isFinite(data.num_blocked_filtering)
+      ? data.num_blocked_filtering
+      : 0;
+  const blockedPercent =
+    typeof data.blocked_percent === "number" && Number.isFinite(data.blocked_percent)
+      ? data.blocked_percent
+      : 0;
+  const avgProcessingTime =
+    typeof data.avg_processing_time === "number" && Number.isFinite(data.avg_processing_time)
+      ? data.avg_processing_time
+      : null;
+  const rulesCount = typeof data.rules_count === "number" ? data.rules_count : 0;
+  const protectionEnabled = data.protection_enabled === true;
+  const topDomains = Array.isArray(data.top_blocked_domains)
+    ? (data.top_blocked_domains as unknown[])
+        .map(parseAdGuardTopDomain)
+        .filter((row) => row !== null)
+        .slice(0, 3)
+    : [];
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-baseline gap-2">
+        <span className="text-2xl font-bold tabular-nums">{numDnsQueries.toLocaleString()}</span>
+        <span className="widget-secondary">DNS queries</span>
+      </div>
+      <div className="tabular-nums">
+        {numBlocked.toLocaleString()} blocked · {percentDisplay(blockedPercent)}
+      </div>
+      {topDomains.length > 0 ? (
+        <div className="flex flex-col justify-around">
+          {topDomains.map((row) => (
+            <div key={row.domain} className="flex items-center justify-between gap-2 py-0.5">
+              <span className="truncate">{row.domain}</span>
+              <span className="widget-secondary shrink-0 whitespace-nowrap tabular-nums">
+                {row.count.toLocaleString()}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div className="widget-divider mt-auto flex items-center justify-between gap-2 pt-1">
+        <span
+          className={`truncate ${
+            protectionEnabled ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"
+          }`}
+        >
+          {protectionEnabled ? "Protected" : "Disabled"}
+        </span>
+        <span className="widget-secondary shrink-0 whitespace-nowrap tabular-nums">
+          {avgProcessingTime !== null ? `${Math.round(avgProcessingTime * 1000)} ms` : "—"} ·{" "}
+          {rulesCount} rules
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function JellyfinRandomShowWidget({ data }: { data: WidgetData }) {
   if (data.empty === true) {
     return (
@@ -727,6 +811,8 @@ function WidgetContent({ name, data, title }: { name: string; data: WidgetData; 
       return <JellyfinRandomShowWidget data={data} />;
     case "Prowlarr":
       return <ProwlarrWidget data={data} />;
+    case "AdGuard":
+      return <AdGuardWidget data={data} />;
     default:
       return <ErrorMessage message={`Unsupported widget: ${name}`} />;
   }
@@ -845,6 +931,25 @@ function previewData(name: string): WidgetData {
           { name: "Retired tracker", enable: false, queries: 0, grabs: 0 },
         ],
         totals: { queries: 255, grabs: 59, average_response_time: 124.7 },
+      };
+    case "AdGuard":
+      return {
+        num_dns_queries: 48213,
+        num_blocked_filtering: 6894,
+        blocked_percent: 14.3,
+        num_replaced_parental: 12,
+        num_replaced_safebrowsing: 3,
+        avg_processing_time: 0.021,
+        top_blocked_domains: [
+          { domain: "ads.example.com", count: 4120 },
+          { domain: "tracker.example.net", count: 1877 },
+          { domain: "telemetry.example.org", count: 897 },
+        ],
+        version: "0.107.44",
+        protection_enabled: true,
+        running: true,
+        filters_count: 2,
+        rules_count: 104213,
       };
     default:
       return {};
