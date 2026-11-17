@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
@@ -38,6 +38,9 @@ enum TopEntry {
         count: u64,
     },
     Pair(u64, String),
+    /// Single-key `{domain: count}` entries, the shape AdGuard Home 0.107.x
+    /// actually serves for `top_blocked_domains`.
+    Map(HashMap<String, u64>),
 }
 
 /// The `top_blocked_domains` collections returned by `/control/stats`:
@@ -57,9 +60,13 @@ impl TopDomains {
         match self {
             TopDomains::List(entries) => entries
                 .iter()
-                .map(|entry| match entry {
-                    TopEntry::Object { domain, count } => (domain.clone(), *count),
-                    TopEntry::Pair(count, domain) => (domain.clone(), *count),
+                .flat_map(|entry| match entry {
+                    TopEntry::Object { domain, count } => vec![(domain.clone(), *count)],
+                    TopEntry::Pair(count, domain) => vec![(domain.clone(), *count)],
+                    TopEntry::Map(map) => map
+                        .iter()
+                        .map(|(domain, count)| (domain.clone(), *count))
+                        .collect::<Vec<_>>(),
                 })
                 .collect(),
             TopDomains::Map(domains) => domains
@@ -160,6 +167,28 @@ impl AdGuardHomeWidget {
         }
         Ok(response.json::<Value>().await?)
     }
+}
+
+/// Parse a widget payload, logging a truncated raw copy on shape mismatch:
+/// payload drift between AdGuard versions is the likely failure here, and
+/// the log removes the guesswork when a version changes shape again.
+fn parse_logged<T: DeserializeOwned>(endpoint: &str, value: &Value) -> VestaResult<T> {
+    serde_json::from_value(value.clone()).map_err(|error| {
+        let payload: String = value.to_string().chars().take(512).collect();
+        tracing::warn!(
+            target: "vesta::widgets::adguard_home",
+            endpoint,
+            %error,
+            payload,
+            "AdGuard payload did not match the expected shape"
+        );
+        VestaError::ApiError {
+            status: axum::http::StatusCode::BAD_GATEWAY,
+            message: format!(
+                "AdGuard {endpoint} payload did not match the expected shape: {error}"
+            ),
+        }
+    })
 }
 
 /// Assemble the tile payload from the three AdGuard API responses.
@@ -268,9 +297,9 @@ impl WidgetHandler for AdGuardHomeWidget {
             self.fetch_json(&status_url, &config.username, &config.password),
             self.fetch_json(&filtering_url, &config.username, &config.password),
         );
-        let stats: StatsResponse = serde_json::from_value(stats?)?;
-        let status: StatusResponse = serde_json::from_value(status?)?;
-        let filtering: FilteringStatus = serde_json::from_value(filtering?)?;
+        let stats: StatsResponse = parse_logged("/control/stats", &stats?)?;
+        let status: StatusResponse = parse_logged("/control/status", &status?)?;
+        let filtering: FilteringStatus = parse_logged("/control/filtering/status", &filtering?)?;
 
         Ok(tile_payload(stats, status, filtering))
     }
@@ -331,6 +360,30 @@ mod tests {
 
     #[test]
     fn top_blocked_domains_ranks_and_caps() {
+        // The real /control/stats payload (AdGuard Home 0.107.x) carries
+        // top_blocked_domains as a list of single-key {domain: count} maps.
+        let real_stats: StatsResponse = serde_json::from_value(json!({
+            "time_units": "hours",
+            "num_dns_queries": 116497,
+            "num_blocked_filtering": 14352,
+            "num_replaced_safebrowsing": 0,
+            "num_replaced_safesearch": 0,
+            "num_replaced_parental": 0,
+            "avg_processing_time": 0.0128,
+            "dns_queries": [100, 120],
+            "blocked_filtering": [5, 6],
+            "replaced_safebrowsing": [0, 0],
+            "replaced_parental": [0, 0],
+            "top_queried_domains": [{ "chatgpt.com": 26794 }, { "api.mistral.ai": 16466 }],
+            "top_blocked_domains": [{ "stats.grafana.org": 14352 }, { "nrdp.logs.netflix.com": 1306 }],
+            "top_clients": [{ "192.168.1.6": 116497 }, { "192.168.1.4": 41209 }]
+        }))
+        .expect("the real 0.107.x payload must parse");
+        let blocked = top_blocked_domains(&real_stats.top_blocked_domains, 3);
+        assert_eq!(blocked[0]["domain"], json!("stats.grafana.org"));
+        assert_eq!(blocked[0]["count"], json!(14352));
+        assert_eq!(blocked[1]["domain"], json!("nrdp.logs.netflix.com"));
+
         let domains = TopDomains::List(vec![
             TopEntry::Object {
                 domain: "low.example.com".to_string(),
