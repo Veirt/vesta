@@ -11,7 +11,7 @@ COPY frontend ./frontend
 COPY src ./src
 RUN bun run build
 
-FROM rust:1.99.1-slim-bookworm AS build
+FROM --platform=$BUILDPLATFORM rust:1.99.1-slim-bookworm AS build
 # Debian's cross gcc targets glibc, so bundled sqlite3.c compiles against
 # glibc headers and emits LFS64 symbols (open64, stat64, ...) that musl does
 # not provide -> undefined references at link time. zig ships a real musl
