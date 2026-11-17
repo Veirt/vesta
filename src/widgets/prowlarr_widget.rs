@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use serde::Deserialize;
+use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
@@ -37,7 +37,9 @@ fn default_true() -> bool {
     true
 }
 
-/// Response row of `/api/v1/indexerstats`.
+/// Response row of `/api/v1/indexerstats`. Current Prowlarr names the
+/// counters `numberOfQueries`/`numberOfGrabs`; older generations used
+/// `queries`/`grabs` — both are accepted.
 #[derive(Clone, Deserialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 struct IndexerStatsEntry {
@@ -45,18 +47,52 @@ struct IndexerStatsEntry {
     indexer_id: Option<u64>,
     #[serde(default)]
     indexer_name: String,
-    #[serde(default)]
-    queries: u64,
-    #[serde(default)]
-    grabs: u64,
-    #[serde(default)]
-    rss_queries: u64,
-    #[serde(default)]
-    failed_queries: u64,
-    #[serde(default)]
-    failed_grabs: u64,
+    #[serde(default, alias = "queries")]
+    number_of_queries: u64,
+    #[serde(default, alias = "grabs")]
+    number_of_grabs: u64,
+    #[serde(default, alias = "rssQueries")]
+    number_of_rss_queries: u64,
+    #[serde(default, alias = "failedQueries")]
+    number_of_failed_queries: u64,
+    #[serde(default, alias = "failedGrabs")]
+    number_of_failed_grabs: u64,
     #[serde(default)]
     average_response_time: Option<f64>,
+}
+
+/// `/api/v1/indexerstats` wraps the rows in an object; a bare list from
+/// older builds is also accepted.
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+enum IndexerStatsShape {
+    Wrapped {
+        #[serde(alias = "indexerStatsResponse")]
+        indexers: Vec<IndexerStatsEntry>,
+    },
+    Bare(Vec<IndexerStatsEntry>),
+}
+
+/// Parse a payload, logging a truncated raw copy when the shape does not
+/// match: payload drift between Prowlarr versions is diagnosable from
+/// server.log alone.
+fn parse_logged<T: DeserializeOwned>(endpoint: &str, value: &Value) -> VestaResult<T> {
+    serde_json::from_value(value.clone()).map_err(|error| {
+        let payload: String = value.to_string().chars().take(512).collect();
+        tracing::warn!(
+            target: "vesta::widgets::prowlarr",
+            endpoint,
+            %error,
+            payload,
+            "Prowlarr payload did not match the expected shape"
+        );
+        VestaError::ApiError {
+            status: axum::http::StatusCode::BAD_GATEWAY,
+            message: format!(
+                "Prowlarr {endpoint} payload did not match the expected shape: {error}"
+            ),
+        }
+    })
 }
 
 pub struct ProwlarrWidget {
@@ -83,6 +119,15 @@ impl ProwlarrWidget {
             });
         }
         Ok(response.json::<Value>().await?)
+    }
+
+    /// Parse `/api/v1/indexerstats` for the per-indexer rows.
+    fn parse_stats(&self, value: &Value) -> VestaResult<Vec<IndexerStatsEntry>> {
+        let shape: IndexerStatsShape = parse_logged("/api/v1/indexerstats", value)?;
+        Ok(match shape {
+            IndexerStatsShape::Wrapped { indexers } => indexers,
+            IndexerStatsShape::Bare(stats) => stats,
+        })
     }
 }
 
@@ -113,11 +158,11 @@ fn indexer_rows(indexers: Vec<IndexerEntry>, stats: Vec<IndexerStatsEntry>) -> V
             json!({
                 "name": indexer.name,
                 "enable": indexer.enable,
-                "queries": usage.queries,
-                "grabs": usage.grabs,
-                "rss_queries": usage.rss_queries,
-                "failed_queries": usage.failed_queries,
-                "failed_grabs": usage.failed_grabs,
+                "queries": usage.number_of_queries,
+                "grabs": usage.number_of_grabs,
+                "rss_queries": usage.number_of_rss_queries,
+                "failed_queries": usage.number_of_failed_queries,
+                "failed_grabs": usage.number_of_failed_grabs,
                 "average_response_time": usage.average_response_time,
             })
         })
@@ -207,8 +252,8 @@ impl WidgetHandler for ProwlarrWidget {
         let indexers_value = indexers_value?;
         let stats_value = stats_value?;
 
-        let indexers: Vec<IndexerEntry> = serde_json::from_value(indexers_value)?;
-        let stats: Vec<IndexerStatsEntry> = serde_json::from_value(stats_value)?;
+        let indexers: Vec<IndexerEntry> = parse_logged("/api/v1/indexer", &indexers_value)?;
+        let stats = self.parse_stats(&stats_value)?;
         let rows = indexer_rows(indexers, stats);
         let (queries, grabs, average_response_time) = aggregate(&rows);
 
@@ -225,7 +270,7 @@ impl WidgetHandler for ProwlarrWidget {
 
 #[cfg(test)]
 mod tests {
-    use super::{IndexerEntry, IndexerStatsEntry, aggregate, indexer_rows};
+    use super::{IndexerEntry, IndexerStatsEntry, IndexerStatsShape, aggregate, indexer_rows};
     use serde_json::json;
 
     fn indexer(id: Option<u64>, name: &str, enable: bool) -> IndexerEntry {
@@ -248,26 +293,54 @@ mod tests {
         IndexerStatsEntry {
             indexer_id,
             indexer_name: indexer_name.to_string(),
-            queries,
-            grabs,
-            rss_queries: 0,
-            failed_queries,
-            failed_grabs,
+            number_of_queries: queries,
+            number_of_grabs: grabs,
+            number_of_rss_queries: 0,
+            number_of_failed_queries: failed_queries,
+            number_of_failed_grabs: failed_grabs,
             average_response_time: None,
         }
     }
 
-    /// Real `/api/v1/indexersstats` payload shape published by Prowlarr
-    /// upstream: camelCase, per-indexer wrapper rows.
+    /// The real `/api/v1/indexerstats` payload (captured live from Prowlarr
+    /// 3.x): a wrapper object whose `indexers` key holds rows using the
+    /// `numberOf*` counter names.
     #[test]
-    fn parses_real_payload_shapes() {
-        let indexers: Vec<IndexerEntry> = serde_json::from_value(json!([
-            { "id": 1, "name": "Example Indexer", "enable": true }
-        ]))
-        .unwrap();
-        assert_eq!(indexers[0].name, "Example Indexer");
-        assert!(indexers[0].enable);
+    fn parses_the_live_wrapped_payload() {
+        let shape: super::IndexerStatsShape = serde_json::from_value(json!({
+            "indexers": [
+                {
+                    "indexerId": 4,
+                    "indexerName": "Shana Project",
+                    "averageResponseTime": 865,
+                    "averageGrabResponseTime": 0,
+                    "numberOfQueries": 4,
+                    "numberOfGrabs": 0,
+                    "numberOfRssQueries": 1194,
+                    "numberOfAuthQueries": 0,
+                    "numberOfFailedQueries": 0,
+                    "numberOfFailedGrabs": 0,
+                    "numberOfFailedRssQueries": 0,
+                    "numberOfFailedAuthQueries": 0
+                }
+            ],
+            "userAgents": [],
+            "hosts": []
+        }))
+        .expect("the live 3.x payload must parse");
+        let IndexerStatsShape::Wrapped { indexers } = shape else {
+            panic!("the live payload uses the wrapped shape");
+        };
+        assert_eq!(indexers[0].indexer_name, "Shana Project");
+        assert_eq!(indexers[0].number_of_queries, 4);
+        assert_eq!(indexers[0].number_of_rss_queries, 1194);
+        assert_eq!(indexers[0].average_response_time, Some(865.0));
+    }
 
+    /// Older Prowlarr generations served a bare array with `queries` /
+    /// `failedQueries`-style names.
+    #[test]
+    fn parses_legacy_bare_arrays() {
         let stats: Vec<IndexerStatsEntry> = serde_json::from_value(json!([
             {
                 "indexerId": 1,
@@ -284,15 +357,36 @@ mod tests {
             }
         ]))
         .unwrap();
-        assert_eq!(stats[0].queries, 40);
-        assert_eq!(stats[0].failed_queries, 1);
+        assert_eq!(stats[0].number_of_queries, 40);
+        assert_eq!(stats[0].number_of_failed_queries, 1);
         assert_eq!(stats[0].average_response_time, Some(212.0));
+    }
 
-        let rows = indexer_rows(indexers, stats);
-        assert_eq!(rows[0]["name"], json!("Example Indexer"));
-        assert_eq!(rows[0]["failed_queries"], json!(1));
-        let (queries, grabs, _avg) = aggregate(&rows);
-        assert_eq!((queries, grabs), (40, 12));
+    #[test]
+    fn end_to_end_merge_uses_live_counter_names() {
+        let indexers: Vec<IndexerEntry> = serde_json::from_value(json!([
+            { "id": 4, "name": "Shana Project", "enable": true }
+        ]))
+        .unwrap();
+        let rows = indexer_rows(
+            indexers,
+            vec![IndexerStatsEntry {
+                indexer_id: Some(4),
+                indexer_name: "Shana Project".to_string(),
+                number_of_queries: 4,
+                number_of_grabs: 0,
+                number_of_rss_queries: 1194,
+                number_of_failed_queries: 0,
+                number_of_failed_grabs: 0,
+                average_response_time: Some(865.0),
+            }],
+        );
+        assert_eq!(rows[0]["name"], json!("Shana Project"));
+        assert_eq!(rows[0]["queries"], json!(4));
+        assert_eq!(rows[0]["rss_queries"], json!(1194));
+        let (queries, grabs, avg) = aggregate(&rows);
+        assert_eq!((queries, grabs), (4, 0));
+        assert_eq!(avg, Some(865.0));
     }
 
     #[test]
