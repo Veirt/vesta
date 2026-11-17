@@ -1,37 +1,51 @@
 # syntax=docker/dockerfile:1
 # Static musl binary on scratch; the image carries only the binary + assets.
 
-FROM oven/bun:1-alpine AS frontend-builder
+FROM oven/bun:1.4.4-alpine AS frontend-builder
 WORKDIR /build
 COPY package.json bun.lockb ./
-RUN bun install --frozen-lockfile
+RUN --mount=type=cache,target=/root/.bun/install/cache,sharing=locked \
+    bun install --frozen-lockfile
 COPY vite.config.ts tsconfig.json components.json ./
 COPY frontend ./frontend
 COPY src ./src
 RUN bun run build
 
 FROM rust:1.99.1-slim-bookworm AS build
-RUN apt-get update && apt-get install --no-install-recommends -y \
-    musl-tools \
-    gcc-aarch64-linux-gnu \
-    && rm -rf /var/lib/apt/lists/* \
+# Debian's cross gcc targets glibc, so bundled sqlite3.c compiles against
+# glibc headers and emits LFS64 symbols (open64, stat64, ...) that musl does
+# not provide -> undefined references at link time. zig ships a real musl
+# sysroot; cargo-zigbuild drives it as the cc/linker for cross targets.
+ARG ZIG_VERSION=0.15.1
+ARG ZIGBUILD_VERSION=0.24.1
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        xz-utils \
+    && mkdir -p /usr/local/zig \
+    && curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" \
+        | tar -xJ -C /usr/local/zig --strip-components=1 \
     && rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+ENV PATH=/usr/local/zig:$PATH
+RUN cargo install --locked cargo-zigbuild@"${ZIGBUILD_VERSION}"
 WORKDIR /src
-COPY Cargo.toml Cargo.lock ./
-COPY build.rs ./build.rs
+COPY Cargo.toml Cargo.lock build.rs ./
 COPY migrations ./migrations
 COPY docs ./docs
 COPY src ./src
 ARG TARGETARCH
-RUN mkdir -p /out /data \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    mkdir -p /out /data \
     && if [ "$TARGETARCH" = "arm64" ]; then \
-        export CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc \
-               CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=aarch64-linux-gnu-gcc; \
-        cargo build --release --target=aarch64-unknown-linux-musl; \
-        cp target/aarch64-unknown-linux-musl/release/vesta /out/vesta; \
+        cargo zigbuild --release --locked --target=aarch64-unknown-linux-musl \
+        && cp target/aarch64-unknown-linux-musl/release/vesta /out/vesta; \
     else \
-        cargo build --release --target=x86_64-unknown-linux-musl; \
-        cp target/x86_64-unknown-linux-musl/release/vesta /out/vesta; \
+        cargo zigbuild --release --locked --target=x86_64-unknown-linux-musl \
+        && cp target/x86_64-unknown-linux-musl/release/vesta /out/vesta; \
     fi
 
 FROM scratch

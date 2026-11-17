@@ -23,6 +23,7 @@ Thumbs.db
 # Environment files
 .env
 *.env
+
 # Test files
 tests/
 
@@ -31,9 +32,14 @@ tests/
 *.swp
 *~
 
-# Docker files (optional, depending on your workflow)
+# Docker files
 Dockerfile
 docker-compose.yml
+
+# CI and helper metadata
+.github/
+.agents/
+artifacts/
 
 static/style.css
 static/ui/
