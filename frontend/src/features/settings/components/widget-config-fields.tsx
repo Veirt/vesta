@@ -9,52 +9,13 @@ import {
   inputClass,
 } from "@/features/settings/components/styles";
 import type { EditableWidget } from "@/features/settings/models";
+import { loadRemoteOptions, type RemoteOption } from "@/features/settings/remote-options";
 import type { WidgetDescriptor, WidgetField } from "@/features/settings/schema";
 
 type QuickLink = { title: string; url: string; icon: string };
 
-type RemoteOption = { value: string; label: string };
-
-function errorMessage(result: unknown, status: number): string {
-  if (
-    result &&
-    typeof result === "object" &&
-    "message" in result &&
-    typeof result.message === "string"
-  ) {
-    return result.message;
-  }
-  return `The request failed (${status}).`;
-}
-
-async function loadRemoteOptions(
-  widgetName: string,
-  fieldKey: string,
-  config: Record<string, unknown>,
-  signal: AbortSignal,
-): Promise<RemoteOption[]> {
-  const response = await fetch(`/api/widgets/${encodeURIComponent(widgetName)}/options`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ field: fieldKey, config }),
-    signal,
-  });
-  const result: unknown = await response.json();
-  if (!response.ok) throw new Error(errorMessage(result, response.status));
-  const body = (result && typeof result === "object" ? result : {}) as {
-    status?: unknown;
-    data?: { options?: unknown } | null;
-  };
-  if (body.status !== "success" || !Array.isArray(body.data?.options)) {
-    throw new Error("The server returned an invalid options list.");
-  }
-  return ((body.data?.options as unknown[]) ?? []).flatMap((option): RemoteOption[] => {
-    if (!option || typeof option !== "object") return [];
-    const record = option as Record<string, unknown>;
-    return typeof record.value === "string" && typeof record.label === "string"
-      ? [{ value: record.value, label: record.label }]
-      : [];
-  });
+function isAbortError(cause: unknown): boolean {
+  return cause instanceof DOMException && cause.name === "AbortError";
 }
 
 /**
@@ -90,24 +51,30 @@ function RemoteOptionsField({
       setError("");
       return;
     }
+    // Deferred state updates must check this flag: the effect may be cleaned
+    // up (unmount or dependency change) while the request is in flight.
+    let active = true;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setLoading(true);
       loadRemoteOptions(widgetName, field.key, config, controller.signal)
         .then((loaded) => {
+          if (!active) return;
           setOptions(loaded);
           setError("");
         })
         .catch((cause: unknown) => {
-          if (cause instanceof DOMException && cause.name === "AbortError") return;
+          if (!active) return;
+          if (isAbortError(cause)) return;
           setOptions([]);
           setError(cause instanceof Error ? cause.message : "The request failed.");
         })
         .finally(() => {
-          if (!controller.signal.aborted) setLoading(false);
+          if (active && !controller.signal.aborted) setLoading(false);
         });
     }, 600);
     return () => {
+      active = false;
       controller.abort();
       window.clearTimeout(timer);
     };
@@ -193,6 +160,21 @@ function QuickLinksField({
   onUpload: (file: File) => Promise<string | null>;
 }) {
   const links = parseLinks(value);
+  // Rows are edited and removed by position, so identity is positional:
+  // hand each row a stable id instead of the array index.
+  const [rowIds, setRowIds] = useState<Array<string>>(() =>
+    links.map((_, index) => `link-row-${index + 1}`),
+  );
+  useEffect(() => {
+    setRowIds((current) => {
+      if (current.length >= links.length) return current;
+      const added = Array.from(
+        { length: links.length - current.length },
+        (_, offset) => `link-row-${current.length + offset + 1}`,
+      );
+      return [...current, ...added];
+    });
+  }, [links.length]);
 
   return (
     <fieldset className="grid gap-3 rounded-md border border-border/70 p-3 sm:p-4">
@@ -205,7 +187,7 @@ function QuickLinksField({
       {links.map((link, index) => (
         <article
           className="grid gap-3 rounded-md border border-border/70 bg-background/50 p-3 sm:grid-cols-2"
-          key={index}
+          key={rowIds[index]}
         >
           <Field label={`Link ${index + 1} title`} required>
             <Input

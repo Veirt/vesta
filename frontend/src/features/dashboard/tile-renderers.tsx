@@ -19,62 +19,68 @@ function useWidgetData(widgetName: string, itemId: string, refreshInterval: numb
   const [error, setError] = useState("");
 
   useEffect(() => {
-    let active = true;
     const controller = new AbortController();
     const params = new URLSearchParams({ id: itemId });
-    const load = async () => {
-      try {
-        const response = await fetch(
-          `/api/widgets/${encodeURIComponent(widgetName)}?${params.toString()}`,
-          { cache: "no-store", signal: controller.signal },
-        );
-        const result: unknown = await response.json();
-        // Non-success responses carry a jsend "error" body whose message
-        // names what went wrong; prefer it over a bare status code.
-        const asMessage = (candidate: unknown): string | null =>
-          typeof candidate === "object" &&
-          candidate !== null &&
-          typeof (candidate as { message?: unknown }).message === "string"
-            ? ((candidate as { message: string }).message as string)
-            : null;
-        if (!response.ok) {
-          throw new Error(asMessage(result) ?? `Widget request failed (${response.status})`);
-        }
-        if (
-          !result ||
-          typeof result !== "object" ||
-          !("status" in result) ||
-          result.status !== "success" ||
-          !("data" in result) ||
-          !result.data ||
-          typeof result.data !== "object" ||
-          !("widget" in result.data) ||
-          !result.data.widget ||
-          typeof result.data.widget !== "object"
-        ) {
-          throw new Error("The server returned invalid widget data");
-        }
-        if (active) {
-          setData(result.data.widget as WidgetData);
-          setError("");
-        }
-      } catch (cause) {
-        if (active && !(cause instanceof DOMException && cause.name === "AbortError")) {
-          setError(cause instanceof Error ? cause.message : "Widget data could not be loaded");
-        }
+    // Resolves the validated widget payload; all state updates happen in the
+    // guarded .then/.catch handlers below so stale runs never write state.
+    const loadWidget = async (): Promise<WidgetData> => {
+      const response = await fetch(
+        `/api/widgets/${encodeURIComponent(widgetName)}?${params.toString()}`,
+        { cache: "no-store", signal: controller.signal },
+      );
+      const result: unknown = await response.json();
+      // Non-success responses carry a jsend "error" body whose message
+      // names what went wrong; prefer it over a bare status code.
+      const asMessage = (candidate: unknown): string | null =>
+        typeof candidate === "object" &&
+        candidate !== null &&
+        typeof (candidate as { message?: unknown }).message === "string"
+          ? ((candidate as { message: string }).message as string)
+          : null;
+      if (!response.ok) {
+        throw new Error(asMessage(result) ?? `Widget request failed (${response.status})`);
       }
+      if (
+        !result ||
+        typeof result !== "object" ||
+        !("status" in result) ||
+        result.status !== "success" ||
+        !("data" in result) ||
+        !result.data ||
+        typeof result.data !== "object" ||
+        !("widget" in result.data) ||
+        !result.data.widget ||
+        typeof result.data.widget !== "object"
+      ) {
+        throw new Error("The server returned invalid widget data");
+      }
+      return result.data.widget as WidgetData;
     };
 
-    void load();
-    const interval =
-      refreshInterval && refreshInterval > 0
-        ? window.setInterval(() => void load(), refreshInterval * 1_000)
-        : undefined;
+    const refresh = () => {
+      void loadWidget()
+        .then((widget) => {
+          if (!controller.signal.aborted) {
+            setData(widget);
+            setError("");
+          }
+        })
+        .catch((cause: unknown) => {
+          if (!controller.signal.aborted) {
+            setError(cause instanceof Error ? cause.message : "Widget data could not be loaded");
+          }
+        });
+    };
+
+    void refresh();
+    let interval: number | undefined;
+    if (refreshInterval && refreshInterval > 0) {
+      interval = window.setInterval(refresh, refreshInterval * 1_000);
+    }
 
     return () => {
-      active = false;
       controller.abort();
-      if (interval !== undefined) window.clearInterval(interval);
+      clearInterval(interval);
     };
   }, [widgetName, itemId, refreshInterval]);
 

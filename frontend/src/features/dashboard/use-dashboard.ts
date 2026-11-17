@@ -28,14 +28,20 @@ function sampleValues(stats: Stats): Partial<Record<MetricName, number>> {
 
 function addSamples(history: History, id: string, stats: Stats, time: number): History {
   const values = sampleValues(stats);
-  const next = { ...history, [id]: { ...history[id] } };
+  const previous = history[id] ?? {};
+  const sampled: Partial<Record<MetricName, Sample[]>> = {};
   for (const metric of ["cpu", "memory", "disk", "load"] as const) {
     const value = values[metric];
     if (value === undefined || !Number.isFinite(value)) continue;
-    const series = [...(next[id][metric] ?? []), { time, value }];
-    next[id][metric] = series.slice(-48);
+    sampled[metric] = extendSeries(previous[metric] ?? [], value, time);
   }
-  return next;
+  return { ...history, [id]: { ...previous, ...sampled } };
+}
+
+// Pure: builds and returns a new series instead of mutating the old one, so
+// it is safe to call from a React state updater.
+function extendSeries(series: Sample[], value: number, time: number): Sample[] {
+  return [...series, { time, value }].slice(-48);
 }
 
 function useDashboard() {
@@ -52,19 +58,11 @@ function useDashboard() {
   const [connection, setConnection] = useState<Connection>("connecting");
 
   useEffect(() => {
-    let active = true;
-    let source: EventSource | undefined;
-    // boot()'s fetch may resolve after an early unmount, so connect() has to
-    // hand its stream to the already-run cleanup via this flag: without it a
-    // late EventSource leaks.
+    // Set once the effect is torn down; every deferred callback (boot's
+    // fetch, stream events) checks it before touching state.
     let closed = false;
-    const close = () => {
-      active = false;
-      closed = true;
-      source?.close();
-    };
     const applySnapshot = (data: DashboardData) => {
-      if (!active) return;
+      if (closed) return;
       const receivedAt = Date.now();
       const mapped = data.nodes.map((node) => ({
         ...node,
@@ -85,51 +83,56 @@ function useDashboard() {
       });
     };
 
-    const connect = () => {
-      if (closed) return;
-      source = new EventSource("/api/nodes/events");
-      source.onopen = () => active && setConnection("live");
-      source.onerror = () => active && setConnection("reconnecting");
-      source.addEventListener("snapshot", (event) => {
-        const parsed = parseEvent(DashboardDataSchema, (event as MessageEvent<string>).data);
-        if (parsed) {
-          applySnapshot(parsed);
-        } else console.error("Ignoring invalid dashboard snapshot from event stream");
-      });
-      source.addEventListener("node", (event) => {
-        const parsed = parseEvent(NodeEventSchema, (event as MessageEvent<string>).data);
-        if (!parsed) {
-          console.error("Ignoring invalid node update from event stream");
-          return;
-        }
-        const receivedAt = Date.now();
-        const { id, stats, scrape_failed: scrapeFailed } = parsed;
-        setNodes((current) =>
-          current.map((node) =>
-            node.id === id
-              ? {
-                  ...node,
-                  stats,
-                  receivedAt: stats ? receivedAt : null,
-                  scrape_failed: scrapeFailed,
-                }
-              : node,
-          ),
-        );
-        if (stats) setHistory((current) => addSamples(current, id, stats, receivedAt));
-      });
+    const onOpen = () => {
+      if (!closed) setConnection("live");
     };
+    const onError = () => {
+      if (!closed) setConnection("reconnecting");
+    };
+    const onSnapshot = (event: MessageEvent<string>) => {
+      const parsed = parseEvent(DashboardDataSchema, event.data);
+      if (parsed) {
+        applySnapshot(parsed);
+      } else console.error("Ignoring invalid dashboard snapshot from event stream");
+    };
+    const onNode = (event: MessageEvent<string>) => {
+      const parsed = parseEvent(NodeEventSchema, event.data);
+      if (!parsed) {
+        console.error("Ignoring invalid node update from event stream");
+        return;
+      }
+      const receivedAt = Date.now();
+      const { id, stats, scrape_failed: scrapeFailed } = parsed;
+      setNodes((current) =>
+        current.map((node) =>
+          node.id === id
+            ? {
+                ...node,
+                stats,
+                receivedAt: stats ? receivedAt : null,
+                scrape_failed: scrapeFailed,
+              }
+            : node,
+        ),
+      );
+      if (stats) setHistory((current) => addSamples(current, id, stats, receivedAt));
+    };
+
+    const source = new EventSource("/api/nodes/events");
+    source.onopen = onOpen;
+    source.onerror = onError;
+    source.addEventListener("snapshot", onSnapshot);
+    source.addEventListener("node", onNode);
 
     const boot = async () => {
       try {
         const data = await fetchDashboard();
-        if (!active) return;
+        if (!data || closed) return;
         applySnapshot(data);
         setError("");
         setLoading(false);
-        connect();
       } catch (cause) {
-        if (active) {
+        if (!closed) {
           setError(cause instanceof Error ? cause.message : "Dashboard data could not be loaded");
           setLoading(false);
         }
@@ -138,7 +141,12 @@ function useDashboard() {
     };
 
     void boot();
-    return close;
+    return () => {
+      closed = true;
+      source.removeEventListener("snapshot", onSnapshot);
+      source.removeEventListener("node", onNode);
+      source.close();
+    };
   }, []);
 
   return { nodes, items, groups, app, history, error, loading, connection };

@@ -55,9 +55,10 @@ function ChartContainer({
 }) {
   const uniqueId = React.useId();
   const chartId = `chart-${id ?? uniqueId.replace(/:/g, "")}`;
+  const contextValue = React.useMemo(() => ({ config }), [config]);
 
   return (
-    <ChartContext.Provider value={{ config }}>
+    <ChartContext.Provider value={contextValue}>
       <div
         data-slot="chart"
         data-chart={chartId}
@@ -132,6 +133,54 @@ function ChartTooltipContent({
     RechartsPrimitive.DefaultTooltipContentProps<TooltipValueType, TooltipNameType>,
     "accessibilityLayer"
   >) {
+  // Early exit lives in the wrapper so hooks below never run before a return.
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  return (
+    <ChartTooltipBody
+      active={active}
+      payload={payload}
+      className={className}
+      indicator={indicator}
+      hideLabel={hideLabel}
+      hideIndicator={hideIndicator}
+      label={label}
+      labelFormatter={labelFormatter}
+      labelClassName={labelClassName}
+      formatter={formatter}
+      color={color}
+      nameKey={nameKey}
+      labelKey={labelKey}
+    />
+  );
+}
+
+function ChartTooltipBody({
+  payload,
+  className,
+  indicator = "dot",
+  hideLabel = false,
+  hideIndicator = false,
+  label,
+  labelFormatter,
+  labelClassName,
+  formatter,
+  color,
+  nameKey,
+  labelKey,
+}: React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
+  React.ComponentProps<"div"> & {
+    hideLabel?: boolean;
+    hideIndicator?: boolean;
+    indicator?: "line" | "dot" | "dashed";
+    nameKey?: string;
+    labelKey?: string;
+  } & Omit<
+    RechartsPrimitive.DefaultTooltipContentProps<TooltipValueType, TooltipNameType>,
+    "accessibilityLayer"
+  >) {
   const { config } = useChart();
 
   const tooltipLabel = React.useMemo(() => {
@@ -158,11 +207,7 @@ function ChartTooltipContent({
     return <div className={cn("font-medium", labelClassName)}>{value}</div>;
   }, [label, labelFormatter, payload, hideLabel, labelClassName, config, labelKey]);
 
-  if (!active || !payload?.length) {
-    return null;
-  }
-
-  const nestLabel = payload.length === 1 && indicator !== "dot";
+  const nestLabel = payload?.length === 1 && indicator !== "dot";
 
   return (
     <div
@@ -173,7 +218,7 @@ function ChartTooltipContent({
     >
       {!nestLabel ? tooltipLabel : null}
       <div className="grid gap-1.5">
-        {payload
+        {(payload ?? [])
           .filter((item) => item.type !== "none")
           .map((item, index) => {
             const key = `${nameKey ?? item.name ?? item.dataKey ?? "value"}`;
@@ -182,7 +227,7 @@ function ChartTooltipContent({
 
             return (
               <div
-                key={index}
+                key={key}
                 className={cn(
                   "flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-muted-foreground",
                   indicator === "dot" && "items-center",
@@ -274,13 +319,13 @@ function ChartLegendContent({
     >
       {payload
         .filter((item) => item.type !== "none")
-        .map((item, index) => {
+        .map((item) => {
           const key = `${nameKey ?? item.dataKey ?? "value"}`;
           const itemConfig = getPayloadConfigFromPayload(config, item, key);
 
           return (
             <div
-              key={index}
+              key={key}
               className={cn(
                 "flex items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:text-muted-foreground",
               )}
