@@ -85,7 +85,10 @@ impl WeatherService {
             query.temperature_unit()
         );
 
-        send_checked_json(self.http_client.get(&url), "weather provider").await
+        send_checked_json(self.http_client.get(&url), |_| {
+            "weather provider error".to_string()
+        })
+        .await
     }
 }
 

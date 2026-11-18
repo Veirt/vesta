@@ -153,9 +153,10 @@ impl AdGuardHomeWidget {
     }
 
     async fn fetch_json(&self, path: &str, username: &str, password: &str) -> VestaResult<Value> {
+        let error_path = path.to_string();
         send_checked_json(
             self.client.get(path).basic_auth(username, Some(password)),
-            &format!("AdGuard Home {path}"),
+            move |status| format!("AdGuard Home request to {error_path} failed: {status}"),
         )
         .await
     }

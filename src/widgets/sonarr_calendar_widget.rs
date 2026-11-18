@@ -86,7 +86,7 @@ impl SonarrCalendarWidget {
                 .get(format!("{base}/api/v3/calendar"))
                 .query(&params)
                 .header("X-Api-Key", &config.key),
-            "Sonarr calendar",
+            |_| "Failed to fetch calendar".to_string(),
         )
         .await
     }
@@ -97,7 +97,7 @@ impl SonarrCalendarWidget {
             self.client
                 .get(format!("{base}/api/v3/queue"))
                 .header("X-Api-Key", &config.key),
-            "Sonarr download queue",
+            |_| "Failed to fetch download queue".to_string(),
         )
         .await
     }

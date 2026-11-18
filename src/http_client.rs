@@ -21,16 +21,17 @@ pub fn create_default_client() -> VestaResult<Client> {
 
 /// Send an upstream HTTP request, map non-2xx statuses to `VestaError::ApiError`,
 /// and decode the JSON body into `T`.
-pub async fn send_checked_json<T: DeserializeOwned>(
-    request: RequestBuilder,
-    label: &str,
-) -> VestaResult<T> {
+pub async fn send_checked_json<T, F>(request: RequestBuilder, error_message: F) -> VestaResult<T>
+where
+    T: DeserializeOwned,
+    F: FnOnce(StatusCode) -> String + Send,
+{
     let response = request.send().await?;
     let status = response.status();
     if !status.is_success() {
         return Err(VestaError::ApiError {
             status,
-            message: format!("{label} request failed: {status}"),
+            message: error_message(status),
         });
     }
     Ok(response.json::<T>().await?)
@@ -59,4 +60,47 @@ pub fn parse_logged<T: DeserializeOwned>(
             ),
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{Router, routing::get};
+    use reqwest::Client;
+
+    use crate::error::VestaError;
+
+    use super::send_checked_json;
+
+    async fn unavailable() -> axum::http::StatusCode {
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
+    }
+
+    #[tokio::test]
+    async fn checked_json_preserves_the_callers_non_success_message() {
+        let router = Router::new().route("/", get(unavailable));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+
+        let error = send_checked_json::<serde_json::Value, _>(
+            Client::new().get(format!("http://{address}/")),
+            |status| {
+                format!("AdGuard Home request to http://adguard/control/stats failed: {status}")
+            },
+        )
+        .await
+        .unwrap_err();
+        server.abort();
+
+        let VestaError::ApiError { status, message } = error else {
+            panic!("expected an upstream status error");
+        };
+        assert_eq!(status, axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            message,
+            "AdGuard Home request to http://adguard/control/stats failed: 503 Service Unavailable"
+        );
+    }
 }

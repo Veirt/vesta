@@ -96,9 +96,10 @@ impl ProwlarrWidget {
     }
 
     async fn fetch_json(&self, url: String, key: &str) -> VestaResult<Value> {
+        let error_url = url.clone();
         send_checked_json(
             self.client.get(&url).header("X-Api-Key", key),
-            &format!("Prowlarr {url}"),
+            move |status| format!("Prowlarr request to {error_url} failed: {status}"),
         )
         .await
     }
