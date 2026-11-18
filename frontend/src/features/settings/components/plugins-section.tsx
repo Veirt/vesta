@@ -4,22 +4,30 @@ import { installPlugin, listPlugins, uninstallPlugin, updatePlugin } from "@/sha
 import type { Plugin } from "@/shared/schemas/core";
 import { buttonClass, destructiveButtonClass, inputClass } from "@/shared/components/styles";
 
-function PluginsSection() {
-  const [plugins, setPlugins] = useState<Plugin[]>([]);
-  const [loadError, setLoadError] = useState("");
+type CatalogState =
+  | { kind: "loading" }
+  | { kind: "error"; message: string }
+  | { kind: "ready"; plugins: Plugin[] };
+
+type MutationState =
+  | { kind: "idle" }
+  | { kind: "pending"; verb: "installing" | "updating" | "removing" }
+  | { kind: "error"; message: string }
+  | { kind: "notice"; message: string };
+
+export function PluginsSection() {
+  const [catalog, setCatalog] = useState<CatalogState>({ kind: "loading" });
   const [url, setUrl] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [mutation, setMutation] = useState<MutationState>({ kind: "idle" });
 
   async function refresh() {
     try {
-      setPlugins(await listPlugins());
-      setLoadError("");
+      setCatalog({ kind: "ready", plugins: await listPlugins() });
     } catch (cause) {
-      setLoadError(
-        cause instanceof Error ? cause.message : "Installed plugins could not be loaded",
-      );
+      setCatalog({
+        kind: "error",
+        message: cause instanceof Error ? cause.message : "Installed plugins could not be loaded",
+      });
     }
   }
 
@@ -27,54 +35,62 @@ function PluginsSection() {
     void refresh();
   }, []);
 
-  // This section lives inside the settings page's outer <form>; HTML forbids
-  // nested forms, so the install controls are a div and the button handler is
-  // wired directly.
-  async function handleInstall() {
-    if (!url.trim() || busy) return;
-    setBusy(true);
-    setError("");
-    setNotice("");
+  const busy = mutation.kind === "pending";
+
+  async function runMutation(
+    verb: "installing" | "updating" | "removing",
+    run: () => Promise<string>,
+    fallbackError: string,
+  ) {
+    if (busy) return;
+    setMutation({ kind: "pending", verb });
     try {
-      const plugin = await installPlugin(url.trim());
-      setNotice(`${plugin.name} v${plugin.version ?? "unknown"} installed.`);
-      setUrl("");
+      const message = await run();
+      setMutation({ kind: "notice", message });
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The plugin could not be installed");
-    } finally {
-      setBusy(false);
+      setMutation({
+        kind: "error",
+        message: cause instanceof Error ? cause.message : fallbackError,
+      });
     }
   }
 
-  async function handleUpdate(id: string) {
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      const plugin = await updatePlugin(id);
-      setNotice(`${plugin.name} updated to v${plugin.version ?? "unknown"}.`);
-      await refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The plugin could not be updated");
-    } finally {
-      setBusy(false);
-    }
+  // SettingsEditor wraps the sections in `<form>`; HTML forbids nested forms,
+  // so install controls are a div with a button click handler.
+  function handleInstall() {
+    if (!url.trim()) return;
+    return runMutation(
+      "installing",
+      async () => {
+        const plugin = await installPlugin(url.trim());
+        setUrl("");
+        return `${plugin.name} v${plugin.version ?? "unknown"} installed.`;
+      },
+      "The plugin could not be installed",
+    );
   }
 
-  async function handleRemove(id: string) {
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      await uninstallPlugin(id);
-      setNotice(`${id} removed.`);
-      await refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The plugin could not be removed");
-    } finally {
-      setBusy(false);
-    }
+  function handleUpdate(id: string) {
+    return runMutation(
+      "updating",
+      async () => {
+        const plugin = await updatePlugin(id);
+        return `${plugin.name} updated to v${plugin.version ?? "unknown"}.`;
+      },
+      "The plugin could not be updated",
+    );
+  }
+
+  function handleRemove(id: string) {
+    return runMutation(
+      "removing",
+      async () => {
+        await uninstallPlugin(id);
+        return `${id} removed.`;
+      },
+      "The plugin could not be removed",
+    );
   }
 
   return (
@@ -110,17 +126,19 @@ function PluginsSection() {
               onClick={() => void handleInstall()}
               disabled={busy || !url.trim()}
             >
-              {busy ? "Installing…" : "Install"}
+              {mutation.kind === "pending" && mutation.verb === "installing"
+                ? "Installing…"
+                : "Install"}
             </button>
           </div>
-          {error && (
+          {mutation.kind === "error" && (
             <p className="text-sm text-destructive" role="alert">
-              {error}
+              {mutation.message}
             </p>
           )}
-          {notice && (
+          {mutation.kind === "notice" && (
             <p className="text-sm text-muted-foreground" role="status">
-              {notice}
+              {mutation.message}
             </p>
           )}
         </CardContent>
@@ -134,77 +152,76 @@ function PluginsSection() {
           </p>
         </CardHeader>
         <CardContent className="grid gap-3 px-5 py-5 sm:px-6">
-          {loadError && (
+          {catalog.kind === "error" && (
             <p className="text-sm text-destructive" role="alert">
-              {loadError}
+              {catalog.message}
             </p>
           )}
-          {!loadError && plugins.length === 0 && (
+          {catalog.kind === "ready" && catalog.plugins.length === 0 && (
             <p className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
               No plugins installed yet.
             </p>
           )}
-          {plugins.map((plugin) => (
-            <article
-              className="grid gap-2 rounded-lg border border-border/70 bg-background/60 p-4"
-              key={plugin.id}
-            >
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h3 className="text-sm font-medium">
-                  {plugin.name}
-                  {plugin.version && (
-                    <span className="ml-2 text-xs text-muted-foreground">v{plugin.version}</span>
-                  )}
-                </h3>
-                <div className="flex gap-2">
-                  <button
-                    className={buttonClass}
-                    type="button"
-                    onClick={() => void handleUpdate(plugin.id)}
-                    disabled={busy}
-                  >
-                    Update
-                  </button>
-                  <button
-                    className={destructiveButtonClass}
-                    type="button"
-                    onClick={() => void handleRemove(plugin.id)}
-                    disabled={busy}
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-              {plugin.description && (
-                <p className="text-sm leading-5 text-muted-foreground">{plugin.description}</p>
-              )}
-              <p
-                className="truncate text-xs text-muted-foreground"
-                title={`${plugin.source_url} @ ${plugin.commit.slice(0, 12)}`}
+          {catalog.kind === "ready" &&
+            catalog.plugins.map((plugin) => (
+              <article
+                className="grid gap-2 rounded-lg border border-border/70 bg-background/60 p-4"
+                key={plugin.id}
               >
-                {plugin.source_url} @ {plugin.commit.slice(0, 12)}
-              </p>
-              <ul className="grid gap-1">
-                {plugin.widgets.map((widget) => (
-                  <li className="text-sm" key={widget.id}>
-                    <span className="font-medium">{widget.title}</span>{" "}
-                    <span className="text-xs text-muted-foreground">
-                      {widget.width}&times;{widget.height}
-                    </span>
-                    {widget.description && (
-                      <span className="block text-xs text-muted-foreground">
-                        {widget.description}
-                      </span>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h3 className="text-sm font-medium">
+                    {plugin.name}
+                    {plugin.version && (
+                      <span className="ml-2 text-xs text-muted-foreground">v{plugin.version}</span>
                     )}
-                  </li>
-                ))}
-              </ul>
-            </article>
-          ))}
+                  </h3>
+                  <div className="flex gap-2">
+                    <button
+                      className={buttonClass}
+                      type="button"
+                      onClick={() => void handleUpdate(plugin.id)}
+                      disabled={busy}
+                    >
+                      Update
+                    </button>
+                    <button
+                      className={destructiveButtonClass}
+                      type="button"
+                      onClick={() => void handleRemove(plugin.id)}
+                      disabled={busy}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+                {plugin.description && (
+                  <p className="text-sm leading-5 text-muted-foreground">{plugin.description}</p>
+                )}
+                <p
+                  className="truncate text-xs text-muted-foreground"
+                  title={`${plugin.source_url} @ ${plugin.commit.slice(0, 12)}`}
+                >
+                  {plugin.source_url} @ {plugin.commit.slice(0, 12)}
+                </p>
+                <ul className="grid gap-1">
+                  {plugin.widgets.map((widget) => (
+                    <li className="text-sm" key={widget.id}>
+                      <span className="font-medium">{widget.title}</span>{" "}
+                      <span className="text-xs text-muted-foreground">
+                        {widget.width}&times;{widget.height}
+                      </span>
+                      {widget.description && (
+                        <span className="block text-xs text-muted-foreground">
+                          {widget.description}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </article>
+            ))}
         </CardContent>
       </Card>
     </div>
   );
 }
-
-export { PluginsSection };

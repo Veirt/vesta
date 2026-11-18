@@ -1,10 +1,4 @@
-import {
-  IconArrowsHorizontal,
-  IconDotsDiagonal,
-  IconGripVertical,
-  IconPencil,
-  IconPlus,
-} from "@tabler/icons-react";
+import { IconDotsDiagonal, IconGripVertical, IconPencil, IconPlus } from "@tabler/icons-react";
 import ReactGridLayout, { useContainerWidth, verticalCompactor } from "react-grid-layout";
 import {
   useRef,
@@ -21,7 +15,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { DashboardItem as DashboardItemData, WidgetDescriptor } from "@/shared/schemas/core";
+import { EditTile } from "@/features/dashboard/edit-tile";
+import { GroupResizeHandle } from "@/features/dashboard/group-resize-handle";
+import type { LayoutEntry } from "@/features/dashboard/use-dashboard-editor";
+import type { EditableDashboardItem } from "@/shared/lib/draft-models";
 import {
   TILE_GRID_GAP,
   TILE_MAX_SPAN,
@@ -32,126 +29,9 @@ import {
   type TileResizeState,
   type TileSize,
 } from "@/shared/lib/layout";
-import { ServiceCard } from "@/features/widgets/service-card";
-import { WidgetCard } from "@/features/widgets/widget-card";
-import type { LayoutEntry } from "@/features/dashboard/use-dashboard-editor";
-import type { EditableDashboardItem } from "@/shared/lib/draft-models";
+import type { WidgetDescriptor } from "@/shared/schemas/core";
 
-function editableAsDashboardItem(item: EditableDashboardItem): DashboardItemData {
-  if (item.kind === "service") {
-    return {
-      kind: "service",
-      id: item.id,
-      title: item.title,
-      group: item.group,
-      icon: item.icon || null,
-      href: item.href || null,
-      show_destination: item.show_destination,
-      x: item.x,
-      y: item.y,
-      width: item.width,
-      height: item.height,
-      has_ping: Boolean(item.ping_url.trim()),
-    };
-  }
-  return {
-    kind: "widget",
-    id: item.id,
-    title: item.title,
-    group: item.group,
-    name: item.name,
-    x: item.x,
-    y: item.y,
-    width: item.width,
-    height: item.height,
-    refresh_interval_secs: null,
-  };
-}
-
-function EditTile({ item, onEdit }: { item: EditableDashboardItem; onEdit: () => void }) {
-  return (
-    <div className="dashboard-edit-tile">
-      <button
-        className="dashboard-tile-edit-button"
-        type="button"
-        aria-label={`Edit ${item.title}`}
-        onClick={onEdit}
-      >
-        <IconPencil size={16} aria-hidden="true" />
-      </button>
-      {item.kind === "service" ? (
-        <ServiceCard
-          service={editableAsDashboardItem(item) as Extract<DashboardItemData, { kind: "service" }>}
-          editing
-        />
-      ) : (
-        <WidgetCard
-          widget={editableAsDashboardItem(item) as Extract<DashboardItemData, { kind: "widget" }>}
-          editing
-        />
-      )}
-    </div>
-  );
-}
-
-/**
- * Pointer + keyboard resize control for a group's column span. Self-contained:
- * owns its drag-start bookkeeping, so the parent needs no resize state.
- */
-function GroupResizeHandle({
-  label,
-  width,
-  onResize,
-}: {
-  label: string;
-  width: number;
-  onResize: (width: number) => void;
-}) {
-  const dragStart = useRef<{ clientX: number; span: number; groupWidth: number } | null>(null);
-
-  function resizeFromPointer(event: ReactPointerEvent<HTMLDivElement>) {
-    const start = dragStart.current;
-    if (!start || start.groupWidth <= 0) return;
-    const columnWidth = start.groupWidth / start.span;
-    onResize(start.span + (event.clientX - start.clientX) / columnWidth);
-  }
-
-  return (
-    <div
-      className="dashboard-group-resize-handle"
-      role="slider"
-      aria-label={`Resize ${label} width`}
-      aria-orientation="vertical"
-      aria-valuemin={3}
-      aria-valuemax={12}
-      aria-valuenow={width}
-      tabIndex={0}
-      onKeyDown={(event) => {
-        if (event.key === "ArrowLeft") onResize(width - 1);
-        if (event.key === "ArrowRight") onResize(width + 1);
-      }}
-      onPointerDown={(event) => {
-        const groupWidth =
-          event.currentTarget.closest("section")?.getBoundingClientRect().width ?? 0;
-        event.preventDefault();
-        event.currentTarget.setPointerCapture(event.pointerId);
-        dragStart.current = { clientX: event.clientX, span: width, groupWidth };
-      }}
-      onPointerMove={resizeFromPointer}
-      onPointerUp={(event) => {
-        dragStart.current = null;
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }}
-      onPointerCancel={() => {
-        dragStart.current = null;
-      }}
-    >
-      <IconArrowsHorizontal size={12} aria-hidden="true" />
-    </div>
-  );
-}
-
-function DashboardEditGroup({
+export function DashboardEditGroup({
   section,
   groupDragActive,
   isGroupDragSource,
@@ -433,5 +313,3 @@ function DashboardEditGroup({
     </section>
   );
 }
-
-export { DashboardEditGroup };

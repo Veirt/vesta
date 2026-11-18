@@ -1,14 +1,29 @@
 import { useEffect, useState } from "react";
 import { fetchSettings, saveSettings, uploadIcon } from "@/shared/api/client";
-import { createEditorId, createSettingsPayload, slug } from "@/shared/lib/draft-models";
-import type { EditableNode } from "@/shared/lib/draft-models";
-import type { AppSettings, SettingsPayload, WidgetDescriptor } from "@/shared/schemas/core";
+import {
+  createEditorId,
+  createSettingsPayload,
+  slug,
+  type EditableNode,
+} from "@/shared/lib/draft-models";
 import { useTheme } from "@/shared/lib/theme";
+import type { AppSettings, SettingsPayload, WidgetDescriptor } from "@/shared/schemas/core";
 
 type SavedDraft = {
   app: AppSettings;
   nodes: EditableNode[];
 };
+
+type LoadState =
+  | { kind: "loading" }
+  | { kind: "ready"; draft: SavedDraft; fingerprint: string }
+  | { kind: "error"; message: string };
+
+type ActionState = { kind: "idle" } | { kind: "saving" } | { kind: "uploading" };
+type FeedbackBanner =
+  | { kind: "none" }
+  | { kind: "error"; message: string }
+  | { kind: "notice"; message: string };
 
 function uniqueId(base: string, existing: string[]) {
   const used = new Set(existing);
@@ -18,26 +33,22 @@ function uniqueId(base: string, existing: string[]) {
   return candidate;
 }
 
-function useSettingsEditor() {
+export function useSettingsEditor() {
   const [app, setApp] = useState<AppSettings>({
     dashboard_title: "Server Monitor",
     theme: "system",
   });
   const [nodes, setNodes] = useState<EditableNode[]>([]);
   const [widgets, setWidgets] = useState<WidgetDescriptor[]>([]);
-  const [savedDraft, setSavedDraft] = useState<SavedDraft | null>(null);
-  const [savedFingerprint, setSavedFingerprint] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+  const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
   const [loadRevision, setLoadRevision] = useState(0);
-  const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [action, setAction] = useState<ActionState>({ kind: "idle" });
+  const [banner, setBanner] = useState<FeedbackBanner>({ kind: "none" });
   useTheme(app.theme);
 
   useEffect(() => {
     let active = true;
+    setLoadState({ kind: "loading" });
     fetchSettings()
       .then((data) => {
         if (!active) return;
@@ -60,15 +71,19 @@ function useSettingsEditor() {
         setApp(draft.app);
         setNodes(draft.nodes);
         setWidgets(data.widgets);
-        setSavedDraft(draft);
-        setSavedFingerprint(JSON.stringify(createSettingsPayload(draft.nodes, draft.app)));
+        setLoadState({
+          kind: "ready",
+          draft,
+          fingerprint: JSON.stringify(createSettingsPayload(draft.nodes, draft.app)),
+        });
       })
       .catch((cause: unknown) => {
-        if (active)
-          setLoadError(cause instanceof Error ? cause.message : "Settings could not be loaded.");
-      })
-      .finally(() => {
-        if (active) setLoading(false);
+        if (active) {
+          setLoadState({
+            kind: "error",
+            message: cause instanceof Error ? cause.message : "Settings could not be loaded.",
+          });
+        }
       });
     return () => {
       active = false;
@@ -77,11 +92,15 @@ function useSettingsEditor() {
 
   const currentPayload = createSettingsPayload(nodes, app);
   const dirty =
-    !loading && savedDraft !== null && JSON.stringify(currentPayload) !== savedFingerprint;
+    loadState.kind === "ready" && JSON.stringify(currentPayload) !== loadState.fingerprint;
+
+  function clearNotice() {
+    setBanner((current) => (current.kind === "notice" ? { kind: "none" } : current));
+  }
 
   function updateApp(update: Partial<AppSettings>) {
     setApp((current) => ({ ...current, ...update }));
-    setNotice("");
+    clearNotice();
   }
 
   function addNode() {
@@ -103,7 +122,7 @@ function useSettingsEditor() {
         id_touched: false,
       },
     ]);
-    setNotice("");
+    clearNotice();
   }
 
   function updateNode(index: number, update: Partial<EditableNode>) {
@@ -121,12 +140,12 @@ function useSettingsEditor() {
         return updated;
       }),
     );
-    setNotice("");
+    clearNotice();
   }
 
   function removeNode(index: number) {
     setNodes((current) => current.filter((_, nodeIndex) => nodeIndex !== index));
-    setNotice("");
+    clearNotice();
   }
 
   function moveNode(index: number, direction: -1 | 1) {
@@ -137,66 +156,74 @@ function useSettingsEditor() {
       [next[index], next[target]] = [next[target], next[index]];
       return next;
     });
-    setNotice("");
+    clearNotice();
   }
 
   async function uploadImage(file: File): Promise<string | null> {
-    setUploading(true);
-    setError("");
+    setAction({ kind: "uploading" });
+    setBanner({ kind: "none" });
     try {
       const uploaded = await uploadIcon(file);
-      setNotice(`${uploaded.name} uploaded. Save changes to use it.`);
+      setBanner({
+        kind: "notice",
+        message: `${uploaded.name} uploaded. Save changes to use it.`,
+      });
       return uploaded.url;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The image could not be uploaded.");
+      setBanner({
+        kind: "error",
+        message: cause instanceof Error ? cause.message : "The image could not be uploaded.",
+      });
       return null;
     } finally {
-      setUploading(false);
+      setAction({ kind: "idle" });
     }
   }
 
   async function save() {
-    setError("");
-    setNotice("");
+    setAction({ kind: "saving" });
+    setBanner({ kind: "none" });
     const payload: SettingsPayload = createSettingsPayload(nodes, app);
-    setSaving(true);
     try {
       await saveSettings(payload);
       const saved: SavedDraft = { app, nodes };
-      setSavedDraft(saved);
-      setSavedFingerprint(JSON.stringify(payload));
-      setNotice("Changes saved to config.toml.");
+      setLoadState({
+        kind: "ready",
+        draft: saved,
+        fingerprint: JSON.stringify(payload),
+      });
+      setBanner({ kind: "notice", message: "Changes saved to config.toml." });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Settings could not be saved.");
+      setBanner({
+        kind: "error",
+        message: cause instanceof Error ? cause.message : "Settings could not be saved.",
+      });
     } finally {
-      setSaving(false);
+      setAction({ kind: "idle" });
     }
   }
 
   function discardChanges() {
-    if (!savedDraft) return;
-    setApp(savedDraft.app);
-    setNodes(savedDraft.nodes);
-    setError("");
-    setNotice("Unsaved changes discarded.");
+    if (loadState.kind !== "ready") return;
+    setApp(loadState.draft.app);
+    setNodes(loadState.draft.nodes);
+    setBanner({ kind: "notice", message: "Unsaved changes discarded." });
   }
 
   function retryLoad() {
-    setLoading(true);
-    setLoadError("");
     setLoadRevision((revision) => revision + 1);
   }
 
   return {
     app,
     dirty,
-    error,
-    loadError,
-    loading,
-    notice,
+    error: banner.kind === "error" ? banner.message : "",
+    loadError: loadState.kind === "error" ? loadState.message : "",
+    loading: loadState.kind === "loading",
+    notice: banner.kind === "notice" ? banner.message : "",
     nodes,
-    saving,
-    uploading,
+    saving: action.kind === "saving",
+    uploading: action.kind === "uploading",
     widgets,
     addNode,
     discardChanges,
@@ -209,5 +236,3 @@ function useSettingsEditor() {
     uploadImage,
   };
 }
-
-export { useSettingsEditor };

@@ -1,17 +1,24 @@
 import { useEffect, useState } from "react";
-import type { DashboardItem as DashboardItemData, DashboardGroup } from "@/shared/schemas/core";
 import {
   DashboardEditBanners,
   DashboardItemsHeader,
 } from "@/features/dashboard/dashboard-edit-chrome";
 import { DashboardEditDialogs } from "@/features/dashboard/dashboard-edit-dialogs";
 import { DashboardTilesArea } from "@/features/dashboard/dashboard-tiles-area";
-import { groupDashboardItems, type DashboardGroupSection } from "@/shared/lib/layout";
 import { useDashboardEditor, type LayoutEntry } from "@/features/dashboard/use-dashboard-editor";
 import { useWindowEdgeScroll } from "@/features/dashboard/use-window-edge-scroll";
-import { validateDashboardGroups, validateDashboardItems } from "@/shared/lib/validation";
 import { fetchAuthStatus } from "@/shared/api/client";
 import type { EditableDashboardItem } from "@/shared/lib/draft-models";
+import { groupDashboardItems, type DashboardGroupSection } from "@/shared/lib/layout";
+import { validateDashboardGroups, validateDashboardItems } from "@/shared/lib/validation";
+import type { DashboardGroup, DashboardItem as DashboardItemData } from "@/shared/schemas/core";
+
+type EditorMode =
+  | { kind: "viewing" }
+  | {
+      kind: "editing";
+      modal: null | { kind: "tile"; editorId: string } | { kind: "group"; groupId: string };
+    };
 
 /**
  * Locate the currently edited tile/group within the draft sections, plus its
@@ -19,16 +26,26 @@ import type { EditableDashboardItem } from "@/shared/lib/draft-models";
  */
 function locateSelection(
   editor: ReturnType<typeof useDashboardEditor>,
-  selectedEditorId: string | null,
-  selectedGroupId: string | null,
+  mode: EditorMode,
   draftSections: DashboardGroupSection<EditableDashboardItem>[],
 ) {
+  const modal = mode.kind === "editing" ? mode.modal : null;
+  const selectedEditorId = modal?.kind === "tile" ? modal.editorId : null;
+  const selectedGroupId = modal?.kind === "group" ? modal.groupId : null;
   const orderedDraft = draftSections.flatMap((section) => section.items);
   const selected = editor.items.find((item) => item.editor_id === selectedEditorId) ?? null;
-  const selectedGroup = editor.groups.find((group) => group.id === selectedGroupId) ?? null;
-  const selectedGroupItems = selected
-    ? orderedDraft.filter((item) => (item.group ?? "") === (selected.group ?? ""))
-    : [];
+  const selectedGroup = selectedGroupId
+    ? (editor.groups.find((group) => group.id === selectedGroupId) ?? null)
+    : null;
+  const activeGroupKey = selected
+    ? (selected.group ?? "")
+    : selectedGroup
+      ? selectedGroup.id
+      : null;
+  const selectedGroupItems =
+    activeGroupKey !== null
+      ? orderedDraft.filter((item) => (item.group ?? "") === activeGroupKey)
+      : [];
   const selectedIndex = selected
     ? selectedGroupItems.findIndex((item) => item.editor_id === selected.editor_id)
     : -1;
@@ -46,7 +63,7 @@ function editorAlert(editor: ReturnType<typeof useDashboardEditor>) {
   };
 }
 
-function DashboardItems({
+export function DashboardItems({
   items,
   groups,
   query,
@@ -58,11 +75,10 @@ function DashboardItems({
   loading: boolean;
 }) {
   const [authenticated, setAuthenticated] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [selectedEditorId, setSelectedEditorId] = useState<string | null>(null);
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [mode, setMode] = useState<EditorMode>({ kind: "viewing" });
   const [draggingTile, setDraggingTile] = useState(false);
   const [draggingGroupId, setDraggingGroupId] = useState<string | null>(null);
+  const editing = mode.kind === "editing";
   const editor = useDashboardEditor(editing);
   const { handleWindowEdgeScroll, stopWindowEdgeScroll } = useWindowEdgeScroll();
 
@@ -102,8 +118,7 @@ function DashboardItems({
   const draftSections = groupDashboardItems(editor.items, editor.groups, true);
   const { selected, selectedGroup, selectedGroupItems, selectedIndex } = locateSelection(
     editor,
-    selectedEditorId,
-    selectedGroupId,
+    mode,
     draftSections,
   );
   const validationIssues = [
@@ -118,7 +133,7 @@ function DashboardItems({
 
   async function saveDashboard() {
     const saved = await editor.save();
-    if (saved) setEditing(false);
+    if (saved) setMode({ kind: "viewing" });
   }
 
   return (
@@ -130,11 +145,8 @@ function DashboardItems({
         dirty={editor.dirty}
         loading={editor.loading}
         hasIssues={validationIssues.length > 0}
-        onEdit={() => setEditing(true)}
-        onDiscard={() => {
-          setEditing(false);
-          setSelectedEditorId(null);
-        }}
+        onEdit={() => setMode({ kind: "editing", modal: null })}
+        onDiscard={() => setMode({ kind: "viewing" })}
         onSave={() => void saveDashboard()}
       />
 
@@ -143,8 +155,10 @@ function DashboardItems({
         editor={editor}
         validationIssues={validationIssues}
         alert={editorAlert(editor)}
-        onSelectEditor={setSelectedEditorId}
-        onSelectGroup={setSelectedGroupId}
+        onSelectEditor={(editorId) =>
+          setMode({ kind: "editing", modal: editorId ? { kind: "tile", editorId } : null })
+        }
+        onSelectGroup={(groupId) => setMode({ kind: "editing", modal: { kind: "group", groupId } })}
       />
 
       <DashboardTilesArea
@@ -160,8 +174,10 @@ function DashboardItems({
         draggingTile={draggingTile}
         onGroupDragStart={setDraggingGroupId}
         onGroupDragEnd={() => setDraggingGroupId(null)}
-        onEditGroup={setSelectedGroupId}
-        onSelectEditor={setSelectedEditorId}
+        onEditGroup={(groupId) => setMode({ kind: "editing", modal: { kind: "group", groupId } })}
+        onSelectEditor={(editorId) =>
+          setMode({ kind: "editing", modal: editorId ? { kind: "tile", editorId } : null })
+        }
         onLayoutChange={handleLayoutChange}
         onTileDragStart={() => setDraggingTile(true)}
         onTileDrag={handleWindowEdgeScroll}
@@ -177,11 +193,9 @@ function DashboardItems({
         selectedIndex={selectedIndex}
         selectedGroupItemCount={selectedGroupItems.length}
         editor={editor}
-        onCloseEditor={() => setSelectedEditorId(null)}
-        onCloseGroupEditor={() => setSelectedGroupId(null)}
+        onCloseEditor={() => setMode({ kind: "editing", modal: null })}
+        onCloseGroupEditor={() => setMode({ kind: "editing", modal: null })}
       />
     </section>
   );
 }
-
-export { DashboardItems };
