@@ -4,6 +4,7 @@
     "dev": "vp dev",
     "commitlint": "commitlint",
     "build": "vp build",
+    "test": "vp test run",
     "preview": "vp preview",
     "check": "vp check frontend/src vite.config.ts package.json components.json tsconfig.json frontend/index.html && tsc --noEmit",
     "fmt": "vp fmt frontend/src vite.config.ts package.json components.json tsconfig.json frontend/index.html",
