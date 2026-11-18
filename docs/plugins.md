@@ -104,8 +104,8 @@ GET /api/plugins/<plugin_id>/assets/<path>
 - Path resolution rejects `..` traversal and symlink escapes out of the plugin
   directory; only a small allow-list of file extensions is served, each with an
   explicit content type and `X-Content-Type-Options: nosniff`.
-- The response carries `Cache-Control: no-cache` and a restrictive CSP
-  (`default-src 'none'`, inline script/style allowed, `frame-ancestors 'self'`).
+- The response carries `Cache-Control: no-cache` and
+  `Content-Security-Policy: frame-ancestors 'self'`.
 - The bundle is embedded with
   `<iframe sandbox="allow-scripts allow-forms">`, which gives the plugin an
   opaque origin: it cannot read Vesta's DOM, cookies, or storage.
