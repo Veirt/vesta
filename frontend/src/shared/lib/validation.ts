@@ -71,9 +71,8 @@ function validateWidget(
       if (!Number.isFinite(number)) {
         issues.push(`${field.label} must be a number.`);
       } else if (
-        (field.key === "latitude" && (number < -90 || number > 90)) ||
-        (field.key === "longitude" && (number < -180 || number > 180)) ||
-        (field.key === "refresh_interval" && (number < 60 || number > 3600))
+        (field.min !== undefined && number < field.min) ||
+        (field.max !== undefined && number > field.max)
       ) {
         issues.push(`${field.label} is outside its supported range.`);
       }

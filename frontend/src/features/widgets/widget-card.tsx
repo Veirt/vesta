@@ -2,8 +2,9 @@ import type { ReactNode } from "react";
 import type { DashboardWidget } from "@/shared/schemas/core";
 import { WidgetError } from "@/features/widgets/builtins";
 import { useWidgetData } from "@/features/widgets/use-widget-data";
+import { PluginWidgetPreview } from "@/features/widgets/plugin-iframe";
 import { WidgetContent } from "@/features/widgets/widget-content";
-import { layoutStyle, previewData } from "@/features/widgets/widget-schemas";
+import { layoutStyle, PLUGIN_NAME_PREFIX, previewData } from "@/features/widgets/widget-schemas";
 
 function WidgetFrame({
   widget,
@@ -51,7 +52,11 @@ export function WidgetCard({
   if (editing) {
     return (
       <WidgetFrame widget={widget} editing>
-        <WidgetContent name={widget.name} data={previewData(widget.name)} title={widget.title} />
+        {widget.name.startsWith(PLUGIN_NAME_PREFIX) ? (
+          <PluginWidgetPreview name={widget.name} title={widget.title} />
+        ) : (
+          <WidgetContent name={widget.name} data={previewData(widget.name)} title={widget.title} />
+        )}
       </WidgetFrame>
     );
   }

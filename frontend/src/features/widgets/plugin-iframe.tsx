@@ -24,28 +24,47 @@ export function PluginIframe({
   config: WidgetData;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const [frameLoaded, setFrameLoaded] = useState(false);
+  const src = buildPluginAssetUrl(pluginId, entry);
+  const [loadedState, setLoadedState] = useState<{ src: string; count: number } | null>(null);
   const configKey = useMemo(() => JSON.stringify(config ?? {}), [config]);
 
   useEffect(() => {
-    if (!frameLoaded) return;
+    if (!loadedState || loadedState.src !== src) return;
     frameRef.current?.contentWindow?.postMessage(
       { type: "vesta:config", title, config: JSON.parse(configKey) },
       "*",
     );
-  }, [frameLoaded, configKey, title]);
-
-  const src = buildPluginAssetUrl(pluginId, entry);
+  }, [loadedState, src, configKey, title]);
 
   return (
     <iframe
+      key={src}
       className="plugin-widget-frame"
       ref={frameRef}
       src={src}
       title={`${title} plugin widget`}
       sandbox="allow-scripts allow-forms"
-      onLoad={() => setFrameLoaded(true)}
+      onLoad={() =>
+        setLoadedState((current) => ({
+          src,
+          count: current?.src === src ? current.count + 1 : 1,
+        }))
+      }
     />
+  );
+}
+
+export function PluginWidgetPreview({ name, title }: { name: string; title?: string }) {
+  const parsed = parsePluginWidgetName(name);
+  return (
+    <div className="grid h-full place-content-center gap-1 text-center text-xs text-muted-foreground">
+      <span className="font-medium text-foreground">{title ?? parsed?.widgetId ?? name}</span>
+      {parsed && (
+        <span>
+          Plugin {parsed.pluginId} · {parsed.widgetId}
+        </span>
+      )}
+    </div>
   );
 }
 

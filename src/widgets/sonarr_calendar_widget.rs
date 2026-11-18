@@ -80,9 +80,10 @@ impl SonarrCalendarWidget {
             ("end", &day_after_tomorrow.format("%Y-%m-%d").to_string()),
         ];
 
+        let base = config.url.trim_end_matches('/');
         send_checked_json(
             self.client
-                .get(format!("{}/api/v3/calendar", config.url))
+                .get(format!("{base}/api/v3/calendar"))
                 .query(&params)
                 .header("X-Api-Key", &config.key),
             "Sonarr calendar",
@@ -91,9 +92,10 @@ impl SonarrCalendarWidget {
     }
 
     async fn fetch_download_queue(&self, config: &Config) -> VestaResult<DownloadQueue> {
+        let base = config.url.trim_end_matches('/');
         send_checked_json(
             self.client
-                .get(format!("{}/api/v3/queue", config.url))
+                .get(format!("{base}/api/v3/queue"))
                 .header("X-Api-Key", &config.key),
             "Sonarr download queue",
         )
@@ -185,13 +187,14 @@ impl WidgetHandler for SonarrCalendarWidget {
             entry.is_downloading = downloading.contains(&entry.series_id);
         }
 
+        let base = config.url.trim_end_matches('/');
         let now = Utc::now();
         let entries = calendar
             .iter()
             .map(|entry| {
                 json!({
                     "date": entry.air_date_utc.with_timezone(&Local).format("%Y-%m-%d").to_string(),
-                    "series_url": format!("{}/series/{}", config.url, entry.series.title_slug),
+                    "series_url": format!("{base}/series/{}", entry.series.title_slug),
                     "title": entry.series.title,
                     "season_number": entry.season_number,
                     "episode_number": entry.episode_number,
@@ -202,7 +205,7 @@ impl WidgetHandler for SonarrCalendarWidget {
             .collect::<Vec<_>>();
 
         Ok(json!({
-            "calendar_url": format!("{}/calendar", config.url),
+            "calendar_url": format!("{base}/calendar"),
             "entries": entries,
         }))
     }
