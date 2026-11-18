@@ -218,9 +218,12 @@ mod tests {
     }
 
     #[test]
-    fn hashes_tokens_without_preserving_the_cookie_secret() {
-        assert_ne!(token_hash("opaque-session-token"), "opaque-session-token");
-        assert_eq!(token_hash("same"), token_hash("same"));
+    fn hashes_tokens_as_sha256_hex_and_distinguishes_inputs() {
+        assert_eq!(
+            token_hash("abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_ne!(token_hash("token-a"), token_hash("token-b"));
     }
 
     #[test]

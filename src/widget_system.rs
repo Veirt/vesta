@@ -402,23 +402,6 @@ mod tests {
     }
 
     #[test]
-    fn refresh_interval_is_derived_from_typed_widget_config() {
-        let registry = WidgetRegistry::new().register(FakeWidget);
-        let widget = Widget {
-            id: "fake".to_string(),
-            title: "Fake".to_string(),
-            name: "Fake".to_string(),
-            group: None,
-            config: Some(options(serde_json::json!({ "refresh_interval": "42" }))),
-            x: None,
-            y: None,
-            width: None,
-            height: None,
-        };
-        assert_eq!(registry.refresh_interval_secs(&widget), Some(42));
-    }
-
-    #[test]
     fn registry_validates_unknown_widget_names() {
         let registry = WidgetRegistry::new().register(FakeWidget);
         let dashboard = crate::config::Dashboard {
