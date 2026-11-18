@@ -326,4 +326,257 @@ mod tests {
                 .any(|d| d.name == "SystemStats")
         );
     }
+
+    #[tokio::test]
+    async fn http_router_protects_admin_routes_and_completes_plugin_lifecycle() {
+        let sandbox = crate::plugins::test_fixtures::temp_dir("vesta-http-router");
+        let static_dir = sandbox.path().join("static");
+        std::fs::create_dir_all(&static_dir).unwrap();
+        let settings = Settings {
+            config_path: sandbox.path().join("config.toml").display().to_string(),
+            database_path: sandbox.path().join("vesta.db").display().to_string(),
+            plugins_dir: sandbox.path().join("plugins").display().to_string(),
+            bind_addr: "127.0.0.1:0".to_string(),
+            static_dir: static_dir.display().to_string(),
+            cookie_secure: false,
+        };
+        let state = AppState::new(&settings).await.unwrap();
+        let router = build_router(state.clone(), &settings.static_dir);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+
+        let base = format!("http://{addr}");
+        let client = reqwest::Client::new();
+
+        // Public health check is reachable without auth; admin routes reject.
+        assert_eq!(
+            client
+                .get(format!("{base}/api/health"))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            reqwest::StatusCode::OK
+        );
+        assert_eq!(
+            client
+                .get(format!("{base}/api/settings"))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            reqwest::StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            client
+                .get(format!("{base}/api/plugins"))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            reqwest::StatusCode::UNAUTHORIZED
+        );
+
+        // First-run setup authenticates and issues an HttpOnly session cookie.
+        let setup_res = client
+            .post(format!("{base}/api/auth/setup"))
+            .json(&serde_json::json!({ "password": "correct-horse-battery" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(setup_res.status(), reqwest::StatusCode::OK);
+        let cookie_header = setup_res
+            .headers()
+            .get(reqwest::header::SET_COOKIE)
+            .expect("setup sets session cookie")
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_string();
+
+        // Catalog excludes legacy SystemStats before plugin install.
+        let settings_before: serde_json::Value = client
+            .get(format!("{base}/api/settings"))
+            .header(reqwest::header::COOKIE, &cookie_header)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let names_before: Vec<_> = settings_before["data"]["widgets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|d| d["name"].as_str())
+            .collect();
+        assert!(!names_before.contains(&"SystemStats"));
+
+        // Install hello-world plugin from a local git repo fixture.
+        let repo = crate::plugins::test_fixtures::git_fixture_repo(
+            &crate::plugins::test_fixtures::fixture_dir("hello-world"),
+            "http-lifecycle",
+        );
+        let install_res = client
+            .post(format!("{base}/api/plugins"))
+            .header(reqwest::header::COOKIE, &cookie_header)
+            .json(&serde_json::json!({ "url": repo.path().display().to_string() }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(install_res.status(), reqwest::StatusCode::OK);
+        let install_body: serde_json::Value = install_res.json().await.unwrap();
+        assert_eq!(install_body["data"]["id"], "hello-world");
+
+        // Update pulls a fresh commit over the same endpoint cleanly.
+        let update_res = client
+            .put(format!("{base}/api/plugins/hello-world"))
+            .header(reqwest::header::COOKIE, &cookie_header)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(update_res.status(), reqwest::StatusCode::OK);
+
+        // Asset serving works unauthenticated with security headers and rejects traversal.
+        let asset_res = client
+            .get(format!("{base}/api/plugins/hello-world/assets/index.html"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(asset_res.status(), reqwest::StatusCode::OK);
+        assert_eq!(
+            asset_res
+                .headers()
+                .get("x-content-type-options")
+                .and_then(|v| v.to_str().ok()),
+            Some("nosniff")
+        );
+        assert_eq!(
+            asset_res
+                .headers()
+                .get("cache-control")
+                .and_then(|v| v.to_str().ok()),
+            Some("no-cache")
+        );
+        assert_eq!(
+            asset_res
+                .headers()
+                .get("content-security-policy")
+                .and_then(|v| v.to_str().ok()),
+            Some("frame-ancestors 'self'")
+        );
+        assert!(
+            asset_res
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .starts_with("text/html")
+        );
+        assert_eq!(
+            client
+                .get(format!(
+                    "{base}/api/plugins/hello-world/assets/..%2fvesta-plugin.toml"
+                ))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            reqwest::StatusCode::NOT_FOUND
+        );
+
+        // Bind a counter plugin tile and verify widget payload + uninstall guard.
+        let save_tile_res = client
+            .put(format!("{base}/api/settings/dashboard"))
+            .header(reqwest::header::COOKIE, &cookie_header)
+            .json(&serde_json::json!({
+                "items": [{
+                    "kind": "widget",
+                    "id": "counter-1",
+                    "title": "Counter",
+                    "name": "Plugin:hello-world:counter",
+                    "config": { "label": "Hits", "start_value": 2 },
+                    "x": 0,
+                    "y": 0,
+                    "width": 3,
+                    "height": 2
+                }]
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(save_tile_res.status(), reqwest::StatusCode::OK);
+
+        let widget_res: serde_json::Value = client
+            .get(format!(
+                "{base}/api/widgets/Plugin:hello-world:counter?id=counter-1"
+            ))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(widget_res["data"]["widget"]["plugin_id"], "hello-world");
+        assert_eq!(widget_res["data"]["widget"]["widget_id"], "counter");
+        assert_eq!(widget_res["data"]["widget"]["config"]["label"], "Hits");
+
+        let blocked_delete = client
+            .delete(format!("{base}/api/plugins/hello-world"))
+            .header(reqwest::header::COOKIE, &cookie_header)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(blocked_delete.status(), reqwest::StatusCode::BAD_REQUEST);
+
+        // Removing the tile unblocks uninstall and returns {"removed": "hello-world"}.
+        assert_eq!(
+            client
+                .put(format!("{base}/api/settings/dashboard"))
+                .header(reqwest::header::COOKIE, &cookie_header)
+                .json(&serde_json::json!({ "items": [] }))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            reqwest::StatusCode::OK
+        );
+        let uninstall_res = client
+            .delete(format!("{base}/api/plugins/hello-world"))
+            .header(reqwest::header::COOKIE, &cookie_header)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(uninstall_res.status(), reqwest::StatusCode::OK);
+        let uninstall_body: serde_json::Value = uninstall_res.json().await.unwrap();
+        assert_eq!(uninstall_body["data"]["removed"], "hello-world");
+
+        // Public dashboard endpoints remain healthy.
+        assert_eq!(
+            client
+                .get(format!("{base}/api/dashboard"))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            reqwest::StatusCode::OK
+        );
+        assert_eq!(
+            client
+                .get(format!("{base}/api/dashboard/services"))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            reqwest::StatusCode::OK
+        );
+
+        state.nodes.shutdown();
+        server.abort();
+    }
 }

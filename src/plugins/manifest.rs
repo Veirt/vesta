@@ -540,4 +540,18 @@ min_width = 6
         let text = source.to_toml().unwrap();
         assert_eq!(PluginSource::from_toml(&text).unwrap(), source);
     }
+
+    #[test]
+    fn load_manifest_rejects_oversized_file() {
+        let dir = crate::plugins::test_fixtures::temp_dir("oversized-manifest");
+        std::fs::write(dir.path().join("index.html"), "<html></html>").unwrap();
+        let oversized = format!(
+            "id = \"big\"\nname = \"Big\"\ndescription = \"{}\"\n[[widgets]]\nid = \"w\"\ntitle = \"W\"\nentry = \"index.html\"\n",
+            "x".repeat((MAX_MANIFEST_BYTES as usize) + 128)
+        );
+        std::fs::write(dir.path().join(MANIFEST_FILE), oversized).unwrap();
+
+        let error = load_manifest(dir.path()).unwrap_err();
+        assert!(error.to_string().contains("size limit"), "{error}");
+    }
 }

@@ -208,4 +208,73 @@ mod tests {
         let app = crate::config::AppSettings::default();
         assert!(validate_dashboard_config(&dashboard, &app, &registry).is_ok());
     }
+
+    #[test]
+    fn normalize_layout_assigns_registry_default_sizes_for_plugins_and_builtins() {
+        let dir = crate::plugins::test_fixtures::temp_dir("layout-plugin-size");
+        let entry = dir.path().join("index.html");
+        std::fs::write(&entry, "<html></html>").unwrap();
+        let manifest = crate::plugins::manifest::PluginManifest::parse(
+            r#"
+id = "custom"
+name = "Custom"
+[[widgets]]
+id = "card"
+title = "Card"
+entry = "index.html"
+width = 5
+height = 4
+min_width = 3
+min_height = 2
+"#,
+            dir.path(),
+        )
+        .unwrap();
+        let plugin = crate::plugins::widget::PluginWidgetHandler::new(
+            "custom",
+            manifest.widget("card").unwrap().clone(),
+        );
+        let registry = WidgetRegistry::new()
+            .register(
+                crate::widgets::jellyfin_random_show_widget::JellyfinRandomShowWidget::new(
+                    reqwest::Client::new(),
+                ),
+            )
+            .register(plugin);
+
+        let mut dashboard = crate::config::Dashboard::default();
+        dashboard.items.push(DashboardItem::Widget(Widget {
+            id: "jf".to_string(),
+            title: "Random Show".to_string(),
+            name: "JellyfinRandomShow".to_string(),
+            group: None,
+            config: None,
+            x: None,
+            y: None,
+            width: None,
+            height: None,
+        }));
+        dashboard.items.push(DashboardItem::Widget(Widget {
+            id: "custom-1".to_string(),
+            title: "Custom Card".to_string(),
+            name: "Plugin:custom:card".to_string(),
+            group: None,
+            config: None,
+            x: None,
+            y: None,
+            width: None,
+            height: None,
+        }));
+
+        normalize_layout(&mut dashboard, &registry);
+
+        assert_eq!(
+            dashboard.items[0].layout(),
+            (Some(0), Some(0), Some(4), Some(3))
+        );
+        assert_eq!(
+            dashboard.items[1].layout(),
+            (Some(4), Some(0), Some(5), Some(4))
+        );
+    }
 }

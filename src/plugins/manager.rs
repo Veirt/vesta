@@ -574,4 +574,28 @@ mod tests {
         let error = manager.update("ghost").await.unwrap_err();
         assert!(error.to_string().contains("not found"), "{error}");
     }
+
+    #[tokio::test]
+    async fn concurrent_install_and_uninstall_serialize_under_gate() {
+        let (_dir, manager) = test_manager();
+        let manager = std::sync::Arc::new(manager);
+        let repo = git_fixture_repo(&fixture_dir("hello-world"), "concurrent");
+        let source = repo.path().to_string_lossy().to_string();
+
+        let (first, second) = tokio::join!(manager.install(&source), manager.install(&source));
+        let results = [first, second];
+        let successes = results.iter().filter(|res| res.is_ok()).count();
+        let failures = results.iter().filter(|res| res.is_err()).count();
+        assert_eq!((successes, failures), (1, 1));
+        assert_eq!(manager.load_all().len(), 1);
+
+        let (rm_a, rm_b) = tokio::join!(
+            manager.uninstall("hello-world"),
+            manager.uninstall("hello-world")
+        );
+        let rm_results = [rm_a, rm_b];
+        assert_eq!(rm_results.iter().filter(|res| res.is_ok()).count(), 1);
+        assert_eq!(rm_results.iter().filter(|res| res.is_err()).count(), 1);
+        assert!(manager.load_all().is_empty());
+    }
 }

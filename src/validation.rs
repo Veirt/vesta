@@ -505,4 +505,91 @@ mod tests {
             .is_ok()
         );
     }
+
+    #[test]
+    fn validate_rejects_malformed_widget_config_and_duplicate_groups() {
+        let registry = WidgetRegistry::new().register(WeatherWidget::new(reqwest::Client::new()));
+        let app = crate::config::AppSettings::default();
+        let bad_lat = crate::config::Dashboard {
+            nodes: vec![],
+            items: vec![DashboardItem::Widget(crate::config::Widget {
+                id: "weather".to_string(),
+                title: "Weather".to_string(),
+                name: "Weather".to_string(),
+                group: None,
+                config: Some(
+                    [
+                        ("latitude".to_string(), serde_json::json!("not-a-number")),
+                        ("longitude".to_string(), serde_json::json!(10.0)),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+                x: Some(0),
+                y: Some(0),
+                width: Some(4),
+                height: Some(3),
+            })],
+            groups: vec![],
+        };
+        assert!(validate_dashboard_config(&bad_lat, &app, &registry).is_err());
+
+        let duplicate_groups = crate::config::Dashboard {
+            nodes: vec![],
+            items: vec![],
+            groups: vec![
+                DashboardGroup {
+                    id: "media".to_string(),
+                    title: "Media".to_string(),
+                    description: None,
+                    icon: None,
+                    width: Some(6),
+                },
+                DashboardGroup {
+                    id: "media".to_string(),
+                    title: "Movies".to_string(),
+                    description: None,
+                    icon: None,
+                    width: Some(6),
+                },
+            ],
+        };
+        let dup_err = validate_dashboard_config(&duplicate_groups, &app, &registry).unwrap_err();
+        assert!(dup_err.to_string().contains("unique"), "{dup_err}");
+    }
+
+    #[test]
+    fn validate_nodes_rejects_empty_names_zero_intervals_and_bad_endpoints() {
+        let valid_local = NodeConfig {
+            id: "local".to_string(),
+            name: "Local".to_string(),
+            hostname: None,
+            device_name: Some("/dev/nvme0n1p1".to_string()),
+            icon: None,
+            endpoint: "local".to_string(),
+            interval_secs: 15,
+        };
+        assert!(super::validate_nodes(std::slice::from_ref(&valid_local)).is_ok());
+
+        for bad in [
+            NodeConfig {
+                id: String::new(),
+                ..valid_local.clone()
+            },
+            NodeConfig {
+                name: "   ".to_string(),
+                ..valid_local.clone()
+            },
+            NodeConfig {
+                interval_secs: 0,
+                ..valid_local.clone()
+            },
+            NodeConfig {
+                endpoint: "ftp://bad.example.test/metrics".to_string(),
+                ..valid_local
+            },
+        ] {
+            assert!(super::validate_nodes(&[bad]).is_err());
+        }
+    }
 }
