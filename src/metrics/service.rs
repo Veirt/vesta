@@ -85,7 +85,7 @@ impl NodeService {
     }
 
     pub fn reconfigure(&self, nodes: &[NodeConfig]) -> Result<(), MetricsError> {
-        validate_nodes(nodes)?;
+        crate::validation::validate_nodes(nodes).map_err(MetricsError)?;
         self.configuration.send_replace(nodes.to_vec());
         Ok(())
     }
@@ -196,16 +196,6 @@ async fn poll_loop(
 }
 
 /// Validates that node ids are unique before persistence and poller updates.
-pub fn validate_nodes(nodes: &[NodeConfig]) -> Result<(), MetricsError> {
-    let mut ids = std::collections::HashSet::new();
-    for node in nodes {
-        if !ids.insert(node.id.as_str()) {
-            return Err(MetricsError(format!("duplicate node id '{}'", node.id)));
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,9 +214,9 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_node_ids() {
-        assert!(validate_nodes(&[node("a"), node("b")]).is_ok());
-        let err = validate_nodes(&[node("a"), node("a")]).unwrap_err();
-        assert!(err.to_string().contains("duplicate node id 'a'"));
+        assert!(crate::validation::validate_nodes(&[node("a"), node("b")]).is_ok());
+        let err = crate::validation::validate_nodes(&[node("a"), node("a")]).unwrap_err();
+        assert!(err.contains("duplicate node id 'a'"));
     }
 
     #[tokio::test]

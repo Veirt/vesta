@@ -67,15 +67,22 @@ pub async fn save_settings(
     Extension(state): Extension<std::sync::Arc<AppState>>,
     Json(input): Json<SettingsInput>,
 ) -> VestaResult<impl IntoResponse> {
-    let snapshot = state.config.settings_snapshot();
-    let dashboard = Dashboard {
-        nodes: input.dashboard.nodes,
-        items: snapshot.dashboard.items.clone(),
-        groups: snapshot.dashboard.groups.clone(),
-    };
-
-    state.config.save(dashboard.clone(), input.app).await?;
-    state.nodes.reconfigure(&dashboard.nodes)?;
+    let nodes = input.dashboard.nodes;
+    let app = input.app;
+    let snapshot = state
+        .config
+        .update(|current| {
+            Ok((
+                Dashboard {
+                    nodes,
+                    items: current.dashboard.items.clone(),
+                    groups: current.dashboard.groups.clone(),
+                },
+                app,
+            ))
+        })
+        .await?;
+    state.nodes.reconfigure(&snapshot.dashboard.nodes)?;
     Ok(jsend::success_message("Dashboard settings saved"))
 }
 
@@ -83,15 +90,21 @@ pub async fn save_dashboard_items(
     Extension(state): Extension<std::sync::Arc<AppState>>,
     Json(input): Json<DashboardItemsInput>,
 ) -> VestaResult<impl IntoResponse> {
-    let snapshot = state.config.settings_snapshot();
-    let dashboard = Dashboard {
-        nodes: snapshot.dashboard.nodes.clone(),
-        items: input.items,
-        groups: input
-            .groups
-            .unwrap_or_else(|| snapshot.dashboard.groups.clone()),
-    };
-    state.config.save(dashboard, snapshot.app.clone()).await?;
+    state
+        .config
+        .update(|current| {
+            Ok((
+                Dashboard {
+                    nodes: current.dashboard.nodes.clone(),
+                    items: input.items,
+                    groups: input
+                        .groups
+                        .unwrap_or_else(|| current.dashboard.groups.clone()),
+                },
+                current.app.clone(),
+            ))
+        })
+        .await?;
     Ok(jsend::success_message("Dashboard layout saved"))
 }
 

@@ -264,7 +264,7 @@ pub async fn get_widget(
 ) -> Result<impl IntoResponse, VestaError> {
     let widget = state
         .config
-        .widget(&query.id)?
+        .widget(&query.id)
         .ok_or_else(|| VestaError::WidgetNotFound {
             id: query.id.clone(),
         })?;

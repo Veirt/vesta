@@ -1,6 +1,8 @@
 mod api;
 mod auth;
 mod config;
+mod config_codec;
+mod config_layout;
 mod config_manager;
 mod database;
 mod error;
@@ -151,7 +153,7 @@ async fn widget_handler(
 ) -> Result<impl IntoResponse, VestaError> {
     let widget = state
         .config
-        .widget(&query.id)?
+        .widget(&query.id)
         .ok_or_else(|| VestaError::WidgetNotFound {
             id: query.id.clone(),
         })?;
