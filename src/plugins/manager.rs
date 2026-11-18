@@ -193,15 +193,18 @@ impl PluginManager {
     }
 
     /// Remove an installed plugin's directory under the mutation gate.
+    /// Checks only directory existence after slug validation so corrupt plugins
+    /// with broken manifests can still be uninstalled.
     pub async fn uninstall(&self, id: &str) -> VestaResult<()> {
         let _gate = self.gate.lock().await;
         let root = self.root.clone();
         let id_owned = id.to_string();
         tokio::task::spawn_blocking(move || {
-            if load_record_in(&root, &id_owned)?.is_none() {
+            let dir = plugin_dir_in(&root, &id_owned)?;
+            if !dir.is_dir() {
                 return Err(plugin_not_found(&id_owned));
             }
-            std::fs::remove_dir_all(plugin_dir_in(&root, &id_owned)?)?;
+            std::fs::remove_dir_all(&dir)?;
             Ok(())
         })
         .await
@@ -433,6 +436,16 @@ mod tests {
         assert!(manager.record("hello-world").unwrap().is_none());
         let missing = manager.uninstall("hello-world").await.unwrap_err();
         assert!(missing.to_string().contains("not found"), "{missing}");
+    }
+
+    #[tokio::test]
+    async fn uninstall_removes_corrupt_plugin_directory() {
+        let (_dir, manager) = test_manager();
+        let broken_dir = manager.root().join("broken-plugin");
+        std::fs::create_dir_all(&broken_dir).unwrap();
+        std::fs::write(broken_dir.join("vesta-plugin.toml"), "not = [valid toml").unwrap();
+        manager.uninstall("broken-plugin").await.unwrap();
+        assert!(!broken_dir.exists());
     }
 
     #[tokio::test]

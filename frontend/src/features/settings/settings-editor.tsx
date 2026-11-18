@@ -179,7 +179,9 @@ function SettingsEditor() {
                 onOpenPlugins={() => selectSection("plugins")}
               />
             )}
-            {activeSection === "plugins" && <PluginsSection />}
+            {activeSection === "plugins" && (
+              <PluginsSection onPluginsChanged={() => void editor.refreshWidgets()} />
+            )}
           </section>
         </div>
       )}

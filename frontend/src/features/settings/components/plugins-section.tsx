@@ -15,7 +15,7 @@ type MutationState =
   | { kind: "error"; message: string }
   | { kind: "notice"; message: string };
 
-export function PluginsSection() {
+export function PluginsSection({ onPluginsChanged }: { onPluginsChanged?: () => void }) {
   const [catalog, setCatalog] = useState<CatalogState>({ kind: "loading" });
   const [url, setUrl] = useState("");
   const [mutation, setMutation] = useState<MutationState>({ kind: "idle" });
@@ -48,6 +48,7 @@ export function PluginsSection() {
       const message = await run();
       setMutation({ kind: "notice", message });
       await refresh();
+      onPluginsChanged?.();
     } catch (cause) {
       setMutation({
         kind: "error",

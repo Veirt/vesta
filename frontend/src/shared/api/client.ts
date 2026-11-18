@@ -9,6 +9,7 @@ import {
   PingStatusResponseSchema,
   PingTestResponseSchema,
   PluginsResponseSchema,
+  RemovedPluginResponseSchema,
   SettingsResponseSchema,
   WidgetDataResponseSchema,
   WidgetOptionsResponseSchema,
@@ -173,7 +174,7 @@ export async function updatePlugin(id: string): Promise<Plugin> {
 }
 
 export async function uninstallPlugin(id: string) {
-  await requestJson(`/api/plugins/${encodeURIComponent(id)}`, MessageResponseSchema, {
+  await requestJson(`/api/plugins/${encodeURIComponent(id)}`, RemovedPluginResponseSchema, {
     method: "DELETE",
     headers: { Accept: "application/json" },
   });

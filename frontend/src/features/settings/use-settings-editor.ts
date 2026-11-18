@@ -214,6 +214,15 @@ export function useSettingsEditor() {
     setLoadRevision((revision) => revision + 1);
   }
 
+  async function refreshWidgets() {
+    try {
+      const data = await fetchSettings();
+      setWidgets(data.widgets);
+    } catch {
+      // Widget catalog refresh is best-effort; explicit load errors surface via settings load.
+    }
+  }
+
   return {
     app,
     dirty,
@@ -228,6 +237,7 @@ export function useSettingsEditor() {
     addNode,
     discardChanges,
     moveNode,
+    refreshWidgets,
     removeNode,
     retryLoad,
     save,
