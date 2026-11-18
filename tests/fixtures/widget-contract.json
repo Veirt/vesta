@@ -1,0 +1,137 @@
+{
+  "descriptors": [
+    {
+      "name": "Plugin:hello-world:counter",
+      "title": "Counter",
+      "description": "Configured via the label field; add or subtract on click.",
+      "default_width": 3,
+      "default_height": 2,
+      "min_width": 3,
+      "min_height": 2,
+      "fields": [
+        {
+          "key": "start_value",
+          "label": "Start value",
+          "kind": "number",
+          "required": false,
+          "description": "The value the counter starts from.",
+          "default": 0
+        },
+        {
+          "key": "label",
+          "label": "Label",
+          "kind": "text",
+          "required": true,
+          "description": "Text shown above the counter."
+        },
+        {
+          "key": "theme",
+          "label": "Theme",
+          "kind": "select",
+          "required": false,
+          "description": "Color scheme.",
+          "default": "auto",
+          "options": [
+            { "value": "auto", "label": "Follow host" },
+            { "value": "dark", "label": "Dark" },
+            { "value": "light", "label": "Light" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Weather",
+      "title": "Weather",
+      "description": "Shows current weather for a latitude and longitude using Open-Meteo.",
+      "default_width": 4,
+      "default_height": 3,
+      "min_width": 3,
+      "min_height": 3,
+      "fields": [
+        {
+          "key": "latitude",
+          "label": "Latitude",
+          "kind": "number",
+          "required": true,
+          "description": "A value from −90 to 90.",
+          "min": -90.0,
+          "max": 90.0
+        },
+        {
+          "key": "longitude",
+          "label": "Longitude",
+          "kind": "number",
+          "required": true,
+          "description": "A value from −180 to 180.",
+          "min": -180.0,
+          "max": 180.0
+        },
+        {
+          "key": "units",
+          "label": "Temperature units",
+          "kind": "select",
+          "required": true,
+          "description": "Choose how temperatures are displayed.",
+          "default": "celsius",
+          "options": [
+            { "value": "celsius", "label": "Celsius" },
+            { "value": "fahrenheit", "label": "Fahrenheit" }
+          ]
+        },
+        {
+          "key": "refresh_interval",
+          "label": "Refresh every (seconds)",
+          "kind": "number",
+          "required": true,
+          "description": "Choose a value from 60 to 3600 seconds.",
+          "default": 600,
+          "min": 60.0,
+          "max": 3600.0
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "service_minimums": [
+      { "group_span": 6, "width": 3, "height": 1 },
+      { "group_span": 8, "width": 2, "height": 1 },
+      { "group_span": 12, "width": 1, "height": 1 }
+    ],
+    "widget_minimums": [
+      { "name": "Weather", "width": 3, "height": 3 },
+      { "name": "Plugin:hello-world:counter", "width": 3, "height": 2 }
+    ]
+  },
+  "validation_cases": [
+    {
+      "name": "Weather",
+      "config": {
+        "latitude": 47.61,
+        "longitude": -122.33,
+        "units": "celsius",
+        "refresh_interval": 600
+      },
+      "messages": []
+    },
+    {
+      "name": "Weather",
+      "config": {
+        "latitude": 91,
+        "longitude": -122.33,
+        "units": "celsius",
+        "refresh_interval": 600
+      },
+      "messages": ["Latitude is outside its supported range."]
+    },
+    {
+      "name": "Plugin:hello-world:counter",
+      "config": { "start_value": 3, "label": "Clicks", "theme": "dark" },
+      "messages": []
+    },
+    {
+      "name": "Plugin:hello-world:counter",
+      "config": { "start_value": 3, "theme": "dark" },
+      "messages": ["Label is required."]
+    }
+  ]
+}

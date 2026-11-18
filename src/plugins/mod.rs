@@ -109,7 +109,44 @@ pub(crate) mod test_fixtures {
 mod tests {
     use super::*;
     use crate::config::{Dashboard, DashboardItem, Widget};
+    use crate::widgets::weather_widget::WeatherWidget;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn real_widget_descriptors_and_layout_match_shared_contract_fixture() {
+        let (_root, plugins) = installed_fixture_manager().await;
+        let builtins = vec![WidgetRegistry::handler(WeatherWidget::new(
+            reqwest::Client::new(),
+        ))];
+        let registry = build_registry(&builtins, &plugins);
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/widget-contract.json"))
+                .unwrap();
+
+        let descriptors = registry.catalog_descriptors();
+        assert_eq!(
+            serde_json::to_value(&descriptors).unwrap(),
+            fixture["descriptors"]
+        );
+
+        for case in fixture["layout"]["service_minimums"].as_array().unwrap() {
+            let group_span = case["group_span"].as_u64().unwrap() as u8;
+            let minimum = (
+                case["width"].as_u64().unwrap() as u8,
+                case["height"].as_u64().unwrap() as u8,
+            );
+            assert_eq!(crate::config_layout::service_min_size(group_span), minimum);
+        }
+
+        for case in fixture["layout"]["widget_minimums"].as_array().unwrap() {
+            let name = case["name"].as_str().unwrap();
+            let minimum = (
+                case["width"].as_u64().unwrap() as u8,
+                case["height"].as_u64().unwrap() as u8,
+            );
+            assert_eq!(registry.min_size(name), Some(minimum));
+        }
+    }
 
     #[tokio::test]
     async fn plugin_widgets_are_registered_and_validated() {
