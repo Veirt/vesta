@@ -35,14 +35,14 @@ impl Config {
             {
                 link.icon = None;
             }
-            if link.title.trim().is_empty() || !crate::config_manager::valid_link(&link.url) {
+            if link.title.trim().is_empty() || !crate::validation::valid_link(&link.url) {
                 return Err(crate::error::VestaError::InvalidWidgetConfig(
                     "each quick link needs a title and a relative or http(s) destination"
                         .to_string(),
                 ));
             }
             if link.icon.as_deref().is_some_and(|icon| {
-                !icon.trim().is_empty() && !crate::config_manager::valid_image_url(icon)
+                !icon.trim().is_empty() && !crate::validation::valid_image_url(icon)
             }) {
                 return Err(crate::error::VestaError::InvalidWidgetConfig(format!(
                     "icon for quick link '{}' must be an http(s) URL or uploaded icon path",
@@ -70,11 +70,11 @@ impl Default for QuickLinksWidget {
 
 #[async_trait]
 impl WidgetHandler for QuickLinksWidget {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "QuickLinks"
     }
 
-    fn description(&self) -> &'static str {
+    fn description(&self) -> &str {
         "Shows a compact list of links with optional remote or uploaded icons."
     }
 
@@ -87,15 +87,16 @@ impl WidgetHandler for QuickLinksWidget {
     }
 
     fn fields(&self) -> Vec<WidgetField> {
-        vec![WidgetField {
-            key: "links",
-            label: "Links",
-            kind: "links",
-            required: false,
-            description: "Each link can have a title, destination, and optional icon URL or upload.",
-            default: Some(serde_json::json!([])),
-            options: Vec::new(),
-        }]
+        vec![
+            WidgetField::builtin(
+                "links",
+                "Links",
+                "links",
+                false,
+                "Each link can have a title, destination, and optional icon URL or upload.",
+            )
+            .with_default(serde_json::json!([])),
+        ]
     }
 
     type Config = Config;

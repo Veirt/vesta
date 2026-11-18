@@ -1,5 +1,6 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
 use serde::{Serialize, de::DeserializeOwned};
@@ -24,7 +25,7 @@ pub struct WidgetResponseData {
 pub struct WidgetDescriptor {
     pub name: String,
     pub title: String,
-    pub description: &'static str,
+    pub description: Cow<'static, str>,
     pub default_width: u8,
     pub default_height: u8,
     pub min_width: u8,
@@ -34,21 +35,72 @@ pub struct WidgetDescriptor {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct WidgetField {
-    pub key: &'static str,
-    pub label: &'static str,
-    pub kind: &'static str,
+    pub key: Cow<'static, str>,
+    pub label: Cow<'static, str>,
+    pub kind: Cow<'static, str>,
     pub required: bool,
-    pub description: &'static str,
+    pub description: Cow<'static, str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<WidgetOption>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max: Option<f64>,
+}
+
+impl WidgetField {
+    pub fn builtin(
+        key: &'static str,
+        label: &'static str,
+        kind: &'static str,
+        required: bool,
+        description: &'static str,
+    ) -> Self {
+        Self {
+            key: Cow::Borrowed(key),
+            label: Cow::Borrowed(label),
+            kind: Cow::Borrowed(kind),
+            required,
+            description: Cow::Borrowed(description),
+            default: None,
+            options: Vec::new(),
+            min: None,
+            max: None,
+        }
+    }
+
+    pub fn with_default(mut self, default: serde_json::Value) -> Self {
+        self.default = Some(default);
+        self
+    }
+
+    pub fn with_options(mut self, options: Vec<WidgetOption>) -> Self {
+        self.options = options;
+        self
+    }
+
+    pub fn with_range(mut self, min: f64, max: f64) -> Self {
+        self.min = Some(min);
+        self.max = Some(max);
+        self
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct WidgetOption {
-    pub value: &'static str,
-    pub label: &'static str,
+    pub value: Cow<'static, str>,
+    pub label: Cow<'static, str>,
+}
+
+impl WidgetOption {
+    pub fn builtin(value: &'static str, label: &'static str) -> Self {
+        Self {
+            value: Cow::Borrowed(value),
+            label: Cow::Borrowed(label),
+        }
+    }
 }
 
 /// A select option resolved at edit time from an external system, for
@@ -64,7 +116,6 @@ pub struct DynamicOption {
 #[derive(Clone)]
 pub struct WidgetContext {
     pub nodes: Arc<crate::metrics::service::NodeService>,
-    pub config: Arc<crate::config_manager::ConfigManager>,
 }
 
 /// What a widget provides. `Config` is the widget's typed options schema,
@@ -73,7 +124,7 @@ pub struct WidgetContext {
 #[async_trait]
 pub trait WidgetHandler: Send + Sync {
     /// Registry key, matching `widget.name` in the config (e.g. "SystemStats").
-    fn name(&self) -> &'static str;
+    fn name(&self) -> &str;
 
     /// Human-readable label for menus and catalogs; defaults to the key split
     /// at inner uppercase letters ("SonarrCalendar" -> "Sonarr Calendar").
@@ -92,8 +143,15 @@ pub trait WidgetHandler: Send + Sync {
         title
     }
 
-    fn description(&self) -> &'static str {
+    fn description(&self) -> &str {
         "Configure this built-in widget."
+    }
+
+    /// Whether this widget should appear in the Settings new-tile catalog.
+    /// Legacy-only widgets override this to return `false` while continuing
+    /// to render and validate existing tiles.
+    fn catalog_visible(&self) -> bool {
+        true
     }
 
     fn fields(&self) -> Vec<WidgetField> {
@@ -157,10 +215,39 @@ pub fn parse_widget_options<T: DeserializeOwned>(
     serde_json::from_value(value).map_err(|e| VestaError::InvalidWidgetConfig(format!("{e}")))
 }
 
-/// Registry mapping widget names to handlers. Built once at startup; all
-/// later lookups (render, validate, request handling) go through it.
+/// The widget registry is rebuilt when plugins are installed or removed, so
+/// both request handling (`AppState`) and dashboard validation
+/// (`ConfigManager`) hold a shared handle and always observe the current
+/// snapshot.
+#[derive(Clone)]
+pub struct SharedWidgetRegistry {
+    inner: Arc<RwLock<Arc<WidgetRegistry>>>,
+}
+
+impl SharedWidgetRegistry {
+    pub fn new(registry: WidgetRegistry) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(Arc::new(registry))),
+        }
+    }
+
+    pub fn current(&self) -> Arc<WidgetRegistry> {
+        self.inner
+            .read()
+            .expect("widget registry lock poisoned")
+            .clone()
+    }
+
+    pub fn replace(&self, registry: WidgetRegistry) {
+        *self.inner.write().expect("widget registry lock poisoned") = Arc::new(registry);
+    }
+}
+
+/// Registry mapping widget names to handlers. Rebuilt atomically on startup and
+/// plugin mutation; all lookups (render, validate, request handling) go
+/// through it.
 pub struct WidgetRegistry {
-    widgets: HashMap<String, Box<dyn WidgetHandlerDyn>>,
+    widgets: HashMap<String, Arc<dyn WidgetHandlerDyn>>,
 }
 
 impl WidgetRegistry {
@@ -170,9 +257,16 @@ impl WidgetRegistry {
         }
     }
 
-    pub fn register<W: WidgetHandler + 'static>(mut self, widget: W) -> Self {
-        self.widgets
-            .insert(widget.name().to_string(), Box::new(DynWidget::new(widget)));
+    pub fn handler<W: WidgetHandler + 'static>(widget: W) -> Arc<dyn WidgetHandlerDyn> {
+        Arc::new(DynWidget::new(widget))
+    }
+
+    pub fn register<W: WidgetHandler + 'static>(self, widget: W) -> Self {
+        self.register_shared(Self::handler(widget))
+    }
+
+    pub fn register_shared(mut self, handler: Arc<dyn WidgetHandlerDyn>) -> Self {
+        self.widgets.insert(handler.name().to_string(), handler);
         self
     }
 
@@ -186,10 +280,11 @@ impl WidgetRegistry {
         names
     }
 
-    pub fn descriptors(&self) -> Vec<WidgetDescriptor> {
+    pub fn catalog_descriptors(&self) -> Vec<WidgetDescriptor> {
         self.names()
             .into_iter()
             .filter_map(|name| self.get(name))
+            .filter(|handler| handler.catalog_visible())
             .map(|handler| handler.descriptor())
             .collect()
     }
@@ -199,6 +294,10 @@ impl WidgetRegistry {
             .refresh_interval_secs(widget)
             .ok()
             .flatten()
+    }
+
+    pub fn default_size(&self, name: &str) -> Option<(u8, u8)> {
+        self.get(name).map(|handler| handler.default_size_erased())
     }
 
     pub fn min_size(&self, name: &str) -> Option<(u8, u8)> {
@@ -229,6 +328,7 @@ impl WidgetRegistry {
     pub async fn handle_request(
         &self,
         widget_name: &str,
+        widget: &Widget,
         ctx: WidgetContext,
         query: WidgetQuery,
     ) -> VestaResult<WidgetResponseData> {
@@ -237,7 +337,7 @@ impl WidgetRegistry {
             .ok_or_else(|| VestaError::WidgetNotFound {
                 id: query.id.clone(),
             })?;
-        handler.handle_erased(ctx, query).await
+        handler.handle_erased(widget, ctx, query).await
     }
 
     /// Resolve the dynamic options of one widget field from unsaved form
@@ -268,9 +368,12 @@ impl Default for WidgetRegistry {
 /// different `Config` associated types behind one map.
 #[async_trait]
 pub trait WidgetHandlerDyn: Send + Sync {
+    fn name(&self) -> &str;
+    fn catalog_visible(&self) -> bool;
     fn descriptor(&self) -> WidgetDescriptor;
     fn validate_erased(&self, widget: &Widget) -> VestaResult<()>;
     fn refresh_interval_secs(&self, widget: &Widget) -> VestaResult<Option<u64>>;
+    fn default_size_erased(&self) -> (u8, u8);
     fn min_size_erased(&self) -> (u8, u8);
     async fn options_erased(
         &self,
@@ -279,6 +382,7 @@ pub trait WidgetHandlerDyn: Send + Sync {
     ) -> VestaResult<Vec<DynamicOption>>;
     async fn handle_erased(
         &self,
+        widget: &Widget,
         ctx: WidgetContext,
         query: WidgetQuery,
     ) -> VestaResult<WidgetResponseData>;
@@ -296,19 +400,31 @@ impl<W: WidgetHandler + 'static> DynWidget<W> {
 
 #[async_trait]
 impl<W: WidgetHandler + 'static> WidgetHandlerDyn for DynWidget<W> {
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+
+    fn catalog_visible(&self) -> bool {
+        self.inner.catalog_visible()
+    }
+
     fn descriptor(&self) -> WidgetDescriptor {
         let (default_width, default_height) = self.inner.default_size();
         let (min_width, min_height) = self.inner.min_size();
         WidgetDescriptor {
             name: self.inner.name().to_string(),
             title: self.inner.title(),
-            description: self.inner.description(),
+            description: Cow::Owned(self.inner.description().to_string()),
             default_width,
             default_height,
             min_width,
             min_height,
             fields: self.inner.fields(),
         }
+    }
+
+    fn default_size_erased(&self) -> (u8, u8) {
+        self.inner.default_size()
     }
 
     fn min_size_erased(&self) -> (u8, u8) {
@@ -334,15 +450,10 @@ impl<W: WidgetHandler + 'static> WidgetHandlerDyn for DynWidget<W> {
 
     async fn handle_erased(
         &self,
+        widget: &Widget,
         ctx: WidgetContext,
         query: WidgetQuery,
     ) -> VestaResult<WidgetResponseData> {
-        let widget = ctx
-            .config
-            .widget(&query.id)?
-            .ok_or_else(|| VestaError::WidgetNotFound {
-                id: query.id.clone(),
-            })?;
         if widget.name != self.inner.name() {
             return Err(VestaError::WidgetNotFound { id: query.id });
         }
@@ -377,7 +488,7 @@ mod tests {
 
     #[async_trait]
     impl WidgetHandler for FakeWidget {
-        fn name(&self) -> &'static str {
+        fn name(&self) -> &str {
             "Fake"
         }
 

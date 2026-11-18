@@ -3,45 +3,23 @@ pub mod manager;
 pub mod manifest;
 pub mod widget;
 
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use crate::plugins::manager::PluginManager;
-use crate::widget_system::WidgetRegistry;
+use crate::widget_system::{WidgetHandlerDyn, WidgetRegistry};
 
 pub use crate::plugins::widget::PLUGIN_NAME_PREFIX;
 
-/// The widget registry is rebuilt when plugins are installed or removed, so
-/// both request handling (`AppState`) and dashboard validation
-/// (`ConfigManager`) hold a shared handle and always observe the current
-/// snapshot.
-#[derive(Clone)]
-pub struct SharedWidgetRegistry {
-    inner: Arc<RwLock<Arc<WidgetRegistry>>>,
-}
-
-impl SharedWidgetRegistry {
-    pub fn new(registry: WidgetRegistry) -> Self {
-        Self {
-            inner: Arc::new(RwLock::new(Arc::new(registry))),
-        }
+/// The registry snapshot for one rebuild: the shared built-in handlers plus
+/// one handler per widget declared by each installed plugin.
+pub fn build_registry(
+    builtins: &[Arc<dyn WidgetHandlerDyn>],
+    plugins: &PluginManager,
+) -> WidgetRegistry {
+    let mut registry = WidgetRegistry::new();
+    for handler in builtins {
+        registry = registry.register_shared(Arc::clone(handler));
     }
-
-    pub fn current(&self) -> Arc<WidgetRegistry> {
-        self.inner
-            .read()
-            .expect("widget registry lock poisoned")
-            .clone()
-    }
-
-    pub fn replace(&self, registry: WidgetRegistry) {
-        *self.inner.write().expect("widget registry lock poisoned") = Arc::new(registry);
-    }
-}
-
-/// The registry snapshot for one rebuild: the built-in widgets plus one
-/// handler per widget declared by each installed plugin.
-pub fn build_registry(builtins: WidgetRegistry, plugins: &PluginManager) -> WidgetRegistry {
-    let mut registry = builtins;
     for record in plugins.load_all() {
         for spec in &record.manifest.widgets {
             let handler = widget::PluginWidgetHandler::new(&record.manifest.id, spec.clone());
@@ -61,7 +39,7 @@ mod tests {
     #[tokio::test]
     async fn plugin_widgets_are_registered_and_validated() {
         let plugins = installed_fixture_manager().await;
-        let registry = build_registry(WidgetRegistry::new(), &plugins);
+        let registry = build_registry(&[], &plugins);
 
         let names: Vec<&str> = registry
             .names()
@@ -76,7 +54,7 @@ mod tests {
 
         // The plugin descriptor exposes the manifest metadata.
         let descriptor = registry
-            .descriptors()
+            .catalog_descriptors()
             .into_iter()
             .find(|descriptor| descriptor.name == "Plugin:hello-world:counter")
             .unwrap();
@@ -93,7 +71,7 @@ mod tests {
             descriptor
                 .fields
                 .iter()
-                .map(|field| field.key)
+                .map(|field| field.key.as_ref())
                 .collect::<Vec<_>>(),
             vec!["start_value", "label", "theme"]
         );

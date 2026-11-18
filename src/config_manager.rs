@@ -13,7 +13,8 @@ use crate::config::{
 };
 use crate::error::{VestaError, VestaResult};
 use crate::metrics::service::validate_nodes;
-use crate::widget_system::WidgetRegistry;
+use crate::validation::{valid_http_url, valid_id, valid_image_url, valid_link};
+use crate::widget_system::{SharedWidgetRegistry, WidgetRegistry};
 
 pub struct SettingsSnapshot {
     pub dashboard: Arc<Dashboard>,
@@ -25,15 +26,12 @@ pub struct ConfigManager {
     path: PathBuf,
     snapshot: RwLock<Arc<SettingsSnapshot>>,
     write_gate: Mutex<()>,
-    registry: crate::plugins::SharedWidgetRegistry,
+    registry: SharedWidgetRegistry,
     updates: watch::Sender<u64>,
 }
 
 impl ConfigManager {
-    pub fn new(
-        path: impl Into<PathBuf>,
-        registry: crate::plugins::SharedWidgetRegistry,
-    ) -> VestaResult<Self> {
+    pub fn new(path: impl Into<PathBuf>, registry: SharedWidgetRegistry) -> VestaResult<Self> {
         let path = path.into();
         let config = read_config(&path, &registry.current())?;
         let mut dashboard = config.dashboard();
@@ -345,7 +343,10 @@ fn normalize_layout(dashboard: &mut Dashboard, registry: &WidgetRegistry) {
         };
         let occupied = occupied.entry(group.to_string()).or_default();
         let (x, y, width, height) = item.layout();
-        let (default_width, default_height) = item.default_size();
+        let (default_width, default_height) = match item {
+            DashboardItem::Service(_) => (4, 1),
+            DashboardItem::Widget(widget) => registry.default_size(&widget.name).unwrap_or((4, 2)),
+        };
         let (min_width, min_height) = item_min_size(item, &spans, registry);
         let width = width.unwrap_or(default_width).clamp(min_width, 12);
         let height = height.unwrap_or(default_height).clamp(min_height, 12);
@@ -647,16 +648,13 @@ fn validate(
                         service.title
                     )));
                 }
-                if let Some(ping) = &service.ping {
-                    let valid = reqwest::Url::parse(&ping.url)
-                        .ok()
-                        .is_some_and(|url| matches!(url.scheme(), "http" | "https"));
-                    if !valid {
-                        return Err(VestaError::InvalidDashboard(format!(
-                            "service '{}' availability check must be an http(s) URL",
-                            service.id
-                        )));
-                    }
+                if let Some(ping) = &service.ping
+                    && !valid_http_url(&ping.url)
+                {
+                    return Err(VestaError::InvalidDashboard(format!(
+                        "service '{}' availability check must be an http(s) URL",
+                        service.id
+                    )));
                 }
             }
             DashboardItem::Widget(widget) => {
@@ -675,34 +673,6 @@ fn validate(
         ));
     }
     registry.validate_dashboard(dashboard)
-}
-
-fn valid_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
-}
-
-pub fn valid_link(value: &str) -> bool {
-    if value.starts_with('/') && !value.starts_with("//") {
-        return true;
-    }
-    reqwest::Url::parse(value)
-        .ok()
-        .is_some_and(|url| matches!(url.scheme(), "http" | "https"))
-}
-
-pub fn valid_image_url(value: &str) -> bool {
-    if value.starts_with("/api/icons/") {
-        return value
-            .strip_prefix("/api/icons/")
-            .is_some_and(|id| !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()));
-    }
-    reqwest::Url::parse(value)
-        .ok()
-        .is_some_and(|url| matches!(url.scheme(), "http" | "https"))
 }
 
 #[cfg(test)]

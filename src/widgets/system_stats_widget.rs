@@ -38,12 +38,16 @@ impl Default for SystemStatsWidget {
 
 #[async_trait]
 impl WidgetHandler for SystemStatsWidget {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "SystemStats"
     }
 
-    fn description(&self) -> &'static str {
+    fn description(&self) -> &str {
         "Shows CPU, memory, disk, load, and uptime for one configured server."
+    }
+
+    fn catalog_visible(&self) -> bool {
+        false
     }
 
     fn default_size(&self) -> (u8, u8) {
@@ -56,24 +60,23 @@ impl WidgetHandler for SystemStatsWidget {
 
     fn fields(&self) -> Vec<WidgetField> {
         vec![
-            WidgetField {
-                key: "node",
-                label: "Server",
-                kind: "node",
-                required: false,
-                description: "Leave on the first server to follow the configured order.",
-                default: Some(serde_json::json!("")),
-                options: Vec::new(),
-            },
-            WidgetField {
-                key: "refresh_interval",
-                label: "Refresh every (seconds)",
-                kind: "number",
-                required: true,
-                description: "How often this widget requests updated values (1–3600 seconds).",
-                default: Some(serde_json::json!(5)),
-                options: Vec::new(),
-            },
+            WidgetField::builtin(
+                "node",
+                "Server",
+                "node",
+                false,
+                "Leave on the first server to follow the configured order.",
+            )
+            .with_default(serde_json::json!("")),
+            WidgetField::builtin(
+                "refresh_interval",
+                "Refresh every (seconds)",
+                "number",
+                true,
+                "How often this widget requests updated values (1–3600 seconds).",
+            )
+            .with_default(serde_json::json!(5))
+            .with_range(1.0, 3600.0),
         ]
     }
 
@@ -101,12 +104,8 @@ impl WidgetHandler for SystemStatsWidget {
 
         let stats = ctx.nodes.stats_for(&node_id).await?;
         let node_name = ctx
-            .config
-            .snapshot()
             .nodes
-            .iter()
-            .find(|n| n.id == node_id)
-            .map(|n| n.name.clone())
+            .node_name(&node_id)
             .unwrap_or_else(|| node_id.clone());
 
         Ok(json!({

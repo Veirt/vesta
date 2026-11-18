@@ -33,85 +33,42 @@ impl Default for ClockWidget {
 
 #[async_trait]
 impl WidgetHandler for ClockWidget {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "Clock"
     }
 
-    fn description(&self) -> &'static str {
+    fn description(&self) -> &str {
         "Shows the current time and date in a configurable time zone."
     }
 
     fn fields(&self) -> Vec<WidgetField> {
-        vec![WidgetField {
-            key: "time_zone",
-            label: "Time zone",
-            kind: "select",
-            required: true,
-            description: "Choose the IANA time zone used by this clock.",
-            default: Some(serde_json::json!("UTC")),
-            options: vec![
-                WidgetOption {
-                    value: "UTC",
-                    label: "UTC",
-                },
-                WidgetOption {
-                    value: "America/Los_Angeles",
-                    label: "Los Angeles",
-                },
-                WidgetOption {
-                    value: "America/Denver",
-                    label: "Denver",
-                },
-                WidgetOption {
-                    value: "America/Chicago",
-                    label: "Chicago",
-                },
-                WidgetOption {
-                    value: "America/New_York",
-                    label: "New York",
-                },
-                WidgetOption {
-                    value: "America/Sao_Paulo",
-                    label: "São Paulo",
-                },
-                WidgetOption {
-                    value: "Europe/London",
-                    label: "London",
-                },
-                WidgetOption {
-                    value: "Europe/Paris",
-                    label: "Paris",
-                },
-                WidgetOption {
-                    value: "Europe/Helsinki",
-                    label: "Helsinki",
-                },
-                WidgetOption {
-                    value: "Africa/Johannesburg",
-                    label: "Johannesburg",
-                },
-                WidgetOption {
-                    value: "Asia/Dubai",
-                    label: "Dubai",
-                },
-                WidgetOption {
-                    value: "Asia/Kolkata",
-                    label: "Kolkata",
-                },
-                WidgetOption {
-                    value: "Asia/Singapore",
-                    label: "Singapore",
-                },
-                WidgetOption {
-                    value: "Asia/Tokyo",
-                    label: "Tokyo",
-                },
-                WidgetOption {
-                    value: "Australia/Sydney",
-                    label: "Sydney",
-                },
-            ],
-        }]
+        vec![
+            WidgetField::builtin(
+                "time_zone",
+                "Time zone",
+                "select",
+                true,
+                "Choose the IANA time zone used by this clock.",
+            )
+            .with_default(serde_json::json!("UTC"))
+            .with_options(vec![
+                WidgetOption::builtin("UTC", "UTC"),
+                WidgetOption::builtin("America/Los_Angeles", "Los Angeles"),
+                WidgetOption::builtin("America/Denver", "Denver"),
+                WidgetOption::builtin("America/Chicago", "Chicago"),
+                WidgetOption::builtin("America/New_York", "New York"),
+                WidgetOption::builtin("America/Sao_Paulo", "São Paulo"),
+                WidgetOption::builtin("Europe/London", "London"),
+                WidgetOption::builtin("Europe/Paris", "Paris"),
+                WidgetOption::builtin("Europe/Helsinki", "Helsinki"),
+                WidgetOption::builtin("Africa/Johannesburg", "Johannesburg"),
+                WidgetOption::builtin("Asia/Dubai", "Dubai"),
+                WidgetOption::builtin("Asia/Kolkata", "Kolkata"),
+                WidgetOption::builtin("Asia/Singapore", "Singapore"),
+                WidgetOption::builtin("Asia/Tokyo", "Tokyo"),
+                WidgetOption::builtin("Australia/Sydney", "Sydney"),
+            ]),
+        ]
     }
 
     fn default_size(&self) -> (u8, u8) {

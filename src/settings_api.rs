@@ -59,9 +59,7 @@ pub async fn get_settings(
             "groups": snapshot.dashboard.groups,
         },
         "app": snapshot.app,
-        "widgets": state.widget_registry.current().descriptors().into_iter()
-            .filter(|widget| widget.name != "SystemStats")
-            .collect::<Vec<_>>(),
+        "widgets": state.widget_registry.current().catalog_descriptors(),
     })))
 }
 
@@ -101,10 +99,7 @@ pub async fn test_ping_url(
     Extension(state): Extension<std::sync::Arc<AppState>>,
     Json(input): Json<PingTestInput>,
 ) -> VestaResult<impl IntoResponse> {
-    let valid = reqwest::Url::parse(&input.url)
-        .ok()
-        .is_some_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some());
-    if !valid {
+    if !crate::validation::valid_http_url(&input.url) {
         return Err(VestaError::InvalidDashboard(
             "availability check must be a valid http(s) URL".to_string(),
         ));

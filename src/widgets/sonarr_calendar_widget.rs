@@ -146,11 +146,11 @@ fn entry_class(entry: &CalendarEntry, now: &DateTime<Utc>) -> &'static str {
 
 #[async_trait]
 impl WidgetHandler for SonarrCalendarWidget {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "SonarrCalendar"
     }
 
-    fn description(&self) -> &'static str {
+    fn description(&self) -> &str {
         "Shows upcoming Sonarr episodes and download status."
     }
 
@@ -164,24 +164,20 @@ impl WidgetHandler for SonarrCalendarWidget {
 
     fn fields(&self) -> Vec<WidgetField> {
         vec![
-            WidgetField {
-                key: "url",
-                label: "Sonarr URL",
-                kind: "url",
-                required: true,
-                description: "The base URL of your Sonarr server.",
-                default: None,
-                options: Vec::new(),
-            },
-            WidgetField {
-                key: "key",
-                label: "API key",
-                kind: "password",
-                required: true,
-                description: "Stored in config.toml; protect that file as a secret.",
-                default: None,
-                options: Vec::new(),
-            },
+            WidgetField::builtin(
+                "url",
+                "Sonarr URL",
+                "url",
+                true,
+                "The base URL of your Sonarr server.",
+            ),
+            WidgetField::builtin(
+                "key",
+                "API key",
+                "password",
+                true,
+                "Stored in config.toml; protect that file as a secret.",
+            ),
         ]
     }
 

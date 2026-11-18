@@ -12,6 +12,7 @@ mod response;
 mod services;
 mod settings_api;
 mod templates;
+mod validation;
 mod widget_config;
 mod widget_system;
 mod widgets;
@@ -36,7 +37,9 @@ use ping::ping_handler;
 use response::jsend;
 use services::ping_service::PingService;
 use templates::dashboard;
-use widget_system::{WidgetContext, WidgetQuery, WidgetRegistry};
+use widget_system::{
+    SharedWidgetRegistry, WidgetContext, WidgetHandlerDyn, WidgetQuery, WidgetRegistry,
+};
 use widgets::adguard_home_widget::AdGuardHomeWidget;
 use widgets::clock_widget::ClockWidget;
 use widgets::jellyfin_random_show_widget::JellyfinRandomShowWidget;
@@ -78,32 +81,33 @@ pub struct AppState {
     pub(crate) database: Arc<Database>,
     pub(crate) nodes: Arc<NodeService>,
     pub(crate) ping: PingService,
-    pub(crate) widget_registry: plugins::SharedWidgetRegistry,
+    pub(crate) builtin_widgets: Vec<Arc<dyn WidgetHandlerDyn>>,
+    pub(crate) widget_registry: SharedWidgetRegistry,
     pub(crate) plugins: Arc<plugins::manager::PluginManager>,
-    pub(crate) http_client: reqwest::Client,
     pub(crate) widget_ctx: WidgetContext,
     pub(crate) cookie_secure: bool,
 }
 
 impl AppState {
-    fn builtin_registry(http_client: reqwest::Client) -> WidgetRegistry {
-        WidgetRegistry::new()
-            .register(AdGuardHomeWidget::new(http_client.clone()))
-            .register(SonarrCalendarWidget::new(http_client.clone()))
-            .register(ProwlarrWidget::new(http_client.clone()))
-            .register(JellyfinRandomShowWidget::new(http_client.clone()))
-            .register(SystemStatsWidget::new())
-            .register(WeatherWidget::new(http_client.clone()))
-            .register(ClockWidget::new())
-            .register(QuickLinksWidget::new())
+    fn builtin_widgets(http_client: reqwest::Client) -> Vec<Arc<dyn WidgetHandlerDyn>> {
+        vec![
+            WidgetRegistry::handler(AdGuardHomeWidget::new(http_client.clone())),
+            WidgetRegistry::handler(SonarrCalendarWidget::new(http_client.clone())),
+            WidgetRegistry::handler(ProwlarrWidget::new(http_client.clone())),
+            WidgetRegistry::handler(JellyfinRandomShowWidget::new(http_client.clone())),
+            WidgetRegistry::handler(SystemStatsWidget::new()),
+            WidgetRegistry::handler(WeatherWidget::new(http_client)),
+            WidgetRegistry::handler(ClockWidget::new()),
+            WidgetRegistry::handler(QuickLinksWidget::new()),
+        ]
     }
 
-    /// Rebuild the widget registry from the built-ins and every installed
-    /// plugin. Called at startup and whenever a plugin is installed or
-    /// removed, so both request handling and config validation switch over.
+    /// Rebuild the widget registry from the shared built-ins and every
+    /// installed plugin. Called at startup and whenever a plugin is installed
+    /// or removed, so both request handling and config validation switch over.
     pub(crate) fn rebuild_widget_registry(&self) {
         self.widget_registry.replace(plugins::build_registry(
-            Self::builtin_registry(self.http_client.clone()),
+            &self.builtin_widgets,
             &self.plugins,
         ));
     }
@@ -112,20 +116,18 @@ impl AppState {
         let http_client = create_default_client()?;
         let database = Arc::new(Database::open(&settings.database_path).await?);
         let plugins = Arc::new(plugins::manager::PluginManager::new(&settings.plugins_dir)?);
-        let widget_registry = plugins::SharedWidgetRegistry::new(plugins::build_registry(
-            Self::builtin_registry(http_client.clone()),
-            &plugins,
-        ));
+        let builtin_widgets = Self::builtin_widgets(http_client.clone());
+        let widget_registry =
+            SharedWidgetRegistry::new(plugins::build_registry(&builtin_widgets, &plugins));
 
         let config = Arc::new(ConfigManager::new(
             &settings.config_path,
             widget_registry.clone(),
         )?);
         let nodes = NodeService::start(&config.snapshot().nodes, http_client.clone());
-        let ping = PingService::new(http_client.clone());
+        let ping = PingService::new(http_client);
         let widget_ctx = WidgetContext {
             nodes: nodes.clone(),
-            config: config.clone(),
         };
 
         Ok(Arc::new(Self {
@@ -133,9 +135,9 @@ impl AppState {
             database,
             nodes,
             ping,
+            builtin_widgets,
             widget_registry,
             plugins,
-            http_client,
             widget_ctx,
             cookie_secure: settings.cookie_secure,
         }))
@@ -147,10 +149,16 @@ async fn widget_handler(
     Query(query): Query<WidgetQuery>,
     Extension(state): Extension<Arc<AppState>>,
 ) -> Result<impl IntoResponse, VestaError> {
+    let widget = state
+        .config
+        .widget(&query.id)?
+        .ok_or_else(|| VestaError::WidgetNotFound {
+            id: query.id.clone(),
+        })?;
     let data = state
         .widget_registry
         .current()
-        .handle_request(&widget_name, state.widget_ctx.clone(), query)
+        .handle_request(&widget_name, &widget, state.widget_ctx.clone(), query)
         .await?;
     Ok(jsend::success(data))
 }
@@ -261,4 +269,40 @@ async fn main() {
 
     state.nodes.shutdown();
     tracing::info!("vesta stopped");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builtin_registry_exposes_expected_sizes_and_catalog_visibility() {
+        let builtins = AppState::builtin_widgets(create_default_client().unwrap());
+        let mut registry = WidgetRegistry::new();
+        for handler in &builtins {
+            registry = registry.register_shared(Arc::clone(handler));
+        }
+
+        for (name, expected) in [
+            ("Clock", (4, 2)),
+            ("QuickLinks", (3, 2)),
+            ("SystemStats", (6, 4)),
+            ("Weather", (4, 3)),
+            ("SonarrCalendar", (4, 4)),
+            ("Prowlarr", (4, 2)),
+            ("AdGuard", (4, 2)),
+            ("JellyfinRandomShow", (4, 3)),
+        ] {
+            assert_eq!(registry.default_size(name), Some(expected), "{name}");
+        }
+
+        assert!(registry.get("SystemStats").is_some());
+        assert!(!registry.get("SystemStats").unwrap().catalog_visible());
+        assert!(
+            !registry
+                .catalog_descriptors()
+                .iter()
+                .any(|d| d.name == "SystemStats")
+        );
+    }
 }

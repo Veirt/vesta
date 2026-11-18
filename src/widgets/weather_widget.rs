@@ -104,11 +104,11 @@ fn wind_direction(degrees: u32) -> &'static str {
 
 #[async_trait]
 impl WidgetHandler for WeatherWidget {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "Weather"
     }
 
-    fn description(&self) -> &'static str {
+    fn description(&self) -> &str {
         "Shows current weather for a latitude and longitude using Open-Meteo."
     }
 
@@ -122,51 +122,43 @@ impl WidgetHandler for WeatherWidget {
 
     fn fields(&self) -> Vec<WidgetField> {
         vec![
-            WidgetField {
-                key: "latitude",
-                label: "Latitude",
-                kind: "number",
-                required: true,
-                description: "A value from −90 to 90.",
-                default: None,
-                options: Vec::new(),
-            },
-            WidgetField {
-                key: "longitude",
-                label: "Longitude",
-                kind: "number",
-                required: true,
-                description: "A value from −180 to 180.",
-                default: None,
-                options: Vec::new(),
-            },
-            WidgetField {
-                key: "units",
-                label: "Temperature units",
-                kind: "select",
-                required: true,
-                description: "Choose how temperatures are displayed.",
-                default: Some(serde_json::json!("celsius")),
-                options: vec![
-                    WidgetOption {
-                        value: "celsius",
-                        label: "Celsius",
-                    },
-                    WidgetOption {
-                        value: "fahrenheit",
-                        label: "Fahrenheit",
-                    },
-                ],
-            },
-            WidgetField {
-                key: "refresh_interval",
-                label: "Refresh every (seconds)",
-                kind: "number",
-                required: true,
-                description: "Choose a value from 60 to 3600 seconds.",
-                default: Some(serde_json::json!(600)),
-                options: Vec::new(),
-            },
+            WidgetField::builtin(
+                "latitude",
+                "Latitude",
+                "number",
+                true,
+                "A value from −90 to 90.",
+            )
+            .with_range(-90.0, 90.0),
+            WidgetField::builtin(
+                "longitude",
+                "Longitude",
+                "number",
+                true,
+                "A value from −180 to 180.",
+            )
+            .with_range(-180.0, 180.0),
+            WidgetField::builtin(
+                "units",
+                "Temperature units",
+                "select",
+                true,
+                "Choose how temperatures are displayed.",
+            )
+            .with_default(serde_json::json!("celsius"))
+            .with_options(vec![
+                WidgetOption::builtin("celsius", "Celsius"),
+                WidgetOption::builtin("fahrenheit", "Fahrenheit"),
+            ]),
+            WidgetField::builtin(
+                "refresh_interval",
+                "Refresh every (seconds)",
+                "number",
+                true,
+                "Choose a value from 60 to 3600 seconds.",
+            )
+            .with_default(serde_json::json!(600))
+            .with_range(60.0, 3600.0),
         ]
     }
 

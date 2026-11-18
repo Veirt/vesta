@@ -232,11 +232,11 @@ fn map_libraries(payload: &Value) -> Vec<DynamicOption> {
 
 #[async_trait]
 impl WidgetHandler for JellyfinRandomShowWidget {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "JellyfinRandomShow"
     }
 
-    fn description(&self) -> &'static str {
+    fn description(&self) -> &str {
         "Shows a random series from your Jellyfin library."
     }
 
@@ -250,51 +250,39 @@ impl WidgetHandler for JellyfinRandomShowWidget {
 
     fn fields(&self) -> Vec<WidgetField> {
         vec![
-            WidgetField {
-                key: "url",
-                label: "Jellyfin URL",
-                kind: "url",
-                required: true,
-                description: "The base URL of your Jellyfin server.",
-                default: None,
-                options: Vec::new(),
-            },
-            WidgetField {
-                key: "key",
-                label: "API key",
-                kind: "password",
-                required: true,
-                description: "Create one in the Jellyfin dashboard. Stored in config.toml; protect that file as a secret.",
-                default: None,
-                options: Vec::new(),
-            },
-            WidgetField {
-                key: "library",
-                label: "Library",
-                kind: "remote_select",
-                required: false,
-                description: "Pick the media library the random series comes from. All libraries by default.",
-                default: None,
-                options: Vec::new(),
-            },
-            WidgetField {
-                key: "display",
-                label: "Display",
-                kind: "select",
-                required: true,
-                description: "Backdrop fills the tile with wide artwork. Poster fills it with the cover art and reveals the title on hover.",
-                default: Some(serde_json::json!("backdrop")),
-                options: vec![
-                    WidgetOption {
-                        value: "backdrop",
-                        label: "Backdrop",
-                    },
-                    WidgetOption {
-                        value: "poster",
-                        label: "Poster",
-                    },
-                ],
-            },
+            WidgetField::builtin(
+                "url",
+                "Jellyfin URL",
+                "url",
+                true,
+                "The base URL of your Jellyfin server.",
+            ),
+            WidgetField::builtin(
+                "key",
+                "API key",
+                "password",
+                true,
+                "Create one in the Jellyfin dashboard. Stored in config.toml; protect that file as a secret.",
+            ),
+            WidgetField::builtin(
+                "library",
+                "Library",
+                "remote_select",
+                false,
+                "Pick the media library the random series comes from. All libraries by default.",
+            ),
+            WidgetField::builtin(
+                "display",
+                "Display",
+                "select",
+                true,
+                "Backdrop fills the tile with wide artwork. Poster fills it with the cover art and reveals the title on hover.",
+            )
+            .with_default(serde_json::json!("backdrop"))
+            .with_options(vec![
+                WidgetOption::builtin("backdrop", "Backdrop"),
+                WidgetOption::builtin("poster", "Poster"),
+            ]),
         ]
     }
 

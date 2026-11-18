@@ -219,7 +219,7 @@ fn tile_payload(stats: StatsResponse, status: StatusResponse, filtering: Filteri
 
 #[async_trait]
 impl WidgetHandler for AdGuardHomeWidget {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         "AdGuard"
     }
 
@@ -227,7 +227,7 @@ impl WidgetHandler for AdGuardHomeWidget {
         "AdGuard Home".to_string()
     }
 
-    fn description(&self) -> &'static str {
+    fn description(&self) -> &str {
         "Shows AdGuard Home DNS query statistics and protection status."
     }
 
@@ -243,42 +243,36 @@ impl WidgetHandler for AdGuardHomeWidget {
 
     fn fields(&self) -> Vec<WidgetField> {
         vec![
-            WidgetField {
-                key: "url",
-                label: "AdGuard Home URL",
-                kind: "url",
-                required: true,
-                description: "The base URL of your AdGuard Home instance.",
-                default: None,
-                options: Vec::new(),
-            },
-            WidgetField {
-                key: "username",
-                label: "Username",
-                kind: "text",
-                required: true,
-                description: "The username you sign in to AdGuard Home with.",
-                default: None,
-                options: Vec::new(),
-            },
-            WidgetField {
-                key: "password",
-                label: "Password",
-                kind: "password",
-                required: true,
-                description: "Stored in config.toml; protect that file as a secret.",
-                default: None,
-                options: Vec::new(),
-            },
-            WidgetField {
-                key: "refresh_interval",
-                label: "Refresh every (seconds)",
-                kind: "number",
-                required: true,
-                description: "How often this widget requests updated values (1–3600 seconds).",
-                default: Some(serde_json::json!(300)),
-                options: Vec::new(),
-            },
+            WidgetField::builtin(
+                "url",
+                "AdGuard Home URL",
+                "url",
+                true,
+                "The base URL of your AdGuard Home instance.",
+            ),
+            WidgetField::builtin(
+                "username",
+                "Username",
+                "text",
+                true,
+                "The username you sign in to AdGuard Home with.",
+            ),
+            WidgetField::builtin(
+                "password",
+                "Password",
+                "password",
+                true,
+                "Stored in config.toml; protect that file as a secret.",
+            ),
+            WidgetField::builtin(
+                "refresh_interval",
+                "Refresh every (seconds)",
+                "number",
+                true,
+                "How often this widget requests updated values (1–3600 seconds).",
+            )
+            .with_default(serde_json::json!(300))
+            .with_range(1.0, 3600.0),
         ]
     }
 

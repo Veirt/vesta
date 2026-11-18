@@ -68,6 +68,14 @@ impl NodeService {
             .collect()
     }
 
+    pub fn node_name(&self, id: &str) -> Option<String> {
+        self.configuration
+            .borrow()
+            .iter()
+            .find(|node| node.id == id)
+            .map(|node| node.name.clone())
+    }
+
     pub async fn scrape_failed(&self, id: &str) -> bool {
         self.scrape_failures.read().await.contains(id)
     }

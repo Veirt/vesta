@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use async_trait::async_trait;
 
 use crate::config::WidgetConfig;
@@ -17,78 +19,58 @@ pub const PLUGIN_NAME_PREFIX: &str = "Plugin:";
 #[derive(Clone)]
 pub struct PluginWidgetHandler {
     plugin_id: String,
+    widget_name: String,
     spec: PluginWidgetSpec,
-    /// The `&'static str` values the `WidgetHandler` trait requires, interned
-    /// exactly once per handler instance. Interning per call would leak a
-    /// fresh copy on every descriptor fetch (descriptors are rebuilt on every
-    /// settings load); leaks stay bounded to one instance per registry
-    /// generation (startup, install, uninstall).
-    statics: HandlerStatics,
-}
-
-#[derive(Clone)]
-struct HandlerStatics {
-    widget_name: &'static str,
-    description: &'static str,
-    fields: Vec<WidgetField>,
 }
 
 impl PluginWidgetHandler {
     pub fn new(plugin_id: &str, spec: PluginWidgetSpec) -> Self {
-        let statics = HandlerStatics {
-            widget_name: intern(&format!("{}{}:{}", PLUGIN_NAME_PREFIX, plugin_id, spec.id)),
-            description: intern(spec.description.as_deref().unwrap_or("Plugin widget.")),
-            fields: spec.fields.iter().map(intern_field).collect(),
-        };
+        let widget_name = format!("{PLUGIN_NAME_PREFIX}{plugin_id}:{}", spec.id);
         Self {
             plugin_id: plugin_id.to_string(),
+            widget_name,
             spec,
-            statics,
         }
     }
 }
 
-/// The registry stores field metadata as `&'static str`; see
-/// `HandlerStatics` for why interning happens once, at construction.
-fn intern(value: &str) -> &'static str {
-    Box::leak(value.to_string().into_boxed_str())
-}
-
-fn intern_field(field: &PluginFieldSpec) -> WidgetField {
+fn to_widget_field(field: &PluginFieldSpec) -> WidgetField {
     WidgetField {
-        key: intern(&field.key),
-        label: intern(&field.label),
-        kind: intern(&field.kind),
+        key: Cow::Owned(field.key.clone()),
+        label: Cow::Owned(field.label.clone()),
+        kind: Cow::Owned(field.kind.clone()),
         required: field.required,
-        description: intern(field.description.as_deref().unwrap_or("")),
+        description: Cow::Owned(field.description.as_deref().unwrap_or("").to_string()),
         default: field.default.clone(),
-        options: field.options.iter().map(intern_option).collect(),
+        options: field.options.iter().map(to_widget_option).collect(),
+        min: None,
+        max: None,
     }
 }
 
-fn intern_option(option: &PluginOptionSpec) -> WidgetOption {
+fn to_widget_option(option: &PluginOptionSpec) -> WidgetOption {
     WidgetOption {
-        value: intern(&option.value),
-        label: intern(&option.label),
+        value: Cow::Owned(option.value.clone()),
+        label: Cow::Owned(option.label.clone()),
     }
 }
 
 #[async_trait]
 impl WidgetHandler for PluginWidgetHandler {
-    fn name(&self) -> &'static str {
-        self.statics.widget_name
+    fn name(&self) -> &str {
+        &self.widget_name
     }
 
     fn title(&self) -> String {
         self.spec.title.clone()
     }
 
-    fn description(&self) -> &'static str {
-        self.statics.description
+    fn description(&self) -> &str {
+        self.spec.description.as_deref().unwrap_or("Plugin widget.")
     }
 
     fn fields(&self) -> Vec<WidgetField> {
-        self.statics.fields.clone()
+        self.spec.fields.iter().map(to_widget_field).collect()
     }
 
     fn default_size(&self) -> (u8, u8) {
@@ -148,7 +130,6 @@ impl WidgetHandler for PluginWidgetHandler {
 mod tests {
     use super::*;
     use std::collections::HashMap;
-    use std::sync::Arc;
 
     fn spec(fields: Vec<PluginFieldSpec>) -> PluginWidgetSpec {
         PluginWidgetSpec {
@@ -180,35 +161,6 @@ mod tests {
     fn widget_name_uses_prefixed_three_part_key() {
         assert_eq!(handler().name(), "Plugin:hello-world:counter");
         assert!(!handler().name().starts_with("Plugin:{}"));
-    }
-
-    /// The trait's `&'static str` surface must reuse one interned copy per
-    /// handler instance, not leak a fresh string on every descriptor fetch.
-    #[test]
-    fn static_strings_are_created_once_per_handler_instance() {
-        let handler = PluginWidgetHandler::new(
-            "hello-world",
-            spec(vec![PluginFieldSpec {
-                key: "label".to_string(),
-                label: "Label".to_string(),
-                kind: "text".to_string(),
-                required: true,
-                description: None,
-                default: None,
-                options: vec![],
-            }]),
-        );
-        let first_name = handler.name();
-        let first_description = handler.description();
-        let first_field = handler.fields().remove(0);
-        for _ in 0..8 {
-            assert!(std::ptr::eq(handler.name(), first_name));
-            assert!(std::ptr::eq(handler.description(), first_description));
-            assert!(std::ptr::eq(
-                handler.fields().remove(0).key,
-                first_field.key
-            ));
-        }
     }
 
     #[test]
@@ -253,26 +205,12 @@ mod tests {
 
     #[tokio::test]
     async fn data_response_points_at_the_asset_bundle() {
-        // Real context object; PluginWidgetHandler never touches it.
-        let registry = crate::widget_system::WidgetRegistry::new();
-        let config_path = std::env::temp_dir().join(format!(
-            "vesta-plugin-ctx-{}.toml",
-            uuid::Uuid::new_v4().simple()
-        ));
-        let manager = Arc::new(
-            crate::config_manager::ConfigManager::new(
-                config_path,
-                crate::plugins::SharedWidgetRegistry::new(registry),
-            )
-            .unwrap(),
-        );
         let nodes = crate::metrics::service::NodeService::start(
             &[],
             crate::http_client::create_default_client().unwrap(),
         );
         let ctx = WidgetContext {
             nodes: nodes.clone(),
-            config: manager,
         };
 
         let response = PluginWidgetHandler::new("hello-world", spec(vec![]))
@@ -285,6 +223,7 @@ mod tests {
             )
             .await
             .unwrap();
+        nodes.shutdown();
         assert_eq!(response["plugin_id"], json!("hello-world"));
         assert_eq!(response["widget_id"], json!("counter"));
         assert_eq!(response["entry"], json!("index.html"));
