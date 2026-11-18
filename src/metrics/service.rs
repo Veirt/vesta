@@ -91,7 +91,7 @@ impl NodeService {
     }
 
     pub fn reconfigure(&self, nodes: &[NodeConfig]) -> Result<(), MetricsError> {
-        crate::validation::validate_nodes(nodes).map_err(MetricsError)?;
+        crate::validation::nodes::validate_nodes(nodes).map_err(MetricsError)?;
         self.exporter
             .set_active_endpoints(&remote_exporter_endpoints(nodes));
         self.configuration.send_replace(nodes.to_vec());
@@ -223,8 +223,8 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_node_ids() {
-        assert!(crate::validation::validate_nodes(&[node("a"), node("b")]).is_ok());
-        let err = crate::validation::validate_nodes(&[node("a"), node("a")]).unwrap_err();
+        assert!(crate::validation::nodes::validate_nodes(&[node("a"), node("b")]).is_ok());
+        let err = crate::validation::nodes::validate_nodes(&[node("a"), node("a")]).unwrap_err();
         assert!(err.contains("duplicate node id 'a'"));
     }
 
