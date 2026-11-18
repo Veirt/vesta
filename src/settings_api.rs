@@ -140,20 +140,26 @@ pub async fn save_settings(
 ) -> VestaResult<impl IntoResponse> {
     let nodes = input.dashboard.nodes;
     let app = input.app;
-    let snapshot = state
+    let node_service = std::sync::Arc::clone(&state.nodes);
+    state
         .config
-        .update(|current| {
-            Ok((
-                Dashboard {
-                    nodes,
-                    items: current.dashboard.items.clone(),
-                    groups: current.dashboard.groups.clone(),
-                },
-                app,
-            ))
-        })
+        .update_with_post_publish(
+            move |current| {
+                Ok((
+                    Dashboard {
+                        nodes,
+                        items: current.dashboard.items.clone(),
+                        groups: current.dashboard.groups.clone(),
+                    },
+                    app,
+                ))
+            },
+            move |snapshot| {
+                node_service.reconfigure(&snapshot.dashboard.nodes)?;
+                Ok(())
+            },
+        )
         .await?;
-    state.nodes.reconfigure(&snapshot.dashboard.nodes)?;
     Ok(jsend::success_message("Dashboard settings saved"))
 }
 
@@ -394,7 +400,10 @@ impl PluginSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::{DashboardItemsInput, sanitize_icon_name, save_dashboard_items, valid_icon_data};
+    use super::{
+        DashboardInput, DashboardItemsInput, SettingsInput, sanitize_icon_name,
+        save_dashboard_items, save_settings, valid_icon_data,
+    };
     use serde_json::json;
 
     #[test]
@@ -582,6 +591,66 @@ mod tests {
         let snapshot = state.config.snapshot();
         assert_eq!(snapshot.items.len(), 1);
         assert!(state.plugins.record("hello-world").unwrap().is_some());
+        state.nodes.shutdown();
+    }
+
+    #[tokio::test]
+    async fn cancelled_settings_save_reconfigures_nodes_after_publication() {
+        let (_sandbox, state) = test_app_state("vesta-cancelled-settings-save").await;
+        let node = crate::metrics::node::NodeConfig {
+            id: "settings-node".to_string(),
+            name: "Settings Node".to_string(),
+            hostname: None,
+            device_name: None,
+            icon: None,
+            endpoint: "local".to_string(),
+            interval_secs: 15,
+        };
+        let (write_finished_tx, write_finished_rx) = tokio::sync::oneshot::channel();
+        let (publish_tx, publish_rx) = std::sync::mpsc::channel();
+        state.config.set_after_write_before_publish_hook(move || {
+            write_finished_tx.send(()).unwrap();
+            publish_rx.recv().unwrap();
+        });
+
+        let save = {
+            let state = std::sync::Arc::clone(&state);
+            tokio::spawn(async move {
+                save_settings(
+                    axum::Extension(state),
+                    axum::Json(SettingsInput {
+                        dashboard: DashboardInput { nodes: vec![node] },
+                        app: crate::config::AppSettings::default(),
+                    }),
+                )
+                .await
+            })
+        };
+        write_finished_rx.await.unwrap();
+        assert!(state.nodes.node_ids().is_empty());
+        save.abort();
+        assert!(matches!(save.await, Err(error) if error.is_cancelled()));
+        publish_tx.send(()).unwrap();
+
+        // The next writer cannot pass until the cancelled transaction's
+        // post-publish reconfiguration has also completed.
+        state
+            .config
+            .update(|current| Ok(((*current.dashboard).clone(), current.app.clone())))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            state
+                .config
+                .snapshot()
+                .nodes
+                .iter()
+                .map(|node| node.id.as_str())
+                .collect::<Vec<_>>(),
+            ["settings-node"]
+        );
+        assert_eq!(state.nodes.node_ids(), ["settings-node"]);
         state.nodes.shutdown();
     }
 }

@@ -88,21 +88,16 @@ impl ConfigManager {
         self.snapshot().widget(id).cloned()
     }
 
-    /// Atomically reads the latest snapshot, applies `mutate`, normalizes and
-    /// validates the result, writes it atomically to disk on a blocking thread,
-    /// and publishes the new snapshot. Holding `write_gate` across the full
-    /// read-modify-write cycle prevents concurrent saves from overwriting each
-    /// other.
+    #[cfg(test)]
+    /// Applies one validated config update with disk and snapshot publication serialized.
     pub async fn update<F>(&self, mutate: F) -> VestaResult<Arc<SettingsSnapshot>>
     where
         F: FnOnce(&SettingsSnapshot) -> VestaResult<(Dashboard, AppSettings)> + Send + 'static,
     {
-        self.update_with_guard_inner(None, mutate).await
+        self.update_inner(None, mutate, |_| Ok(())).await
     }
 
-    /// Applies a config update while retaining an external lifecycle permit
-    /// through disk write and publication. The permit is transferred into the
-    /// owned writer task after the config write gate has been acquired.
+    /// Also retains an external owned guard through the config transaction.
     pub async fn update_with_guard<F>(
         &self,
         guard: OwnedMutexGuard<()>,
@@ -111,16 +106,31 @@ impl ConfigManager {
     where
         F: FnOnce(&SettingsSnapshot) -> VestaResult<(Dashboard, AppSettings)> + Send + 'static,
     {
-        self.update_with_guard_inner(Some(guard), mutate).await
+        self.update_inner(Some(guard), mutate, |_| Ok(())).await
     }
 
-    async fn update_with_guard_inner<F>(
+    /// Runs a synchronous side effect in the owned writer after publishing the new snapshot.
+    pub async fn update_with_post_publish<F, P>(
         &self,
-        lifecycle_guard: Option<OwnedMutexGuard<()>>,
         mutate: F,
+        post_publish: P,
     ) -> VestaResult<Arc<SettingsSnapshot>>
     where
         F: FnOnce(&SettingsSnapshot) -> VestaResult<(Dashboard, AppSettings)> + Send + 'static,
+        P: FnOnce(&SettingsSnapshot) -> VestaResult<()> + Send + 'static,
+    {
+        self.update_inner(None, mutate, post_publish).await
+    }
+
+    async fn update_inner<F, P>(
+        &self,
+        lifecycle_guard: Option<OwnedMutexGuard<()>>,
+        mutate: F,
+        post_publish: P,
+    ) -> VestaResult<Arc<SettingsSnapshot>>
+    where
+        F: FnOnce(&SettingsSnapshot) -> VestaResult<(Dashboard, AppSettings)> + Send + 'static,
+        P: FnOnce(&SettingsSnapshot) -> VestaResult<()> + Send + 'static,
     {
         let write_guard = Arc::clone(&self.write_gate).lock_owned().await;
         let path = self.path.clone();
@@ -130,9 +140,7 @@ impl ConfigManager {
         #[cfg(test)]
         let after_write_before_publish = Arc::clone(&self.after_write_before_publish);
 
-        // The worker owns both serialization permits and every value needed
-        // for the full transaction. Dropping the HTTP future only drops its
-        // JoinHandle; it cannot split the atomic disk write from publication.
+        // The owned worker retains both gates through publication and side effects.
         tokio::task::spawn_blocking(move || {
             let _write_guard = write_guard;
             let _lifecycle_guard = lifecycle_guard;
@@ -162,6 +170,7 @@ impl ConfigManager {
             });
             *snapshot.write().expect("settings snapshot lock poisoned") = next.clone();
             updates.send_modify(|revision| *revision = revision.wrapping_add(1));
+            post_publish(&next)?;
             Ok(next)
         })
         .await
