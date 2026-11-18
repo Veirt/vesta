@@ -1,12 +1,12 @@
 import type {
-  DashboardItemSettings,
   DashboardGroupSettings,
+  DashboardItemSettings,
   NodeSettings,
   SettingsPayload,
   WidgetDescriptor,
-} from "@/features/settings/schema";
+} from "@/shared/schemas/core";
 
-type EditableNode = Omit<NodeSettings, "hostname" | "device_name" | "icon"> & {
+export type EditableNode = Omit<NodeSettings, "hostname" | "device_name" | "icon"> & {
   hostname: string;
   device_name: string;
   icon: string;
@@ -14,7 +14,7 @@ type EditableNode = Omit<NodeSettings, "hostname" | "device_name" | "icon"> & {
   id_touched: boolean;
 };
 
-type EditableService = {
+export type EditableService = {
   kind: "service";
   editor_id: string;
   id: string;
@@ -30,7 +30,7 @@ type EditableService = {
   ping_url: string;
 };
 
-type EditableWidget = {
+export type EditableWidget = {
   kind: "widget";
   editor_id: string;
   id: string;
@@ -44,9 +44,9 @@ type EditableWidget = {
   height: number;
 };
 
-type EditableDashboardItem = EditableService | EditableWidget;
+export type EditableDashboardItem = EditableService | EditableWidget;
 
-type EditableDashboardGroup = {
+export type EditableDashboardGroup = {
   id: string;
   title: string;
   description: string;
@@ -54,11 +54,11 @@ type EditableDashboardGroup = {
   width: number;
 };
 
-function createEditorId() {
+export function createEditorId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function createItemId(value: string, fallback: string) {
+export function createItemId(value: string, fallback: string) {
   const normalized = value
     .trim()
     .toLowerCase()
@@ -68,7 +68,7 @@ function createItemId(value: string, fallback: string) {
   return `${normalized || fallback}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function toEditableItem(item: DashboardItemSettings): EditableDashboardItem {
+export function toEditableItem(item: DashboardItemSettings): EditableDashboardItem {
   const editorId = createEditorId();
   const layout = {
     x: item.x ?? 0,
@@ -104,7 +104,7 @@ function toEditableItem(item: DashboardItemSettings): EditableDashboardItem {
 
 const DEFAULT_GROUP_WIDTH = 6;
 
-function toEditableGroup(group: DashboardGroupSettings): EditableDashboardGroup {
+export function toEditableGroup(group: DashboardGroupSettings): EditableDashboardGroup {
   const width = group.width ?? DEFAULT_GROUP_WIDTH;
   return {
     id: group.id,
@@ -115,7 +115,7 @@ function toEditableGroup(group: DashboardGroupSettings): EditableDashboardGroup 
   };
 }
 
-function serializeDashboardItems(
+export function serializeDashboardItems(
   items: EditableDashboardItem[],
   widgetDescriptors: WidgetDescriptor[],
 ): DashboardItemSettings[] {
@@ -156,7 +156,9 @@ function serializeDashboardItems(
   });
 }
 
-function serializeDashboardGroups(groups: EditableDashboardGroup[]): DashboardGroupSettings[] {
+export function serializeDashboardGroups(
+  groups: EditableDashboardGroup[],
+): DashboardGroupSettings[] {
   return groups.map((group) => ({
     id: group.id,
     title: group.title.trim(),
@@ -166,7 +168,7 @@ function serializeDashboardGroups(groups: EditableDashboardGroup[]): DashboardGr
   }));
 }
 
-function createSettingsPayload(
+export function createSettingsPayload(
   nodes: EditableNode[],
   app: SettingsPayload["app"],
 ): SettingsPayload {
@@ -186,7 +188,7 @@ function createSettingsPayload(
   };
 }
 
-function slug(value: string, fallback: string) {
+export function slug(value: string, fallback: string) {
   const normalized = value
     .trim()
     .toLowerCase()
@@ -194,21 +196,3 @@ function slug(value: string, fallback: string) {
     .replace(/^-|-$/g, "");
   return normalized || fallback;
 }
-
-export {
-  createEditorId,
-  createItemId,
-  createSettingsPayload,
-  serializeDashboardItems,
-  serializeDashboardGroups,
-  slug,
-  toEditableGroup,
-  toEditableItem,
-};
-export type {
-  EditableDashboardGroup,
-  EditableDashboardItem,
-  EditableNode,
-  EditableService,
-  EditableWidget,
-};

@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
+import { fetchDashboard } from "@/shared/api/client";
+import { parseEvent } from "@/shared/schemas/api";
 import {
   DashboardDataSchema,
-  fetchDashboard,
   NodeEventSchema,
-  parseEvent,
   type DashboardData,
   type DashboardAppSettings,
   type DashboardGroup,
   type DashboardItem,
   type DashboardNode,
   type Stats,
-} from "@/features/dashboard/schema";
+} from "@/shared/schemas/core";
 
 type Sample = { time: number; value: number };
 type MetricName = "cpu" | "memory" | "disk" | "load";

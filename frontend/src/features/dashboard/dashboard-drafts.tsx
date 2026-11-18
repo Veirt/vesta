@@ -1,6 +1,5 @@
-import type { EditableDashboardItem } from "@/features/settings/models";
-import type { DashboardGroupSection } from "@/features/dashboard/tile-grid";
-import { minSizeFor } from "@/features/dashboard/tile-sizes";
+import type { EditableDashboardItem } from "@/shared/lib/draft-models";
+import { minSizeFor, type DashboardGroupSection } from "@/shared/lib/layout";
 import type { LayoutEntry } from "@/features/dashboard/use-dashboard-editor";
 import { useDashboardEditor } from "@/features/dashboard/use-dashboard-editor";
 import { DashboardEditGroup } from "@/features/dashboard/dashboard-edit-group";

@@ -1,14 +1,14 @@
-import { groupSpanOf, minSizeFor } from "@/features/dashboard/tile-sizes";
+import { groupSpanOf, minSizeFor } from "@/shared/lib/layout";
 import type {
   EditableDashboardGroup,
   EditableDashboardItem,
   EditableWidget,
-} from "@/features/settings/models";
-import type { WidgetDescriptor } from "@/features/settings/schema";
+} from "@/shared/lib/draft-models";
+import type { WidgetDescriptor } from "@/shared/schemas/core";
 
-type ValidationIssue = { id: string; title: string; message: string };
+export type ValidationIssue = { id: string; title: string; message: string };
 
-function validHttpUrl(value: string) {
+export function validHttpUrl(value: string) {
   try {
     const url = new URL(value);
     return (url.protocol === "http:" || url.protocol === "https:") && Boolean(url.hostname);
@@ -17,11 +17,11 @@ function validHttpUrl(value: string) {
   }
 }
 
-function validLink(value: string) {
+export function validLink(value: string) {
   return (value.startsWith("/") && !value.startsWith("//")) || validHttpUrl(value);
 }
 
-function validImage(value: string) {
+export function validImage(value: string) {
   return /^\/api\/icons\/\d+$/.test(value) || validHttpUrl(value);
 }
 
@@ -89,7 +89,7 @@ function validateWidget(
   return issues;
 }
 
-function validateDashboardItems(
+export function validateDashboardItems(
   items: EditableDashboardItem[],
   widgets: WidgetDescriptor[],
   nodes: Array<{ id: string }>,
@@ -136,7 +136,7 @@ function validateDashboardItems(
   return issues;
 }
 
-function validateDashboardGroups(groups: EditableDashboardGroup[]): ValidationIssue[] {
+export function validateDashboardGroups(groups: EditableDashboardGroup[]): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const titles = new Set<string>();
   for (const group of groups) {
@@ -170,6 +170,3 @@ function validateDashboardGroups(groups: EditableDashboardGroup[]): ValidationIs
   }
   return issues;
 }
-
-export { validateDashboardGroups, validateDashboardItems };
-export type { ValidationIssue };

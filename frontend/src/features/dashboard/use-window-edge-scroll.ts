@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { eventClientY } from "@/features/dashboard/tile-grid";
+import { eventClientY } from "@/shared/lib/layout";
 
 /**
  * While a tile drag is in progress, auto-scroll the window when the pointer

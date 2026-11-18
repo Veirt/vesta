@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { Theme } from "@/features/settings/schema";
+import type { Theme } from "@/shared/schemas/core";
 
 function useTheme(theme: Theme) {
   useEffect(() => {

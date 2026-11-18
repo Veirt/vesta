@@ -1,8 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Field } from "@/features/settings/components/form-field";
-import { inputClass } from "@/features/settings/components/styles";
-import type { AppSettings, Theme } from "@/features/settings/schema";
+import { Field } from "@/shared/components/form-field";
+import { inputClass } from "@/shared/components/styles";
+import type { AppSettings, Theme } from "@/shared/schemas/core";
 
 function AppearanceSection({
   settings,

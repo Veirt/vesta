@@ -2,10 +2,10 @@ import { IconArrowLeft } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { AuthPanel } from "@/features/settings/components/auth-panel";
-import { buttonClass } from "@/features/settings/components/styles";
+import { buttonClass } from "@/shared/components/styles";
 import { SettingsEditor } from "@/features/settings/settings-editor";
-import { fetchAuthStatus, signOut } from "@/features/settings/api";
-import type { AuthStatus } from "@/features/settings/schema";
+import { fetchAuthStatus, signOut } from "@/shared/api/client";
+import type { AuthStatus } from "@/shared/schemas/api";
 
 function SettingsPage() {
   const [status, setStatus] = useState<AuthStatus | null>(null);

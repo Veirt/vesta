@@ -7,14 +7,10 @@ import {
 } from "@tabler/icons-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Field } from "@/features/settings/components/form-field";
-import { IconField } from "@/features/settings/components/icon-field";
-import {
-  buttonClass,
-  destructiveButtonClass,
-  inputClass,
-} from "@/features/settings/components/styles";
-import type { EditableNode } from "@/features/settings/models";
+import { Field } from "@/shared/components/form-field";
+import { IconField } from "@/shared/components/icon-field";
+import { buttonClass, destructiveButtonClass, inputClass } from "@/shared/components/styles";
+import type { EditableNode } from "@/shared/lib/draft-models";
 
 function NodesSection({
   nodes,

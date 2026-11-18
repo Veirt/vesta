@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { fetchSettings, saveSettings, uploadIcon } from "@/features/settings/api";
-import { createEditorId, createSettingsPayload, slug } from "@/features/settings/models";
-import type { EditableNode } from "@/features/settings/models";
-import type { AppSettings, SettingsPayload, WidgetDescriptor } from "@/features/settings/schema";
-import { useTheme } from "@/features/settings/theme";
+import { fetchSettings, saveSettings, uploadIcon } from "@/shared/api/client";
+import { createEditorId, createSettingsPayload, slug } from "@/shared/lib/draft-models";
+import type { EditableNode } from "@/shared/lib/draft-models";
+import type { AppSettings, SettingsPayload, WidgetDescriptor } from "@/shared/schemas/core";
+import { useTheme } from "@/shared/lib/theme";
 
 type SavedDraft = {
   app: AppSettings;

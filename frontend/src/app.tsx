@@ -6,7 +6,7 @@ import { OverviewSection } from "@/features/dashboard/overview-section";
 import { useDashboard } from "@/features/dashboard/use-dashboard";
 import { DashboardHeader } from "@/features/dashboard/dashboard-header";
 import { SettingsPage } from "@/features/settings/settings-page";
-import { useTheme } from "@/features/settings/theme";
+import { useTheme } from "@/shared/lib/theme";
 
 function Dashboard() {
   const { nodes, items, groups, app, history, error, loading } = useDashboard();

@@ -1,9 +1,9 @@
-import type { DashboardItem as DashboardItemData } from "@/features/dashboard/schema";
+import type { DashboardItem as DashboardItemData } from "@/shared/schemas/core";
 import { DashboardDrafts } from "@/features/dashboard/dashboard-drafts";
 import { DashboardViewGroups } from "@/features/dashboard/dashboard-view-groups";
-import type { DashboardGroupSection } from "@/features/dashboard/tile-grid";
+import type { DashboardGroupSection } from "@/shared/lib/layout";
 import { useDashboardEditor, type LayoutEntry } from "@/features/dashboard/use-dashboard-editor";
-import type { EditableDashboardItem } from "@/features/settings/models";
+import type { EditableDashboardItem } from "@/shared/lib/draft-models";
 
 /**
  * The body of the Apps-and-widgets section: loading placeholder, edit-mode

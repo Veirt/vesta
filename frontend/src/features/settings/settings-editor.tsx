@@ -3,7 +3,7 @@ import { AppearanceSection } from "@/features/settings/components/appearance-sec
 import { NodesSection } from "@/features/settings/components/nodes-section";
 import { PluginsSection } from "@/features/settings/components/plugins-section";
 import { WidgetCatalog } from "@/features/settings/components/widget-catalog";
-import { buttonClass, primaryButtonClass } from "@/features/settings/components/styles";
+import { buttonClass, primaryButtonClass } from "@/shared/components/styles";
 import { useSettingsEditor } from "@/features/settings/use-settings-editor";
 
 const sections = [

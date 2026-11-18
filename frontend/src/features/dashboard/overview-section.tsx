@@ -1,7 +1,7 @@
 import { IconActivity, IconClock, IconCpu, IconDatabase, IconServer } from "@tabler/icons-react";
 import { lazy, Suspense } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { DashboardNode } from "@/features/dashboard/schema";
+import type { DashboardNode } from "@/shared/schemas/core";
 import {
   formatAge,
   formatBytes,

@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WidgetPreview } from "@/features/dashboard/tile-renderers";
-import type { WidgetDescriptor } from "@/features/settings/schema";
+import type { WidgetDescriptor } from "@/shared/schemas/core";
 
 function WidgetCatalog({
   widgets,

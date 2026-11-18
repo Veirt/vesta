@@ -7,9 +7,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { ValidationIssue } from "@/features/dashboard/validation";
+import type { ValidationIssue } from "@/shared/lib/validation";
 import { useDashboardEditor } from "@/features/dashboard/use-dashboard-editor";
-import { buttonClass, primaryButtonClass } from "@/features/settings/components/styles";
+import { buttonClass, primaryButtonClass } from "@/shared/components/styles";
 
 /** Section heading for the Apps-and-widgets block, with the edit-mode buttons. */
 function DashboardItemsHeader({

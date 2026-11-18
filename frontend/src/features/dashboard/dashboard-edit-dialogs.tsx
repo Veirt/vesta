@@ -9,19 +9,19 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import type { EditableDashboardGroup, EditableDashboardItem } from "@/features/settings/models";
-import type { WidgetDescriptor } from "@/features/settings/schema";
-import { Field } from "@/features/settings/components/form-field";
-import { IconField } from "@/features/settings/components/icon-field";
-import { WidgetConfigFields } from "@/features/settings/components/widget-config-fields";
+import type { EditableDashboardGroup, EditableDashboardItem } from "@/shared/lib/draft-models";
+import type { WidgetDescriptor } from "@/shared/schemas/core";
+import { Field } from "@/shared/components/form-field";
+import { IconField } from "@/shared/components/icon-field";
+import { WidgetConfigFields } from "@/features/widgets/widget-config-fields";
 import {
   buttonClass,
   destructiveButtonClass,
   inputClass,
   primaryButtonClass,
-} from "@/features/settings/components/styles";
-import { testPingUrl } from "@/features/settings/api";
-import { groupSpanOf, minSizeFor, type TileSize } from "@/features/dashboard/tile-sizes";
+} from "@/shared/components/styles";
+import { testPingUrl } from "@/shared/api/client";
+import { groupSpanOf, minSizeFor, type TileSize } from "@/shared/lib/layout";
 import { useDashboardEditor } from "@/features/dashboard/use-dashboard-editor";
 
 const sizeOptions = [

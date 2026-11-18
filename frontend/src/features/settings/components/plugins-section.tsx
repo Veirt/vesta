@@ -1,12 +1,8 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { installPlugin, listPlugins, uninstallPlugin, updatePlugin } from "@/features/settings/api";
-import type { Plugin } from "@/features/settings/schema";
-import {
-  buttonClass,
-  destructiveButtonClass,
-  inputClass,
-} from "@/features/settings/components/styles";
+import { installPlugin, listPlugins, uninstallPlugin, updatePlugin } from "@/shared/api/client";
+import type { Plugin } from "@/shared/schemas/core";
+import { buttonClass, destructiveButtonClass, inputClass } from "@/shared/components/styles";
 
 function PluginsSection() {
   const [plugins, setPlugins] = useState<Plugin[]>([]);

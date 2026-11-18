@@ -1,4 +1,4 @@
-import type { DashboardNode } from "@/features/dashboard/schema";
+import type { DashboardNode } from "@/shared/schemas/core";
 
 export function formatBytes(bytes: number) {
   return `${(bytes / 1_073_741_824).toFixed(1)} GB`;

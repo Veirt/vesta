@@ -1,7 +1,7 @@
 import { useId, type ChangeEvent } from "react";
 import { IconPhoto, IconUpload, IconX } from "@tabler/icons-react";
 import { Input } from "@/components/ui/input";
-import { buttonClass, inputClass } from "@/features/settings/components/styles";
+import { buttonClass, inputClass } from "@/shared/components/styles";
 
 function IconField({
   value,

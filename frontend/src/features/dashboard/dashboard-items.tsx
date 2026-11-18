@@ -1,20 +1,17 @@
 import { useEffect, useState } from "react";
-import type {
-  DashboardItem as DashboardItemData,
-  DashboardGroup,
-} from "@/features/dashboard/schema";
+import type { DashboardItem as DashboardItemData, DashboardGroup } from "@/shared/schemas/core";
 import {
   DashboardEditBanners,
   DashboardItemsHeader,
 } from "@/features/dashboard/dashboard-edit-chrome";
 import { DashboardEditDialogs } from "@/features/dashboard/dashboard-edit-dialogs";
 import { DashboardTilesArea } from "@/features/dashboard/dashboard-tiles-area";
-import { groupDashboardItems, type DashboardGroupSection } from "@/features/dashboard/tile-grid";
+import { groupDashboardItems, type DashboardGroupSection } from "@/shared/lib/layout";
 import { useDashboardEditor, type LayoutEntry } from "@/features/dashboard/use-dashboard-editor";
 import { useWindowEdgeScroll } from "@/features/dashboard/use-window-edge-scroll";
-import { validateDashboardGroups, validateDashboardItems } from "@/features/dashboard/validation";
-import { fetchAuthStatus } from "@/features/settings/api";
-import type { EditableDashboardItem } from "@/features/settings/models";
+import { validateDashboardGroups, validateDashboardItems } from "@/shared/lib/validation";
+import { fetchAuthStatus } from "@/shared/api/client";
+import type { EditableDashboardItem } from "@/shared/lib/draft-models";
 
 /**
  * Locate the currently edited tile/group within the draft sections, plus its

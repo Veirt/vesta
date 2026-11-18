@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
-import type { DashboardItem as DashboardItemData } from "@/features/dashboard/schema";
+import type { DashboardItem as DashboardItemData } from "@/shared/schemas/core";
 import { ServiceCard, WidgetCard } from "@/features/dashboard/tile-renderers";
-import type { DashboardGroupSection } from "@/features/dashboard/tile-grid";
+import type { DashboardGroupSection } from "@/shared/lib/layout";
 
 /** Read-only dashboard sections: group heading plus a grid of tiles. */
 function DashboardViewGroups({

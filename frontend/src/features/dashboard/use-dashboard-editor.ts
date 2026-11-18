@@ -5,13 +5,11 @@ import {
   serializeDashboardItems,
   toEditableGroup,
   toEditableItem,
-} from "@/features/settings/models";
-import type {
-  EditableDashboardGroup,
-  EditableDashboardItem,
-  EditableService,
-  EditableWidget,
-} from "@/features/settings/models";
+  type EditableDashboardGroup,
+  type EditableDashboardItem,
+  type EditableService,
+  type EditableWidget,
+} from "@/shared/lib/draft-models";
 import {
   clampTileSize,
   DEFAULT_GROUP_SPAN,
@@ -20,9 +18,9 @@ import {
   MIN_GROUP_SPAN,
   minSizeFor,
   widgetMinSize,
-} from "@/features/dashboard/tile-sizes";
-import { fetchSettings, saveDashboardItems, uploadIcon } from "@/features/settings/api";
-import type { NodeSettings, WidgetDescriptor } from "@/features/settings/schema";
+} from "@/shared/lib/layout";
+import { fetchSettings, saveDashboardItems, uploadIcon } from "@/shared/api/client";
+import type { NodeSettings, WidgetDescriptor } from "@/shared/schemas/core";
 
 type LayoutEntry = { i: string; x: number; y: number; w: number; h: number };
 

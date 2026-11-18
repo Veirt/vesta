@@ -21,7 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { DashboardItem as DashboardItemData } from "@/features/dashboard/schema";
+import type { DashboardItem as DashboardItemData, WidgetDescriptor } from "@/shared/schemas/core";
 import {
   TILE_GRID_GAP,
   TILE_MAX_SPAN,
@@ -30,12 +30,11 @@ import {
   gridUnitsFor,
   type EditSection,
   type TileResizeState,
-} from "@/features/dashboard/tile-grid";
+  type TileSize,
+} from "@/shared/lib/layout";
 import { ServiceCard, WidgetCard } from "@/features/dashboard/tile-renderers";
-import type { TileSize } from "@/features/dashboard/tile-sizes";
 import type { LayoutEntry } from "@/features/dashboard/use-dashboard-editor";
-import type { EditableDashboardItem } from "@/features/settings/models";
-import type { WidgetDescriptor } from "@/features/settings/schema";
+import type { EditableDashboardItem } from "@/shared/lib/draft-models";
 
 function editableAsDashboardItem(item: EditableDashboardItem): DashboardItemData {
   if (item.kind === "service") {

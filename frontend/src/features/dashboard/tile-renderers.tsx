@@ -1,6 +1,7 @@
 import { IconPhotoOff } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, type CSSProperties, type ReactNode, useState } from "react";
-import type { DashboardService, DashboardWidget } from "@/features/dashboard/schema";
+import { fetchWidgetData, pingService } from "@/shared/api/client";
+import type { DashboardService, DashboardWidget } from "@/shared/schemas/core";
 
 type WidgetData = Record<string, unknown>;
 
@@ -20,45 +21,9 @@ function useWidgetData(widgetName: string, itemId: string, refreshInterval: numb
 
   useEffect(() => {
     const controller = new AbortController();
-    const params = new URLSearchParams({ id: itemId });
-    // Resolves the validated widget payload; all state updates happen in the
-    // guarded .then/.catch handlers below so stale runs never write state.
-    const loadWidget = async (): Promise<WidgetData> => {
-      const response = await fetch(
-        `/api/widgets/${encodeURIComponent(widgetName)}?${params.toString()}`,
-        { cache: "no-store", signal: controller.signal },
-      );
-      const result: unknown = await response.json();
-      // Non-success responses carry a jsend "error" body whose message
-      // names what went wrong; prefer it over a bare status code.
-      const asMessage = (candidate: unknown): string | null =>
-        typeof candidate === "object" &&
-        candidate !== null &&
-        typeof (candidate as { message?: unknown }).message === "string"
-          ? ((candidate as { message: string }).message as string)
-          : null;
-      if (!response.ok) {
-        throw new Error(asMessage(result) ?? `Widget request failed (${response.status})`);
-      }
-      if (
-        !result ||
-        typeof result !== "object" ||
-        !("status" in result) ||
-        result.status !== "success" ||
-        !("data" in result) ||
-        !result.data ||
-        typeof result.data !== "object" ||
-        !("widget" in result.data) ||
-        !result.data.widget ||
-        typeof result.data.widget !== "object"
-      ) {
-        throw new Error("The server returned invalid widget data");
-      }
-      return result.data.widget as WidgetData;
-    };
 
     const refresh = () => {
-      void loadWidget()
+      void fetchWidgetData(widgetName, itemId, controller.signal)
         .then((widget) => {
           if (!controller.signal.aborted) {
             setData(widget);
@@ -93,20 +58,10 @@ function PingStatus({ id }: { id: string }) {
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
-    const params = new URLSearchParams({ id });
     const check = async () => {
       try {
-        const response = await fetch(`/api/ping?${params.toString()}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        const result = (await response.json()) as {
-          status?: string;
-          data?: { up?: unknown };
-        };
-        if (response.ok && result.status === "success" && typeof result.data?.up === "boolean") {
-          if (active) setIsUp(result.data.up);
-        }
+        const up = await pingService(id, controller.signal);
+        if (active) setIsUp(up);
       } catch {
         if (active) setIsUp(false);
       }

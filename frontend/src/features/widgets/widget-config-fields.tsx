@@ -1,16 +1,12 @@
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
-import { Field } from "@/features/settings/components/form-field";
-import { IconField } from "@/features/settings/components/icon-field";
-import {
-  buttonClass,
-  destructiveButtonClass,
-  inputClass,
-} from "@/features/settings/components/styles";
-import type { EditableWidget } from "@/features/settings/models";
-import { loadRemoteOptions, type RemoteOption } from "@/features/settings/remote-options";
-import type { WidgetDescriptor, WidgetField } from "@/features/settings/schema";
+import { Field } from "@/shared/components/form-field";
+import { IconField } from "@/shared/components/icon-field";
+import { buttonClass, destructiveButtonClass, inputClass } from "@/shared/components/styles";
+import type { EditableWidget } from "@/shared/lib/draft-models";
+import { loadRemoteOptions, type RemoteOption } from "@/shared/api/client";
+import type { WidgetDescriptor, WidgetField } from "@/shared/schemas/core";
 
 type QuickLink = { title: string; url: string; icon: string };
 

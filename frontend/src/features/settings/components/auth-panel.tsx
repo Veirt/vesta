@@ -2,9 +2,9 @@ import { IconSettings } from "@tabler/icons-react";
 import { useState, type FormEvent } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { submitPassword } from "@/features/settings/api";
-import { Field } from "@/features/settings/components/form-field";
-import { inputClass, primaryButtonClass } from "@/features/settings/components/styles";
+import { submitPassword } from "@/shared/api/client";
+import { Field } from "@/shared/components/form-field";
+import { inputClass, primaryButtonClass } from "@/shared/components/styles";
 
 function AuthPanel({
   setupRequired,

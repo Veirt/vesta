@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { DashboardNode } from "@/features/dashboard/schema";
+import type { DashboardNode } from "@/shared/schemas/core";
 import { formatAge, formatUptime, nodeAge, nodeStatus } from "@/features/servers/node-health";
 import { Status } from "@/features/servers/status";
 
