@@ -5,8 +5,8 @@
     "commitlint": "commitlint",
     "build": "vp build",
     "preview": "vp preview",
-    "check": "vp check frontend/src vite.config.ts package.json components.json tsconfig.json frontend/index.html src/style.css && tsc --noEmit",
-    "fmt": "vp fmt frontend/src vite.config.ts package.json components.json tsconfig.json frontend/index.html src/style.css",
+    "check": "vp check frontend/src vite.config.ts package.json components.json tsconfig.json frontend/index.html && tsc --noEmit",
+    "fmt": "vp fmt frontend/src vite.config.ts package.json components.json tsconfig.json frontend/index.html",
     "lint": "vp lint frontend/src vite.config.ts"
   },
   "dependencies": {

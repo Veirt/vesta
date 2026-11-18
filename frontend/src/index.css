@@ -1,8 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "../../src/style.css";
-
-@source "../../src";
+@import "./styles/widgets.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -140,30 +138,6 @@
   border: 0;
 }
 
-.skip-link {
-  position: fixed;
-  z-index: 100;
-  top: 0.75rem;
-  left: 0.75rem;
-  transform: translateY(-150%);
-  border-radius: 0.5rem;
-  background: var(--primary);
-  padding: 0.75rem 1rem;
-  color: var(--primary-foreground);
-}
-
-.skip-link:focus {
-  transform: translateY(0);
-}
-
-.is-filtered-out {
-  display: none !important;
-}
-
-.mobile-menu-overlay {
-  display: none;
-}
-
 @media (max-width: 52rem) {
   .app-sidebar {
     transform: translateX(-100%);
@@ -172,15 +146,6 @@
 
   .mobile-menu-open .app-sidebar {
     transform: translateX(0);
-  }
-
-  .mobile-menu-open .mobile-menu-overlay {
-    position: fixed;
-    z-index: 20;
-    inset: 0;
-    display: block;
-    border: 0;
-    background: rgb(0 0 0 / 60%);
   }
 }
 

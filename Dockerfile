@@ -8,7 +8,6 @@ RUN --mount=type=cache,target=/root/.bun/install/cache,sharing=locked \
     bun install --frozen-lockfile
 COPY vite.config.ts tsconfig.json components.json ./
 COPY frontend ./frontend
-COPY src ./src
 RUN bun run build
 
 FROM --platform=$BUILDPLATFORM rust:1.99.1-slim-bookworm AS build

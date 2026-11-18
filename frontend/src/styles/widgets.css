@@ -119,14 +119,6 @@ a.service-card:hover {
   background: var(--red);
 }
 
-.compact-empty {
-  min-height: 3.5rem;
-  border: 1px dashed var(--line);
-  border-radius: 0.625rem;
-  color: var(--text-muted);
-  font-size: 0.8125rem;
-}
-
 .widget-frame {
   display: flex;
   width: 100%;
@@ -730,13 +722,6 @@ a.service-card:hover {
 .jellyfin-widget:hover .jellyfin-poster-title,
 .jellyfin-widget:focus-visible .jellyfin-poster-title {
   opacity: 1;
-}
-
-.service-row-icon {
-  width: 1rem;
-  height: 1rem;
-  flex: 0 0 auto;
-  color: var(--muted-foreground);
 }
 
 .widget-error {

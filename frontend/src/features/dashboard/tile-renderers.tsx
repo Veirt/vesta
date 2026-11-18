@@ -428,7 +428,7 @@ function WeatherWidget({ data }: { data: WidgetData }) {
           </div>
           <div className="weather-description">{current.description}</div>
         </div>
-        <div className="flex-shrink-0 text-3xl" aria-hidden="true">
+        <div className="shrink-0 text-3xl" aria-hidden="true">
           {current.icon}
         </div>
       </div>
