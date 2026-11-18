@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -16,7 +16,13 @@ pub struct NodeExporterCollector {
     client: Client,
     /// Last scrape's (idle, total) CPU seconds per endpoint, with wall-clock
     /// time. A Mutex is fine: one writer per endpoint, held for microseconds.
-    previous_cpu: Mutex<HashMap<String, CpuBaseline>>,
+    cpu_state: Mutex<CpuState>,
+}
+
+#[derive(Default)]
+struct CpuState {
+    previous: HashMap<String, CpuBaseline>,
+    active_endpoints: Option<HashSet<String>>,
 }
 
 #[derive(Clone, Copy)]
@@ -29,8 +35,16 @@ impl NodeExporterCollector {
     pub fn new(client: Client) -> Self {
         Self {
             client,
-            previous_cpu: Mutex::new(HashMap::new()),
+            cpu_state: Mutex::new(CpuState::default()),
         }
+    }
+
+    pub(crate) fn set_active_endpoints(&self, endpoints: &HashSet<String>) {
+        let mut state = self.cpu_state.lock().expect("cpu baseline lock");
+        state
+            .previous
+            .retain(|endpoint, _| endpoints.contains(endpoint));
+        state.active_endpoints = Some(endpoints.clone());
     }
 
     pub async fn scrape(&self, endpoint: &str) -> Result<NodeStats, MetricsError> {
@@ -78,16 +92,23 @@ impl NodeExporterCollector {
     fn cpu_percent(&self, endpoint: &str, samples: &[Sample]) -> Result<f64, MetricsError> {
         let (idle_now, total_now) = cpu_counters(samples)?;
 
-        let mut baselines = self.previous_cpu.lock().expect("cpu baseline lock");
-        let previous = baselines.get(endpoint).copied();
-        baselines.insert(
+        let mut state = self.cpu_state.lock().expect("cpu baseline lock");
+        let active = state
+            .active_endpoints
+            .as_ref()
+            .is_none_or(|endpoints| endpoints.contains(endpoint));
+        if !active {
+            return Ok(0.0);
+        }
+        let previous = state.previous.get(endpoint).copied();
+        state.previous.insert(
             endpoint.to_string(),
             CpuBaseline {
                 idle_seconds: idle_now,
                 total_seconds: total_now,
             },
         );
-        drop(baselines);
+        drop(state);
 
         Ok(match previous {
             Some(prev) => {
@@ -222,6 +243,16 @@ fn boot_time_to_uptime(boot_time_secs: f64) -> u64 {
 mod tests {
     use super::*;
 
+    fn cpu_samples(idle: f64, user: f64) -> Vec<Sample> {
+        let exposition = [
+            format!("node_cpu_seconds_total{{cpu=\"0\",mode=\"idle\"}} {idle}"),
+            format!("node_cpu_seconds_total{{cpu=\"0\",mode=\"user\"}} {user}"),
+        ];
+        Scrape::parse(exposition.into_iter().map(Ok))
+            .unwrap()
+            .samples
+    }
+
     #[test]
     fn disk_usage_selects_root_even_when_boot_is_listed_first() {
         let exposition = [
@@ -240,5 +271,37 @@ mod tests {
         assert_eq!(disk.mount, "/");
         assert_eq!(disk.total, 10_000.0);
         assert_eq!(disk.used, 7_500.0);
+    }
+
+    #[test]
+    fn endpoint_pruning_keeps_active_cpu_baselines_and_resets_removed_ones() {
+        let collector = NodeExporterCollector::new(Client::new());
+        assert_eq!(
+            collector
+                .cpu_percent("active", &cpu_samples(100.0, 100.0))
+                .unwrap(),
+            0.0
+        );
+        assert_eq!(
+            collector
+                .cpu_percent("removed", &cpu_samples(100.0, 100.0))
+                .unwrap(),
+            0.0
+        );
+
+        collector.set_active_endpoints(&HashSet::from(["active".to_string()]));
+
+        assert_eq!(
+            collector
+                .cpu_percent("active", &cpu_samples(105.0, 105.0))
+                .unwrap(),
+            50.0
+        );
+        assert_eq!(
+            collector
+                .cpu_percent("removed", &cpu_samples(105.0, 105.0))
+                .unwrap(),
+            0.0
+        );
     }
 }

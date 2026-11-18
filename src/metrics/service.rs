@@ -22,6 +22,7 @@ pub enum NodeObservation {
 /// Owns every node poller. Each configured node runs one supervised task with
 /// a fixed interval; shutting down aborts them all (every task is owned).
 pub struct NodeService {
+    exporter: Arc<NodeExporterCollector>,
     observations: Arc<RwLock<HashMap<String, NodeObservation>>>,
     updates: broadcast::Sender<(String, Option<NodeStats>)>,
     configuration: watch::Sender<Vec<NodeConfig>>,
@@ -32,6 +33,7 @@ impl NodeService {
     /// Spawns one poller per node. Call `shutdown` to cancel them.
     pub fn start(nodes: &[NodeConfig], client: reqwest::Client) -> Arc<Self> {
         let exporter = Arc::new(NodeExporterCollector::new(client));
+        exporter.set_active_endpoints(&remote_exporter_endpoints(nodes));
         let local = LocalCollector::new();
         let observations: Arc<RwLock<HashMap<String, NodeObservation>>> =
             Arc::new(RwLock::new(HashMap::new()));
@@ -40,13 +42,14 @@ impl NodeService {
         let (configuration, receiver) = watch::channel(nodes.to_vec());
         let supervisor = tokio::spawn(run_supervisor(
             receiver,
-            exporter,
+            Arc::clone(&exporter),
             local,
             Arc::clone(&observations),
             updates.clone(),
         ));
 
         Arc::new(Self {
+            exporter,
             observations,
             updates,
             configuration,
@@ -89,6 +92,8 @@ impl NodeService {
 
     pub fn reconfigure(&self, nodes: &[NodeConfig]) -> Result<(), MetricsError> {
         crate::validation::validate_nodes(nodes).map_err(MetricsError)?;
+        self.exporter
+            .set_active_endpoints(&remote_exporter_endpoints(nodes));
         self.configuration.send_replace(nodes.to_vec());
         Ok(())
     }
@@ -97,6 +102,14 @@ impl NodeService {
     pub fn shutdown(&self) {
         self.supervisor.abort();
     }
+}
+
+fn remote_exporter_endpoints(nodes: &[NodeConfig]) -> HashSet<String> {
+    nodes
+        .iter()
+        .filter(|node| !node.is_local())
+        .map(|node| node.endpoint.clone())
+        .collect()
 }
 
 async fn run_supervisor(
@@ -213,6 +226,20 @@ mod tests {
         assert!(crate::validation::validate_nodes(&[node("a"), node("b")]).is_ok());
         let err = crate::validation::validate_nodes(&[node("a"), node("a")]).unwrap_err();
         assert!(err.contains("duplicate node id 'a'"));
+    }
+
+    #[test]
+    fn exporter_endpoints_include_only_configured_remote_nodes() {
+        let local = node("local");
+        let remote = NodeConfig {
+            endpoint: "https://nas.example/metrics".to_string(),
+            ..node("nas")
+        };
+
+        assert_eq!(
+            remote_exporter_endpoints(&[local, remote]),
+            HashSet::from(["https://nas.example/metrics".to_string()])
+        );
     }
 
     #[tokio::test]
