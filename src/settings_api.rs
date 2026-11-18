@@ -161,9 +161,12 @@ pub async fn save_dashboard_items(
     Extension(state): Extension<std::sync::Arc<AppState>>,
     Json(input): Json<DashboardItemsInput>,
 ) -> VestaResult<impl IntoResponse> {
+    #[cfg(test)]
+    state.lifecycle_test_hooks.dashboard_save_started().await;
+    let lifecycle_guard = std::sync::Arc::clone(&state.plugin_ops).lock_owned().await;
     state
         .config
-        .update(|current| {
+        .update_with_guard(lifecycle_guard, move |current| {
             Ok((
                 Dashboard {
                     nodes: current.dashboard.nodes.clone(),
@@ -391,7 +394,8 @@ impl PluginSummary {
 
 #[cfg(test)]
 mod tests {
-    use super::{sanitize_icon_name, valid_icon_data};
+    use super::{DashboardItemsInput, sanitize_icon_name, save_dashboard_items, valid_icon_data};
+    use serde_json::json;
 
     #[test]
     fn uploaded_icons_must_match_a_supported_raster_signature() {
@@ -405,5 +409,179 @@ mod tests {
     fn icon_filename_cannot_include_a_path() {
         assert_eq!(sanitize_icon_name("../../jellyfin.png"), "jellyfin.png");
         assert_eq!(sanitize_icon_name("\n"), "icon");
+    }
+
+    async fn test_app_state(
+        prefix: &str,
+    ) -> (
+        crate::plugins::test_fixtures::TempDir,
+        std::sync::Arc<crate::AppState>,
+    ) {
+        let sandbox = crate::plugins::test_fixtures::temp_dir(prefix);
+        let static_dir = sandbox.path().join("static");
+        std::fs::create_dir_all(&static_dir).unwrap();
+        let settings = crate::Settings {
+            config_path: sandbox.path().join("config.toml").display().to_string(),
+            database_path: sandbox.path().join("vesta.db").display().to_string(),
+            plugins_dir: sandbox.path().join("plugins").display().to_string(),
+            bind_addr: "127.0.0.1:0".to_string(),
+            static_dir: static_dir.display().to_string(),
+            cookie_secure: false,
+        };
+        (sandbox, crate::AppState::new(&settings).await.unwrap())
+    }
+
+    fn counter_tile_input() -> DashboardItemsInput {
+        serde_json::from_value(json!({
+            "items": [{
+                "kind": "widget",
+                "id": "counter-1",
+                "title": "Counter",
+                "name": "Plugin:hello-world:counter",
+                "config": { "label": "Hits", "start_value": 2 },
+                "x": 0,
+                "y": 0,
+                "width": 3,
+                "height": 2
+            }]
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn plugin_mutation_and_registry_publish_finish_after_request_cancellation() {
+        let (_sandbox, state) = test_app_state("vesta-cancelled-plugin-lifecycle").await;
+        let repo = crate::plugins::test_fixtures::git_fixture_repo(
+            &crate::plugins::test_fixtures::fixture_dir("hello-world"),
+            "cancelled-lifecycle",
+        );
+        let source = repo.path().display().to_string();
+        let (mutation_finished, continue_publish) = state
+            .lifecycle_test_hooks
+            .hold_after_plugin_mutation()
+            .await;
+
+        let install = {
+            let state = std::sync::Arc::clone(&state);
+            tokio::spawn(async move { state.install_plugin(&source).await })
+        };
+        mutation_finished.await.unwrap();
+        install.abort();
+        assert!(install.await.unwrap_err().is_cancelled());
+        continue_publish.send(()).unwrap();
+
+        // Acquiring the shared gate is a barrier: the worker releases it only
+        // after it has rebuilt and published the registry.
+        let _lifecycle = std::sync::Arc::clone(&state.plugin_ops).lock_owned().await;
+        assert!(state.plugins.record("hello-world").unwrap().is_some());
+        assert!(
+            state
+                .widget_registry
+                .current()
+                .get("Plugin:hello-world:counter")
+                .is_some()
+        );
+        state.nodes.shutdown();
+    }
+
+    #[tokio::test]
+    async fn dashboard_save_serializes_with_uninstall_usage_check() {
+        let (_sandbox, state) = test_app_state("vesta-plugin-dashboard-race").await;
+        let repo = crate::plugins::test_fixtures::git_fixture_repo(
+            &crate::plugins::test_fixtures::fixture_dir("hello-world"),
+            "dashboard-race",
+        );
+        state
+            .install_plugin(&repo.path().display().to_string())
+            .await
+            .unwrap();
+
+        let (check_finished, continue_uninstall) = state
+            .lifecycle_test_hooks
+            .hold_after_uninstall_check()
+            .await;
+        let uninstall = {
+            let state = std::sync::Arc::clone(&state);
+            tokio::spawn(async move { state.uninstall_plugin("hello-world").await })
+        };
+        check_finished.await.unwrap();
+
+        let save_attempted = state
+            .lifecycle_test_hooks
+            .watch_dashboard_save_attempt()
+            .await;
+        let save = {
+            let state = std::sync::Arc::clone(&state);
+            tokio::spawn(async move {
+                save_dashboard_items(axum::Extension(state), axum::Json(counter_tile_input())).await
+            })
+        };
+        save_attempted.await.unwrap();
+        continue_uninstall.send(()).unwrap();
+
+        uninstall.await.unwrap().unwrap();
+        let save_result = save.await.unwrap();
+        assert!(matches!(
+            save_result,
+            Err(crate::error::VestaError::InvalidWidgetConfig(_))
+        ));
+        assert!(state.config.snapshot().items.is_empty());
+        assert!(state.plugins.record("hello-world").unwrap().is_none());
+        assert!(
+            state
+                .widget_registry
+                .current()
+                .get("Plugin:hello-world:counter")
+                .is_none()
+        );
+        state.nodes.shutdown();
+    }
+
+    #[tokio::test]
+    async fn cancelled_dashboard_save_holds_lifecycle_guard_through_publication() {
+        let (_sandbox, state) = test_app_state("vesta-cancelled-dashboard-save").await;
+        let repo = crate::plugins::test_fixtures::git_fixture_repo(
+            &crate::plugins::test_fixtures::fixture_dir("hello-world"),
+            "cancelled-dashboard-save",
+        );
+        state
+            .install_plugin(&repo.path().display().to_string())
+            .await
+            .unwrap();
+
+        let (write_finished_tx, write_finished_rx) = tokio::sync::oneshot::channel();
+        let (publish_tx, publish_rx) = std::sync::mpsc::channel();
+        state.config.set_after_write_before_publish_hook(move || {
+            write_finished_tx.send(()).unwrap();
+            publish_rx.recv().unwrap();
+        });
+
+        let save = {
+            let state = std::sync::Arc::clone(&state);
+            tokio::spawn(async move {
+                save_dashboard_items(axum::Extension(state), axum::Json(counter_tile_input())).await
+            })
+        };
+        write_finished_rx.await.unwrap();
+        save.abort();
+        assert!(matches!(save.await, Err(error) if error.is_cancelled()));
+        assert!(
+            std::sync::Arc::clone(&state.plugin_ops)
+                .try_lock_owned()
+                .is_err()
+        );
+        assert!(state.config.snapshot().items.is_empty());
+
+        publish_tx.send(()).unwrap();
+        let uninstall_error = state.uninstall_plugin("hello-world").await.unwrap_err();
+        assert!(matches!(
+            uninstall_error,
+            crate::error::VestaError::Plugin(message)
+                if message.contains("still used by dashboard tiles")
+        ));
+        let snapshot = state.config.snapshot();
+        assert_eq!(snapshot.items.len(), 1);
+        assert!(state.plugins.record("hello-world").unwrap().is_some());
+        state.nodes.shutdown();
     }
 }

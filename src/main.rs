@@ -24,6 +24,8 @@ use axum::Router;
 use axum::extract::{DefaultBodyLimit, Extension};
 use axum::middleware;
 use axum::routing::{get, post, put};
+use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::task::JoinHandle;
 use tower_http::compression::CompressionLayer;
 use tower_http::services::ServeDir;
 use tracing_subscriber::EnvFilter;
@@ -77,12 +79,189 @@ pub struct AppState {
     pub(crate) database: Arc<Database>,
     pub(crate) nodes: Arc<NodeService>,
     pub(crate) ping: PingService,
-    pub(crate) builtin_widgets: Vec<Arc<dyn WidgetHandlerDyn>>,
     pub(crate) widget_registry: SharedWidgetRegistry,
     pub(crate) plugins: Arc<plugins::manager::PluginManager>,
-    pub(crate) plugin_ops: tokio::sync::Mutex<()>,
+    /// Shared transaction gate for plugin lifecycle work and dashboard saves.
+    pub(crate) plugin_ops: Arc<Mutex<()>>,
+    plugin_requests: mpsc::Sender<PluginRequest>,
+    _plugin_lifecycle_worker: JoinHandle<()>,
+    #[cfg(test)]
+    pub(crate) lifecycle_test_hooks: Arc<LifecycleTestHooks>,
     pub(crate) widget_ctx: WidgetContext,
     pub(crate) cookie_secure: bool,
+}
+
+const PLUGIN_LIFECYCLE_QUEUE_CAPACITY: usize = 8;
+
+enum PluginRequest {
+    Install {
+        url: String,
+        reply: oneshot::Sender<VestaResult<plugins::manifest::PluginRecord>>,
+    },
+    Update {
+        plugin_id: String,
+        reply: oneshot::Sender<VestaResult<plugins::manifest::PluginRecord>>,
+    },
+    Uninstall {
+        plugin_id: String,
+        reply: oneshot::Sender<VestaResult<()>>,
+    },
+}
+
+#[cfg(test)]
+struct LifecycleTestPause {
+    entered: oneshot::Sender<()>,
+    release: oneshot::Receiver<()>,
+}
+
+#[cfg(test)]
+#[derive(Default)]
+pub(crate) struct LifecycleTestHooks {
+    after_plugin_mutation: Mutex<Option<LifecycleTestPause>>,
+    after_uninstall_check: Mutex<Option<LifecycleTestPause>>,
+    dashboard_save_attempted: Mutex<Option<oneshot::Sender<()>>>,
+}
+
+#[cfg(test)]
+impl LifecycleTestHooks {
+    async fn pause_point(
+        slot: &Mutex<Option<LifecycleTestPause>>,
+        entered: oneshot::Sender<()>,
+        release: oneshot::Receiver<()>,
+    ) {
+        *slot.lock().await = Some(LifecycleTestPause { entered, release });
+    }
+
+    async fn wait_at(slot: &Mutex<Option<LifecycleTestPause>>) {
+        if let Some(pause) = slot.lock().await.take() {
+            let _ = pause.entered.send(());
+            let _ = pause.release.await;
+        }
+    }
+
+    pub(crate) async fn hold_after_plugin_mutation(
+        &self,
+    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+        let (entered_tx, entered_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        Self::pause_point(&self.after_plugin_mutation, entered_tx, release_rx).await;
+        (entered_rx, release_tx)
+    }
+
+    pub(crate) async fn hold_after_uninstall_check(
+        &self,
+    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+        let (entered_tx, entered_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        Self::pause_point(&self.after_uninstall_check, entered_tx, release_rx).await;
+        (entered_rx, release_tx)
+    }
+
+    pub(crate) async fn watch_dashboard_save_attempt(&self) -> oneshot::Receiver<()> {
+        let (attempted_tx, attempted_rx) = oneshot::channel();
+        *self.dashboard_save_attempted.lock().await = Some(attempted_tx);
+        attempted_rx
+    }
+
+    async fn plugin_mutation_finished(&self) {
+        Self::wait_at(&self.after_plugin_mutation).await;
+    }
+
+    async fn uninstall_check_finished(&self) {
+        Self::wait_at(&self.after_uninstall_check).await;
+    }
+
+    pub(crate) async fn dashboard_save_started(&self) {
+        if let Some(attempted) = self.dashboard_save_attempted.lock().await.take() {
+            let _ = attempted.send(());
+        }
+    }
+}
+
+async fn rebuild_widget_registry(
+    builtin_widgets: &[Arc<dyn WidgetHandlerDyn>],
+    plugins: &Arc<plugins::manager::PluginManager>,
+    widget_registry: &SharedWidgetRegistry,
+) -> VestaResult<()> {
+    let builtins = builtin_widgets.to_vec();
+    let plugins = Arc::clone(plugins);
+    let next = tokio::task::spawn_blocking(move || plugins::build_registry(&builtins, &plugins))
+        .await
+        .map_err(|error| {
+            VestaError::Plugin(format!("widget registry rebuild task failed: {error}"))
+        })?;
+    widget_registry.replace(next);
+    Ok(())
+}
+
+async fn plugin_lifecycle_worker(
+    mut requests: mpsc::Receiver<PluginRequest>,
+    plugin_ops: Arc<Mutex<()>>,
+    config: Arc<ConfigManager>,
+    plugins: Arc<plugins::manager::PluginManager>,
+    builtin_widgets: Vec<Arc<dyn WidgetHandlerDyn>>,
+    widget_registry: SharedWidgetRegistry,
+    #[cfg(test)] test_hooks: Arc<LifecycleTestHooks>,
+) {
+    while let Some(request) = requests.recv().await {
+        // The worker, rather than the HTTP future, owns the complete
+        // mutation/check/rebuild transaction and its serialization permit.
+        let _lifecycle = Arc::clone(&plugin_ops).lock_owned().await;
+        match request {
+            PluginRequest::Install { url, reply } => {
+                let result = match plugins.install(&url).await {
+                    Ok(record) => {
+                        #[cfg(test)]
+                        test_hooks.plugin_mutation_finished().await;
+                        rebuild_widget_registry(&builtin_widgets, &plugins, &widget_registry)
+                            .await
+                            .map(|()| record)
+                    }
+                    Err(error) => Err(error),
+                };
+                let _ = reply.send(result);
+            }
+            PluginRequest::Update { plugin_id, reply } => {
+                let result = match plugins.update(&plugin_id).await {
+                    Ok(record) => {
+                        #[cfg(test)]
+                        test_hooks.plugin_mutation_finished().await;
+                        rebuild_widget_registry(&builtin_widgets, &plugins, &widget_registry)
+                            .await
+                            .map(|()| record)
+                    }
+                    Err(error) => Err(error),
+                };
+                let _ = reply.send(result);
+            }
+            PluginRequest::Uninstall { plugin_id, reply } => {
+                let prefix = format!("{}{}{}", plugins::PLUGIN_NAME_PREFIX, plugin_id, ':');
+                let in_use = config
+                    .snapshot()
+                    .items
+                    .iter()
+                    .any(|item| matches!(item, config::DashboardItem::Widget(widget) if widget.name.starts_with(&prefix)));
+                let result = if in_use {
+                    Err(VestaError::Plugin(format!(
+                        "plugin '{plugin_id}' is still used by dashboard tiles; remove those tiles first"
+                    )))
+                } else {
+                    #[cfg(test)]
+                    test_hooks.uninstall_check_finished().await;
+                    match plugins.uninstall(&plugin_id).await {
+                        Ok(()) => {
+                            #[cfg(test)]
+                            test_hooks.plugin_mutation_finished().await;
+                            rebuild_widget_registry(&builtin_widgets, &plugins, &widget_registry)
+                                .await
+                        }
+                        Err(error) => Err(error),
+                    }
+                };
+                let _ = reply.send(result);
+            }
+        }
+    }
 }
 
 impl AppState {
@@ -99,56 +278,52 @@ impl AppState {
         ]
     }
 
-    /// Rebuild the widget registry from the shared built-ins and every
-    /// installed plugin on a blocking worker so manifest reads do not run on
-    /// async executor threads.
-    async fn rebuild_widget_registry(&self) -> VestaResult<()> {
-        let builtins = self.builtin_widgets.clone();
-        let plugins = Arc::clone(&self.plugins);
-        let next =
-            tokio::task::spawn_blocking(move || plugins::build_registry(&builtins, &plugins))
-                .await
-                .map_err(|error| {
-                    VestaError::Plugin(format!("widget registry rebuild task failed: {error}"))
-                })?;
-        self.widget_registry.replace(next);
-        Ok(())
-    }
-
     pub(crate) async fn install_plugin(
         &self,
         url: &str,
     ) -> VestaResult<plugins::manifest::PluginRecord> {
-        let _guard = self.plugin_ops.lock().await;
-        let record = self.plugins.install(url).await?;
-        self.rebuild_widget_registry().await?;
-        Ok(record)
+        let (reply, result) = oneshot::channel();
+        self.plugin_requests
+            .send(PluginRequest::Install {
+                url: url.to_string(),
+                reply,
+            })
+            .await
+            .map_err(|_| VestaError::Plugin("plugin lifecycle worker stopped".to_string()))?;
+        result
+            .await
+            .map_err(|_| VestaError::Plugin("plugin lifecycle worker stopped".to_string()))?
     }
 
     pub(crate) async fn update_plugin(
         &self,
         plugin_id: &str,
     ) -> VestaResult<plugins::manifest::PluginRecord> {
-        let _guard = self.plugin_ops.lock().await;
-        let record = self.plugins.update(plugin_id).await?;
-        self.rebuild_widget_registry().await?;
-        Ok(record)
+        let (reply, result) = oneshot::channel();
+        self.plugin_requests
+            .send(PluginRequest::Update {
+                plugin_id: plugin_id.to_string(),
+                reply,
+            })
+            .await
+            .map_err(|_| VestaError::Plugin("plugin lifecycle worker stopped".to_string()))?;
+        result
+            .await
+            .map_err(|_| VestaError::Plugin("plugin lifecycle worker stopped".to_string()))?
     }
 
     pub(crate) async fn uninstall_plugin(&self, plugin_id: &str) -> VestaResult<()> {
-        let _guard = self.plugin_ops.lock().await;
-        let prefix = format!("{}{}{}", plugins::PLUGIN_NAME_PREFIX, plugin_id, ':');
-        let in_use = self.config.snapshot().items.iter().any(|item| {
-            matches!(item, config::DashboardItem::Widget(widget) if widget.name.starts_with(&prefix))
-        });
-        if in_use {
-            return Err(VestaError::Plugin(format!(
-                "plugin '{plugin_id}' is still used by dashboard tiles; remove those tiles first"
-            )));
-        }
-        self.plugins.uninstall(plugin_id).await?;
-        self.rebuild_widget_registry().await?;
-        Ok(())
+        let (reply, result) = oneshot::channel();
+        self.plugin_requests
+            .send(PluginRequest::Uninstall {
+                plugin_id: plugin_id.to_string(),
+                reply,
+            })
+            .await
+            .map_err(|_| VestaError::Plugin("plugin lifecycle worker stopped".to_string()))?;
+        result
+            .await
+            .map_err(|_| VestaError::Plugin("plugin lifecycle worker stopped".to_string()))?
     }
 
     async fn new(settings: &Settings) -> VestaResult<Arc<Self>> {
@@ -163,6 +338,20 @@ impl AppState {
             &settings.config_path,
             widget_registry.clone(),
         )?);
+        let plugin_ops = Arc::new(Mutex::new(()));
+        let (plugin_requests, plugin_receiver) = mpsc::channel(PLUGIN_LIFECYCLE_QUEUE_CAPACITY);
+        #[cfg(test)]
+        let lifecycle_test_hooks = Arc::new(LifecycleTestHooks::default());
+        let plugin_lifecycle_worker = tokio::spawn(plugin_lifecycle_worker(
+            plugin_receiver,
+            Arc::clone(&plugin_ops),
+            Arc::clone(&config),
+            Arc::clone(&plugins),
+            builtin_widgets.clone(),
+            widget_registry.clone(),
+            #[cfg(test)]
+            Arc::clone(&lifecycle_test_hooks),
+        ));
         let nodes = NodeService::start(&config.snapshot().nodes, http_client.clone());
         let ping = PingService::new(http_client);
         let widget_ctx = WidgetContext {
@@ -174,10 +363,13 @@ impl AppState {
             database,
             nodes,
             ping,
-            builtin_widgets,
             widget_registry,
             plugins,
-            plugin_ops: tokio::sync::Mutex::new(()),
+            plugin_ops,
+            plugin_requests,
+            _plugin_lifecycle_worker: plugin_lifecycle_worker,
+            #[cfg(test)]
+            lifecycle_test_hooks,
             widget_ctx,
             cookie_secure: settings.cookie_secure,
         }))
