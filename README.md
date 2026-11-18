@@ -30,6 +30,7 @@ On first launch, visit `/settings` and create the administrator password. The in
 | --- | --- | --- |
 | `VESTA_CONFIG` | `./config.toml` | TOML file containing dashboard and app settings |
 | `VESTA_DATABASE` | `./data/vesta.sqlite` | SQLite database file, including uploaded icon blobs |
+| `VESTA_PLUGINS` | `./data/plugins` | Directory containing installed plugins; the Docker image stores them in `/data/plugins` |
 | `VESTA_BIND` | `0.0.0.0:3000` | Listen address |
 | `VESTA_STATIC_DIR` | `static` | Static assets directory |
 | `VESTA_COOKIE_SECURE` | `false` | Set to `true` when served through HTTPS, so the login cookie requires a secure connection |

@@ -55,6 +55,7 @@ COPY --from=frontend-builder /build/static/ui static/ui
 COPY --from=build /out/vesta vesta
 ENV VESTA_CONFIG=/data/config.toml \
     VESTA_DATABASE=/data/vesta.sqlite \
+    VESTA_PLUGINS=/data/plugins \
     VESTA_STATIC_DIR=/app/static
 EXPOSE 3000
 ENTRYPOINT ["/app/vesta"]
