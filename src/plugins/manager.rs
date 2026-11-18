@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use tokio::sync::Mutex;
+use tokio::task::JoinSet;
 
 use crate::error::{VestaError, VestaResult};
 use crate::plugins::manifest::{
@@ -19,9 +20,19 @@ const CLONE_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub struct PluginManager {
     root: PathBuf,
-    /// Serialize installs and removals so two simultaneous installs of the
-    /// same plugin id cannot race past the duplicate check.
+    /// Serialize installs, updates, and uninstalls so simultaneous mutations
+    /// of the plugins directory cannot race.
     gate: Mutex<()>,
+    /// Owned cleanup tasks for timed-out clone workers so none outlive `self`.
+    cleanup_tasks: std::sync::Mutex<JoinSet<()>>,
+}
+
+impl Drop for PluginManager {
+    fn drop(&mut self) {
+        if let Ok(mut tasks) = self.cleanup_tasks.lock() {
+            tasks.abort_all();
+        }
+    }
 }
 
 fn plugin_error(message: impl Into<String>) -> VestaError {
@@ -32,6 +43,26 @@ fn plugin_not_found(id: &str) -> VestaError {
     VestaError::PluginNotFound { id: id.to_string() }
 }
 
+fn plugin_dir_in(root: &Path, id: &str) -> VestaResult<PathBuf> {
+    if !is_valid_slug(id) {
+        return Err(plugin_not_found(id));
+    }
+    Ok(root.join(id))
+}
+
+fn load_record_in(root: &Path, id: &str) -> VestaResult<Option<PluginRecord>> {
+    if !is_valid_slug(id) {
+        return Ok(None);
+    }
+    let dir = plugin_dir_in(root, id)?;
+    if !dir.is_dir() {
+        return Ok(None);
+    }
+    let manifest = load_manifest(&dir)?;
+    let source = PluginSource::from_toml(&std::fs::read_to_string(dir.join(SOURCE_FILE))?)?;
+    Ok(Some(PluginRecord { manifest, source }))
+}
+
 impl PluginManager {
     pub fn new(root: impl Into<PathBuf>) -> VestaResult<Self> {
         let root = root.into();
@@ -39,6 +70,7 @@ impl PluginManager {
         Ok(Self {
             root,
             gate: Mutex::new(()),
+            cleanup_tasks: std::sync::Mutex::new(JoinSet::new()),
         })
     }
 
@@ -78,16 +110,7 @@ impl PluginManager {
     /// Load one plugin record from its directory. `Ok(None)` means the
     /// directory does not exist.
     pub fn record(&self, id: &str) -> VestaResult<Option<PluginRecord>> {
-        if !is_valid_slug(id) {
-            return Ok(None);
-        }
-        let dir = self.plugin_dir(id)?;
-        if !dir.is_dir() {
-            return Ok(None);
-        }
-        let manifest = load_manifest(&dir)?;
-        let source = PluginSource::from_toml(&std::fs::read_to_string(dir.join(SOURCE_FILE))?)?;
-        Ok(Some(PluginRecord { manifest, source }))
+        load_record_in(&self.root, id)
     }
 
     /// Directory for one installed plugin. This is the single choke point
@@ -95,10 +118,7 @@ impl PluginManager {
     /// could otherwise escape the plugins root via `..` — are rejected here
     /// for every caller.
     pub fn plugin_dir(&self, id: &str) -> VestaResult<PathBuf> {
-        if !is_valid_slug(id) {
-            return Err(plugin_not_found(id));
-        }
-        Ok(self.root.join(id))
+        plugin_dir_in(&self.root, id)
     }
 
     /// Shallow-clone `url`, validate its manifest, strip `.git`, then move the
@@ -109,19 +129,24 @@ impl PluginManager {
         }
         let _gate = self.gate.lock().await;
         let (temp_dir, record) = self.fetch_plugin(url).await?;
-        let destination = self.plugin_dir(&record.manifest.id)?;
-        if destination.exists() {
-            std::fs::remove_dir_all(&temp_dir).ok();
-            return Err(plugin_error(format!(
-                "plugin '{}' is already installed: remove it before installing again",
-                record.manifest.id
-            )));
-        }
-        if let Err(error) = std::fs::rename(&temp_dir, &destination) {
-            std::fs::remove_dir_all(&temp_dir).ok();
-            return Err(error.into());
-        }
-        Ok(record)
+        let root = self.root.clone();
+        tokio::task::spawn_blocking(move || {
+            let destination = plugin_dir_in(&root, &record.manifest.id)?;
+            if destination.exists() {
+                std::fs::remove_dir_all(&temp_dir).ok();
+                return Err(plugin_error(format!(
+                    "plugin '{}' is already installed: remove it before installing again",
+                    record.manifest.id
+                )));
+            }
+            if let Err(error) = std::fs::rename(&temp_dir, &destination) {
+                std::fs::remove_dir_all(&temp_dir).ok();
+                return Err(error.into());
+            }
+            Ok(record)
+        })
+        .await
+        .map_err(|error| plugin_error(format!("plugin install task failed: {error}")))?
     }
 
     /// Re-fetch an installed plugin from its recorded source URL and swap the
@@ -132,39 +157,55 @@ impl PluginManager {
     /// only if their fields no longer exist.
     pub async fn update(&self, id: &str) -> VestaResult<PluginRecord> {
         let _gate = self.gate.lock().await;
-        let current = self.record(id)?.ok_or_else(|| plugin_not_found(id))?;
+        let root = self.root.clone();
+        let id_owned = id.to_string();
+        let current = tokio::task::spawn_blocking(move || load_record_in(&root, &id_owned))
+            .await
+            .map_err(|error| plugin_error(format!("plugin read task failed: {error}")))??
+            .ok_or_else(|| plugin_not_found(id))?;
         let (temp_dir, fresh) = self.fetch_plugin(&current.source.source_url).await?;
-        if fresh.manifest.id != current.manifest.id {
-            std::fs::remove_dir_all(&temp_dir).ok();
-            return Err(plugin_error(format!(
-                "updated manifest declares plugin id '{}' but '{}' is installed; install it under the new id instead",
-                fresh.manifest.id, current.manifest.id
-            )));
-        }
-        let destination = self.plugin_dir(id)?;
-        let backup = self
-            .root
-            .join(format!(".old-{}", uuid::Uuid::new_v4().simple()));
-        // Swap with rollback: the installed tree returns if the new one
-        // cannot move into place.
-        if let Err(error) = std::fs::rename(&destination, &backup)
-            .and_then(|()| std::fs::rename(&temp_dir, &destination))
-        {
-            std::fs::rename(&backup, &destination).ok();
-            std::fs::remove_dir_all(&temp_dir).ok();
-            return Err(error.into());
-        }
-        std::fs::remove_dir_all(&backup).ok();
-        Ok(fresh)
+        let root = self.root.clone();
+        let id_owned = id.to_string();
+        tokio::task::spawn_blocking(move || {
+            if fresh.manifest.id != current.manifest.id {
+                std::fs::remove_dir_all(&temp_dir).ok();
+                return Err(plugin_error(format!(
+                    "updated manifest declares plugin id '{}' but '{}' is installed; install it under the new id instead",
+                    fresh.manifest.id, current.manifest.id
+                )));
+            }
+            let destination = plugin_dir_in(&root, &id_owned)?;
+            let backup = root.join(format!(".old-{}", uuid::Uuid::new_v4().simple()));
+            // Swap with rollback: the installed tree returns if the new one
+            // cannot move into place.
+            if let Err(error) = std::fs::rename(&destination, &backup)
+                .and_then(|()| std::fs::rename(&temp_dir, &destination))
+            {
+                std::fs::rename(&backup, &destination).ok();
+                std::fs::remove_dir_all(&temp_dir).ok();
+                return Err(error.into());
+            }
+            std::fs::remove_dir_all(&backup).ok();
+            Ok(fresh)
+        })
+        .await
+        .map_err(|error| plugin_error(format!("plugin update task failed: {error}")))?
     }
 
-    /// Remove an installed plugin's directory.
-    pub fn uninstall(&self, id: &str) -> VestaResult<()> {
-        if self.record(id)?.is_none() {
-            return Err(plugin_not_found(id));
-        }
-        std::fs::remove_dir_all(self.plugin_dir(id)?)?;
-        Ok(())
+    /// Remove an installed plugin's directory under the mutation gate.
+    pub async fn uninstall(&self, id: &str) -> VestaResult<()> {
+        let _gate = self.gate.lock().await;
+        let root = self.root.clone();
+        let id_owned = id.to_string();
+        tokio::task::spawn_blocking(move || {
+            if load_record_in(&root, &id_owned)?.is_none() {
+                return Err(plugin_not_found(&id_owned));
+            }
+            std::fs::remove_dir_all(plugin_dir_in(&root, &id_owned)?)?;
+            Ok(())
+        })
+        .await
+        .map_err(|error| plugin_error(format!("plugin uninstall task failed: {error}")))?
     }
 
     /// Clone `url` into a hidden temporary directory under the plugins root
@@ -187,24 +228,39 @@ impl PluginManager {
 
         match tokio::time::timeout(CLONE_TIMEOUT, pinned.as_mut()).await {
             Ok(Ok(Ok(record))) => {
-                std::fs::remove_dir_all(temp_dir.join(".git")).ok();
+                let git_dir = temp_dir.join(".git");
+                tokio::task::spawn_blocking(move || std::fs::remove_dir_all(git_dir))
+                    .await
+                    .ok();
                 Ok((temp_dir, record))
             }
             Ok(Ok(Err(message))) => {
-                std::fs::remove_dir_all(&temp_dir).ok();
+                let dir = temp_dir.clone();
+                tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir))
+                    .await
+                    .ok();
                 Err(plugin_error(message))
             }
             Ok(Err(join)) => {
-                std::fs::remove_dir_all(&temp_dir).ok();
+                let dir = temp_dir.clone();
+                tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir))
+                    .await
+                    .ok();
                 Err(plugin_error(format!("clone worker failed: {join}")))
             }
             Err(_elapsed) => {
                 interrupt.store(true, Ordering::Relaxed);
-                let cleanup_dir = temp_dir.clone();
-                tokio::spawn(async move {
-                    let _ = pinned.await;
-                    std::fs::remove_dir_all(&cleanup_dir).ok();
-                });
+                let cleanup_dir = temp_dir;
+                if let Ok(mut tasks) = self.cleanup_tasks.lock() {
+                    while tasks.try_join_next().is_some() {}
+                    tasks.spawn(async move {
+                        let _ = pinned.await;
+                        let _ = tokio::task::spawn_blocking(move || {
+                            std::fs::remove_dir_all(&cleanup_dir)
+                        })
+                        .await;
+                    });
+                }
                 Err(plugin_error(format!(
                     "cloning {url} timed out after {}s and was aborted",
                     CLONE_TIMEOUT.as_secs()
@@ -288,73 +344,19 @@ fn ensure_supported_scheme(scheme: &gix::url::Scheme, url: &str) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
+    use crate::plugins::test_fixtures::{TempDir, fixture_dir, git, git_fixture_repo, temp_dir};
 
-    fn git(args: &[&str], dir: &Path) {
-        let status = std::process::Command::new("git")
-            .args(args)
-            .current_dir(dir)
-            .status()
-            .expect("git binary available for tests");
-        assert!(status.success(), "git {args:?} failed");
-    }
-
-    /// Create a local git repository from fixture files (only tests build the
-    /// fixture with the git CLI; runtime cloning is pure gix).
-    fn fixture_repo(fixture: &Path, name: &str) -> PathBuf {
-        let repo = std::env::temp_dir().join(format!(
-            "vesta-plugin-fixture-{name}-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        copy_tree(fixture, &repo);
-        git(&["init", "-q"], &repo);
-        git(&["add", "."], &repo);
-        git(
-            &[
-                "-c",
-                "user.name=test",
-                "-c",
-                "user.email=test@test",
-                "commit",
-                "-qm",
-                "fixture",
-            ],
-            &repo,
-        );
-        repo
-    }
-
-    fn copy_tree(from: &Path, to: &Path) {
-        std::fs::create_dir_all(to).unwrap();
-        for entry in std::fs::read_dir(from).unwrap() {
-            let entry = entry.unwrap();
-            let target = to.join(entry.file_name());
-            if entry.file_type().unwrap().is_dir() {
-                copy_tree(&entry.path(), &target);
-            } else {
-                std::fs::copy(entry.path(), target).unwrap();
-            }
-        }
-    }
-
-    fn manager() -> PluginManager {
-        PluginManager::new(
-            std::env::temp_dir().join(format!("vesta-plugins-{}", uuid::Uuid::new_v4().simple())),
-        )
-        .unwrap()
-    }
-
-    fn fixture_dir(name: &str) -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/plugins")
-            .join(name)
+    fn test_manager() -> (TempDir, PluginManager) {
+        let dir = temp_dir("vesta-plugins");
+        let manager = PluginManager::new(dir.path()).unwrap();
+        (dir, manager)
     }
 
     #[tokio::test]
     async fn installs_from_local_repository_and_lists_metadata() {
-        let manager = manager();
-        let repo = fixture_repo(&fixture_dir("hello-world"), "hello");
-        let source = repo.display().to_string();
+        let (_dir, manager) = test_manager();
+        let repo = git_fixture_repo(&fixture_dir("hello-world"), "hello");
+        let source = repo.path().display().to_string();
 
         let record = manager.install(&source).await.unwrap();
         assert_eq!(record.manifest.id, "hello-world");
@@ -372,23 +374,27 @@ mod tests {
         assert_eq!(listed[0].manifest.name, "Hello World");
         assert!(manager.record("hello-world").unwrap().is_some());
         assert!(manager.record("../../escape").unwrap().is_none());
-        std::fs::remove_dir_all(&repo).ok();
     }
 
     #[tokio::test]
     async fn duplicate_install_fails_and_keeps_existing() {
-        let manager = manager();
-        let repo = fixture_repo(&fixture_dir("hello-world"), "dupe");
-        manager.install(&repo.to_string_lossy()).await.unwrap();
-        let error = manager.install(&repo.to_string_lossy()).await.unwrap_err();
+        let (_dir, manager) = test_manager();
+        let repo = git_fixture_repo(&fixture_dir("hello-world"), "dupe");
+        manager
+            .install(&repo.path().to_string_lossy())
+            .await
+            .unwrap();
+        let error = manager
+            .install(&repo.path().to_string_lossy())
+            .await
+            .unwrap_err();
         assert!(error.to_string().contains("already installed"), "{error}");
         assert_eq!(manager.load_all().len(), 1);
-        std::fs::remove_dir_all(&repo).ok();
     }
 
     #[tokio::test]
     async fn failed_installs_leave_no_temporary_directories() {
-        let manager = manager();
+        let (_dir, manager) = test_manager();
         let missing = std::env::temp_dir().join("vesta-plugin-missing-repo");
         let error = manager
             .install(&missing.to_string_lossy())
@@ -397,13 +403,12 @@ mod tests {
         assert!(error.to_string().contains("could not clone"), "{error}");
 
         // Repository with a broken manifest must also fail and clean up.
-        let broken = fixture_repo(&fixture_dir("broken-manifest"), "broken");
+        let broken = git_fixture_repo(&fixture_dir("broken-manifest"), "broken");
         let error = manager
-            .install(&broken.to_string_lossy())
+            .install(&broken.path().to_string_lossy())
             .await
             .unwrap_err();
         assert!(error.to_string().contains("manifest"), "{error}");
-        std::fs::remove_dir_all(&broken).ok();
 
         let leftovers: Vec<_> = std::fs::read_dir(manager.root())
             .unwrap()
@@ -418,19 +423,21 @@ mod tests {
 
     #[tokio::test]
     async fn uninstall_removes_the_plugin() {
-        let manager = manager();
-        let repo = fixture_repo(&fixture_dir("hello-world"), "gone");
-        manager.install(&repo.to_string_lossy()).await.unwrap();
-        manager.uninstall("hello-world").unwrap();
+        let (_dir, manager) = test_manager();
+        let repo = git_fixture_repo(&fixture_dir("hello-world"), "gone");
+        manager
+            .install(&repo.path().to_string_lossy())
+            .await
+            .unwrap();
+        manager.uninstall("hello-world").await.unwrap();
         assert!(manager.record("hello-world").unwrap().is_none());
-        let missing = manager.uninstall("hello-world").unwrap_err();
+        let missing = manager.uninstall("hello-world").await.unwrap_err();
         assert!(missing.to_string().contains("not found"), "{missing}");
-        std::fs::remove_dir_all(&repo).ok();
     }
 
     #[tokio::test]
     async fn empty_url_is_rejected() {
-        let manager = manager();
+        let (_dir, manager) = test_manager();
         let error = manager.install("   ").await.unwrap_err();
         assert!(error.to_string().contains("URL is required"), "{error}");
     }
@@ -439,7 +446,7 @@ mod tests {
     /// refuse anything that could escape the plugins root.
     #[test]
     fn plugin_dir_rejects_non_slug_ids() {
-        let manager = manager();
+        let (_dir, manager) = test_manager();
         for bad in ["../escape", "C:\\temp", "Bad-Id", "a/b", ""] {
             assert!(
                 manager.plugin_dir(bad).is_err(),
@@ -451,9 +458,12 @@ mod tests {
 
     #[tokio::test]
     async fn update_refetches_and_swaps_the_plugin_tree() {
-        let manager = manager();
-        let repo = fixture_repo(&fixture_dir("hello-world"), "update");
-        manager.install(&repo.to_string_lossy()).await.unwrap();
+        let (_dir, manager) = test_manager();
+        let repo = git_fixture_repo(&fixture_dir("hello-world"), "update");
+        manager
+            .install(&repo.path().to_string_lossy())
+            .await
+            .unwrap();
         let old_commit = manager
             .record("hello-world")
             .unwrap()
@@ -462,14 +472,14 @@ mod tests {
             .commit;
 
         // Bump the version in the remote repository, then update in place.
-        let manifest_path = repo.join(crate::plugins::manifest::MANIFEST_FILE);
+        let manifest_path = repo.path().join(crate::plugins::manifest::MANIFEST_FILE);
         let manifest = std::fs::read_to_string(&manifest_path).unwrap();
         std::fs::write(
             &manifest_path,
             manifest.replace("version = \"1.0.0\"", "version = \"1.0.1\""),
         )
         .unwrap();
-        git(&["add", "."], &repo);
+        git(&["add", "."], repo.path());
         git(
             &[
                 "-c",
@@ -480,7 +490,7 @@ mod tests {
                 "-qm",
                 "bump",
             ],
-            &repo,
+            repo.path(),
         );
 
         let updated = manager.update("hello-world").await.unwrap();
@@ -502,25 +512,27 @@ mod tests {
             .filter(|entry| entry.file_name().to_string_lossy().starts_with('.'))
             .collect();
         assert!(leftovers.is_empty(), "swap leftovers: {leftovers:?}");
-        std::fs::remove_dir_all(&repo).ok();
     }
 
     /// A new manifest id is a different plugin, not an update; the installed
     /// tree must stay untouched.
     #[tokio::test]
     async fn update_refuses_a_changed_plugin_id_and_keeps_the_installed_tree() {
-        let manager = manager();
-        let repo = fixture_repo(&fixture_dir("hello-world"), "id-change");
-        manager.install(&repo.to_string_lossy()).await.unwrap();
+        let (_dir, manager) = test_manager();
+        let repo = git_fixture_repo(&fixture_dir("hello-world"), "id-change");
+        manager
+            .install(&repo.path().to_string_lossy())
+            .await
+            .unwrap();
 
-        let manifest_path = repo.join(crate::plugins::manifest::MANIFEST_FILE);
+        let manifest_path = repo.path().join(crate::plugins::manifest::MANIFEST_FILE);
         let manifest = std::fs::read_to_string(&manifest_path).unwrap();
         std::fs::write(
             &manifest_path,
             manifest.replace("id = \"hello-world\"", "id = \"renamed-plugin\""),
         )
         .unwrap();
-        git(&["add", "."], &repo);
+        git(&["add", "."], repo.path());
         git(
             &[
                 "-c",
@@ -531,7 +543,7 @@ mod tests {
                 "-qm",
                 "rename",
             ],
-            &repo,
+            repo.path(),
         );
 
         let error = manager.update("hello-world").await.unwrap_err();
@@ -541,12 +553,11 @@ mod tests {
         );
         assert!(manager.record("hello-world").unwrap().is_some());
         assert!(manager.record("renamed-plugin").unwrap().is_none());
-        std::fs::remove_dir_all(&repo).ok();
     }
 
     #[tokio::test]
     async fn update_unknown_id_is_not_found() {
-        let manager = manager();
+        let (_dir, manager) = test_manager();
         let error = manager.update("ghost").await.unwrap_err();
         assert!(error.to_string().contains("not found"), "{error}");
     }

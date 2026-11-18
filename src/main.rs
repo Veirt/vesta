@@ -86,6 +86,7 @@ pub struct AppState {
     pub(crate) builtin_widgets: Vec<Arc<dyn WidgetHandlerDyn>>,
     pub(crate) widget_registry: SharedWidgetRegistry,
     pub(crate) plugins: Arc<plugins::manager::PluginManager>,
+    pub(crate) plugin_ops: tokio::sync::Mutex<()>,
     pub(crate) widget_ctx: WidgetContext,
     pub(crate) cookie_secure: bool,
 }
@@ -105,13 +106,55 @@ impl AppState {
     }
 
     /// Rebuild the widget registry from the shared built-ins and every
-    /// installed plugin. Called at startup and whenever a plugin is installed
-    /// or removed, so both request handling and config validation switch over.
-    pub(crate) fn rebuild_widget_registry(&self) {
-        self.widget_registry.replace(plugins::build_registry(
-            &self.builtin_widgets,
-            &self.plugins,
-        ));
+    /// installed plugin on a blocking worker so manifest reads do not run on
+    /// async executor threads.
+    async fn rebuild_widget_registry(&self) -> VestaResult<()> {
+        let builtins = self.builtin_widgets.clone();
+        let plugins = Arc::clone(&self.plugins);
+        let next =
+            tokio::task::spawn_blocking(move || plugins::build_registry(&builtins, &plugins))
+                .await
+                .map_err(|error| {
+                    VestaError::Plugin(format!("widget registry rebuild task failed: {error}"))
+                })?;
+        self.widget_registry.replace(next);
+        Ok(())
+    }
+
+    pub(crate) async fn install_plugin(
+        &self,
+        url: &str,
+    ) -> VestaResult<plugins::manifest::PluginRecord> {
+        let _guard = self.plugin_ops.lock().await;
+        let record = self.plugins.install(url).await?;
+        self.rebuild_widget_registry().await?;
+        Ok(record)
+    }
+
+    pub(crate) async fn update_plugin(
+        &self,
+        plugin_id: &str,
+    ) -> VestaResult<plugins::manifest::PluginRecord> {
+        let _guard = self.plugin_ops.lock().await;
+        let record = self.plugins.update(plugin_id).await?;
+        self.rebuild_widget_registry().await?;
+        Ok(record)
+    }
+
+    pub(crate) async fn uninstall_plugin(&self, plugin_id: &str) -> VestaResult<()> {
+        let _guard = self.plugin_ops.lock().await;
+        let prefix = format!("{}{}{}", plugins::PLUGIN_NAME_PREFIX, plugin_id, ':');
+        let in_use = self.config.snapshot().items.iter().any(|item| {
+            matches!(item, config::DashboardItem::Widget(widget) if widget.name.starts_with(&prefix))
+        });
+        if in_use {
+            return Err(VestaError::Plugin(format!(
+                "plugin '{plugin_id}' is still used by dashboard tiles; remove those tiles first"
+            )));
+        }
+        self.plugins.uninstall(plugin_id).await?;
+        self.rebuild_widget_registry().await?;
+        Ok(())
     }
 
     async fn new(settings: &Settings) -> VestaResult<Arc<Self>> {
@@ -140,6 +183,7 @@ impl AppState {
             builtin_widgets,
             widget_registry,
             plugins,
+            plugin_ops: tokio::sync::Mutex::new(()),
             widget_ctx,
             cookie_secure: settings.cookie_secure,
         }))

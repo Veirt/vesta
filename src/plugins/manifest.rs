@@ -316,18 +316,31 @@ impl PluginSource {
 
 /// Read and validate `vesta-plugin.toml` from a checked-out plugin tree.
 pub fn load_manifest(plugin_root: &Path) -> VestaResult<PluginManifest> {
+    use std::io::Read;
+
     let path = plugin_root.join(MANIFEST_FILE);
-    let text = std::fs::read_to_string(&path).map_err(|error| {
+    let file = std::fs::File::open(&path).map_err(|error| {
         manifest_error(format!(
             "missing or unreadable {MANIFEST_FILE} in {}: {error}",
             plugin_root.display()
         ))
     })?;
-    if text.len() as u64 > MAX_MANIFEST_BYTES {
+    let mut bytes = Vec::new();
+    file.take(MAX_MANIFEST_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| {
+            manifest_error(format!(
+                "missing or unreadable {MANIFEST_FILE} in {}: {error}",
+                plugin_root.display()
+            ))
+        })?;
+    if bytes.len() as u64 > MAX_MANIFEST_BYTES {
         return Err(manifest_error(format!(
             "{MANIFEST_FILE} exceeds the size limit"
         )));
     }
+    let text = String::from_utf8(bytes)
+        .map_err(|error| manifest_error(format!("{MANIFEST_FILE} is not valid UTF-8: {error}")))?;
     PluginManifest::parse(&text, plugin_root)
 }
 

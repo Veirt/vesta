@@ -30,15 +30,90 @@ pub fn build_registry(
 }
 
 #[cfg(test)]
+pub(crate) mod test_fixtures {
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    pub(crate) struct TempDir(PathBuf);
+
+    impl TempDir {
+        pub(crate) fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    pub(crate) fn temp_dir(prefix: &str) -> TempDir {
+        let dir = std::env::temp_dir().join(format!("{prefix}-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        TempDir(dir)
+    }
+
+    pub(crate) fn git(args: &[&str], dir: &Path) {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .expect("git binary available for tests");
+        assert!(status.success(), "git {args:?} failed");
+    }
+
+    pub(crate) fn fixture_dir(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/plugins")
+            .join(name)
+    }
+
+    /// Create a local git repository from fixture files (only tests build the
+    /// fixture with the git CLI; runtime cloning is pure gix).
+    pub(crate) fn git_fixture_repo(fixture: &Path, name: &str) -> TempDir {
+        let repo = temp_dir(&format!("vesta-plugin-fixture-{name}"));
+        copy_tree(fixture, repo.path());
+        git(&["init", "-q"], repo.path());
+        git(&["add", "."], repo.path());
+        git(
+            &[
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@test",
+                "commit",
+                "-qm",
+                "fixture",
+            ],
+            repo.path(),
+        );
+        repo
+    }
+
+    fn copy_tree(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_tree(&entry.path(), &target);
+            } else {
+                std::fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::{Dashboard, DashboardItem, Widget};
     use serde_json::json;
-    use std::path::{Path, PathBuf};
 
     #[tokio::test]
     async fn plugin_widgets_are_registered_and_validated() {
-        let plugins = installed_fixture_manager().await;
+        let (_root, plugins) = installed_fixture_manager().await;
         let registry = build_registry(&[], &plugins);
 
         let names: Vec<&str> = registry
@@ -122,61 +197,15 @@ mod tests {
             .unwrap_or_default()
     }
 
-    async fn installed_fixture_manager() -> PluginManager {
-        let root = std::env::temp_dir().join(format!(
-            "vesta-shared-registry-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        let manager = PluginManager::new(&root).unwrap();
-        let fixture =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/plugins/hello-world");
-        let repo = git_fixture_repo(&fixture, "registry");
-        manager.install(&repo.to_string_lossy()).await.unwrap();
-        std::fs::remove_dir_all(&repo).ok();
+    async fn installed_fixture_manager() -> (test_fixtures::TempDir, PluginManager) {
+        let root = test_fixtures::temp_dir("vesta-shared-registry");
+        let manager = PluginManager::new(root.path()).unwrap();
+        let fixture = test_fixtures::fixture_dir("hello-world");
+        let repo = test_fixtures::git_fixture_repo(&fixture, "registry");
         manager
-    }
-
-    /// Like the manager tests: fixture trees become real git repositories so
-    /// the installer's clone path is exercised end to end.
-    fn git_fixture_repo(fixture: &Path, name: &str) -> PathBuf {
-        let repo = std::env::temp_dir().join(format!(
-            "vesta-plugin-fixture-{name}-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        copy_tree(fixture, &repo);
-        for args in [
-            vec!["init", "-q"],
-            vec!["add", "."],
-            vec![
-                "-c",
-                "user.name=t",
-                "-c",
-                "user.email=t@t",
-                "commit",
-                "-qm",
-                "x",
-            ],
-        ] {
-            let status = std::process::Command::new("git")
-                .args(&args)
-                .current_dir(&repo)
-                .status()
-                .unwrap();
-            assert!(status.success(), "git failed: {args:?}");
-        }
-        repo
-    }
-
-    fn copy_tree(from: &Path, to: &Path) {
-        std::fs::create_dir_all(to).unwrap();
-        for entry in std::fs::read_dir(from).unwrap() {
-            let entry = entry.unwrap();
-            let target = to.join(entry.file_name());
-            if entry.file_type().unwrap().is_dir() {
-                copy_tree(&entry.path(), &target);
-            } else {
-                std::fs::copy(entry.path(), target).unwrap();
-            }
-        }
+            .install(&repo.path().to_string_lossy())
+            .await
+            .unwrap();
+        (root, manager)
     }
 }

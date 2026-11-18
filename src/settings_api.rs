@@ -4,7 +4,7 @@ use axum::extract::{Extension, Path, Query};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::AppState;
@@ -216,12 +216,14 @@ fn sanitize_icon_name(name: &str) -> String {
 pub async fn list_plugins(
     Extension(state): Extension<std::sync::Arc<AppState>>,
 ) -> Result<impl IntoResponse, VestaError> {
-    let plugins = state
-        .plugins
-        .load_all()
-        .iter()
-        .map(plugin_payload)
-        .collect::<Vec<_>>();
+    let plugins = std::sync::Arc::clone(&state.plugins);
+    let records = tokio::task::spawn_blocking(move || plugins.load_all())
+        .await
+        .map_err(|error| VestaError::Plugin(format!("plugin listing failed: {error}")))?;
+    let plugins: Vec<PluginSummary> = records
+        .into_iter()
+        .map(PluginSummary::from_record)
+        .collect();
     Ok(jsend::success(json!({ "plugins": plugins })))
 }
 
@@ -232,9 +234,8 @@ pub async fn install_plugin(
     Extension(state): Extension<std::sync::Arc<AppState>>,
     Json(input): Json<PluginInstallInput>,
 ) -> Result<impl IntoResponse, VestaError> {
-    let record = state.plugins.install(input.url.trim()).await?;
-    state.rebuild_widget_registry();
-    Ok(jsend::success(plugin_payload(&record)))
+    let record = state.install_plugin(input.url.trim()).await?;
+    Ok(jsend::success(PluginSummary::from_record(record)))
 }
 
 /// Re-fetches an installed plugin from its recorded source URL and swaps the
@@ -243,9 +244,8 @@ pub async fn update_plugin(
     Extension(state): Extension<std::sync::Arc<AppState>>,
     Path(plugin_id): Path<String>,
 ) -> Result<impl IntoResponse, VestaError> {
-    let record = state.plugins.update(&plugin_id).await?;
-    state.rebuild_widget_registry();
-    Ok(jsend::success(plugin_payload(&record)))
+    let record = state.update_plugin(&plugin_id).await?;
+    Ok(jsend::success(PluginSummary::from_record(record)))
 }
 
 /// Removes an installed plugin. Refuses while dashboard tiles still use it.
@@ -253,18 +253,7 @@ pub async fn uninstall_plugin(
     Extension(state): Extension<std::sync::Arc<AppState>>,
     Path(plugin_id): Path<String>,
 ) -> Result<impl IntoResponse, VestaError> {
-    let prefix = format!("{}{}{}", crate::plugins::PLUGIN_NAME_PREFIX, plugin_id, ':');
-    let in_use = state.config.snapshot().items.iter().any(
-        |item| matches!(item, DashboardItem::Widget(widget) if widget.name.starts_with(&prefix)),
-    );
-    if in_use {
-        return Err(VestaError::Plugin(format!(
-            "plugin '{}' is still used by dashboard tiles; remove those tiles first",
-            plugin_id
-        )));
-    }
-    state.plugins.uninstall(&plugin_id)?;
-    state.rebuild_widget_registry();
+    state.uninstall_plugin(&plugin_id).await?;
     Ok(jsend::success(json!({ "removed": plugin_id })))
 }
 
@@ -301,37 +290,93 @@ pub async fn plugin_asset(
     Ok((headers, bytes).into_response())
 }
 
-fn plugin_payload(record: &crate::plugins::manifest::PluginRecord) -> serde_json::Value {
-    json!({
-        "id": record.manifest.id,
-        "name": record.manifest.name,
-        "version": record.manifest.version,
-        "description": record.manifest.description,
-        "source_url": record.source.source_url,
-        "commit": record.source.commit,
-        "installed_at": record.source.installed_at,
-        "widgets": record.manifest.widgets.iter().map(|widget| json!({
-            "id": widget.id,
-            "title": widget.title,
-            "description": widget.description,
-            "entry": widget.entry,
-            "width": widget.width,
-            "height": widget.height,
-            "refresh_interval_secs": widget.refresh_interval_secs,
-            "fields": widget.fields.iter().map(|field| json!({
-                "key": field.key,
-                "label": field.label,
-                "kind": field.kind,
-                "required": field.required,
-                "description": field.description,
-                "default": field.default,
-                "options": field.options.iter().map(|option| json!({
-                    "value": option.value,
-                    "label": option.label,
-                })).collect::<Vec<_>>(),
-            })).collect::<Vec<_>>(),
-        })).collect::<Vec<_>>(),
-    })
+#[derive(Serialize)]
+struct PluginSummary {
+    id: String,
+    name: String,
+    version: Option<String>,
+    description: Option<String>,
+    source_url: String,
+    commit: String,
+    installed_at: String,
+    widgets: Vec<PluginWidgetSummary>,
+}
+
+#[derive(Serialize)]
+struct PluginWidgetSummary {
+    id: String,
+    title: String,
+    description: Option<String>,
+    entry: String,
+    width: u8,
+    height: u8,
+    refresh_interval_secs: Option<u64>,
+    fields: Vec<PluginFieldSummary>,
+}
+
+#[derive(Serialize)]
+struct PluginFieldSummary {
+    key: String,
+    label: String,
+    kind: String,
+    required: bool,
+    description: Option<String>,
+    default: Option<serde_json::Value>,
+    options: Vec<PluginOptionSummary>,
+}
+
+#[derive(Serialize)]
+struct PluginOptionSummary {
+    value: String,
+    label: String,
+}
+
+impl PluginSummary {
+    fn from_record(record: crate::plugins::manifest::PluginRecord) -> Self {
+        Self {
+            id: record.manifest.id,
+            name: record.manifest.name,
+            version: record.manifest.version,
+            description: record.manifest.description,
+            source_url: record.source.source_url,
+            commit: record.source.commit,
+            installed_at: record.source.installed_at,
+            widgets: record
+                .manifest
+                .widgets
+                .into_iter()
+                .map(|widget| PluginWidgetSummary {
+                    id: widget.id,
+                    title: widget.title,
+                    description: widget.description,
+                    entry: widget.entry,
+                    width: widget.width,
+                    height: widget.height,
+                    refresh_interval_secs: widget.refresh_interval_secs,
+                    fields: widget
+                        .fields
+                        .into_iter()
+                        .map(|field| PluginFieldSummary {
+                            key: field.key,
+                            label: field.label,
+                            kind: field.kind,
+                            required: field.required,
+                            description: field.description,
+                            default: field.default,
+                            options: field
+                                .options
+                                .into_iter()
+                                .map(|option| PluginOptionSummary {
+                                    value: option.value,
+                                    label: option.label,
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
 }
 
 #[cfg(test)]
