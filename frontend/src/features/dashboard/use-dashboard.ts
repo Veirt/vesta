@@ -58,9 +58,9 @@ function useDashboard() {
   const [connection, setConnection] = useState<Connection>("connecting");
 
   useEffect(() => {
-    // Set once the effect is torn down; every deferred callback (boot's
-    // fetch, stream events) checks it before touching state.
+    const controller = new AbortController();
     let closed = false;
+    let streamSnapshotApplied = false;
     const applySnapshot = (data: DashboardData) => {
       if (closed) return;
       const receivedAt = Date.now();
@@ -92,7 +92,10 @@ function useDashboard() {
     const onSnapshot = (event: MessageEvent<string>) => {
       const parsed = parseEvent(DashboardDataSchema, event.data);
       if (parsed) {
+        streamSnapshotApplied = true;
         applySnapshot(parsed);
+        setError("");
+        setLoading(false);
       } else console.error("Ignoring invalid dashboard snapshot from event stream");
     };
     const onNode = (event: MessageEvent<string>) => {
@@ -126,13 +129,13 @@ function useDashboard() {
 
     const boot = async () => {
       try {
-        const data = await fetchDashboard();
-        if (!data || closed) return;
+        const data = await fetchDashboard(controller.signal);
+        if (!data || closed || controller.signal.aborted || streamSnapshotApplied) return;
         applySnapshot(data);
         setError("");
         setLoading(false);
       } catch (cause) {
-        if (!closed) {
+        if (!closed && !controller.signal.aborted && !streamSnapshotApplied) {
           setError(cause instanceof Error ? cause.message : "Dashboard data could not be loaded");
           setLoading(false);
         }
@@ -143,6 +146,7 @@ function useDashboard() {
     void boot();
     return () => {
       closed = true;
+      controller.abort();
       source.removeEventListener("snapshot", onSnapshot);
       source.removeEventListener("node", onNode);
       source.close();

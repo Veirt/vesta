@@ -17,6 +17,7 @@ pub struct PingResult {
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct PingKey {
     pub id: String,
+    pub url: String,
 }
 
 /// HEAD-then-GET availability checks with a short-lived negative/positive
@@ -94,18 +95,28 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn cached_result_short_circuits() {
+    async fn cached_result_short_circuits_and_keys_by_url() {
         let service = PingService::new(Client::new());
-        let key = PingKey {
+        let cached_key = PingKey {
             id: "service".into(),
+            url: "http://127.0.0.1:1".into(),
         };
         service
             .cache
-            .insert(key.clone(), PingResult { is_up: true })
+            .insert(cached_key.clone(), PingResult { is_up: true })
             .await;
         let config = PingConfig {
             url: "http://127.0.0.1:1".to_string(), // nothing listens here
         };
-        assert!(service.check(&key, &config).await);
+        assert!(service.check(&cached_key, &config).await);
+
+        let updated_url_key = PingKey {
+            id: "service".into(),
+            url: "http://127.0.0.1:2".into(),
+        };
+        let updated_config = PingConfig {
+            url: "http://127.0.0.1:2".to_string(),
+        };
+        assert!(!service.check(&updated_url_key, &updated_config).await);
     }
 }

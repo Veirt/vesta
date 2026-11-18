@@ -13,11 +13,16 @@ fn sysinfo_error(e: sysinfo::Error) -> MetricsError {
     MetricsError(format!("local stats: {e}"))
 }
 
+#[derive(Clone)]
+pub enum NodeObservation {
+    Stats(NodeStats),
+    Failed,
+}
+
 /// Owns every node poller. Each configured node runs one supervised task with
 /// a fixed interval; shutting down aborts them all (every task is owned).
 pub struct NodeService {
-    stats: Arc<RwLock<HashMap<String, NodeStats>>>,
-    scrape_failures: Arc<RwLock<HashSet<String>>>,
+    observations: Arc<RwLock<HashMap<String, NodeObservation>>>,
     updates: broadcast::Sender<(String, Option<NodeStats>)>,
     configuration: watch::Sender<Vec<NodeConfig>>,
     supervisor: JoinHandle<()>,
@@ -28,8 +33,8 @@ impl NodeService {
     pub fn start(nodes: &[NodeConfig], client: reqwest::Client) -> Arc<Self> {
         let exporter = Arc::new(NodeExporterCollector::new(client));
         let local = LocalCollector::new();
-        let stats: Arc<RwLock<HashMap<String, NodeStats>>> = Arc::new(RwLock::new(HashMap::new()));
-        let scrape_failures = Arc::new(RwLock::new(HashSet::new()));
+        let observations: Arc<RwLock<HashMap<String, NodeObservation>>> =
+            Arc::new(RwLock::new(HashMap::new()));
         let (updates, _) = broadcast::channel(64);
 
         let (configuration, receiver) = watch::channel(nodes.to_vec());
@@ -37,27 +42,29 @@ impl NodeService {
             receiver,
             exporter,
             local,
-            Arc::clone(&stats),
-            Arc::clone(&scrape_failures),
+            Arc::clone(&observations),
             updates.clone(),
         ));
 
         Arc::new(Self {
-            stats,
-            scrape_failures,
+            observations,
             updates,
             configuration,
             supervisor,
         })
     }
 
+    pub async fn observation(&self, id: &str) -> Option<NodeObservation> {
+        self.observations.read().await.get(id).cloned()
+    }
+
     pub async fn stats_for(&self, id: &str) -> Result<NodeStats, VestaError> {
-        self.stats
-            .read()
-            .await
-            .get(id)
-            .cloned()
-            .ok_or_else(|| VestaError::InvalidWidgetConfig(format!("unknown node '{id}'")))
+        match self.observation(id).await {
+            Some(NodeObservation::Stats(stats)) => Ok(stats),
+            Some(NodeObservation::Failed) | None => Err(VestaError::InvalidWidgetConfig(format!(
+                "unknown node '{id}'"
+            ))),
+        }
     }
 
     pub fn node_ids(&self) -> Vec<String> {
@@ -74,10 +81,6 @@ impl NodeService {
             .iter()
             .find(|node| node.id == id)
             .map(|node| node.name.clone())
-    }
-
-    pub async fn scrape_failed(&self, id: &str) -> bool {
-        self.scrape_failures.read().await.contains(id)
     }
 
     pub fn subscribe_updates(&self) -> broadcast::Receiver<(String, Option<NodeStats>)> {
@@ -100,8 +103,7 @@ async fn run_supervisor(
     mut configuration: watch::Receiver<Vec<NodeConfig>>,
     exporter: Arc<NodeExporterCollector>,
     local: Arc<LocalCollector>,
-    stats: Arc<RwLock<HashMap<String, NodeStats>>>,
-    scrape_failures: Arc<RwLock<HashSet<String>>>,
+    observations: Arc<RwLock<HashMap<String, NodeObservation>>>,
     updates: broadcast::Sender<(String, Option<NodeStats>)>,
 ) {
     let mut pollers = JoinSet::new();
@@ -111,23 +113,18 @@ async fn run_supervisor(
         while pollers.join_next().await.is_some() {}
 
         let configured_ids: HashSet<_> = nodes.iter().map(|node| node.id.as_str()).collect();
-        stats
+        observations
             .write()
             .await
             .retain(|id, _| configured_ids.contains(id.as_str()));
-        scrape_failures
-            .write()
-            .await
-            .retain(|id| configured_ids.contains(id.as_str()));
 
         for node in nodes {
             let exporter = Arc::clone(&exporter);
             let local = Arc::clone(&local);
-            let stats = Arc::clone(&stats);
-            let scrape_failures = Arc::clone(&scrape_failures);
+            let observations = Arc::clone(&observations);
             let updates = updates.clone();
             pollers.spawn(async move {
-                poll_loop(node, exporter, local, stats, scrape_failures, updates).await;
+                poll_loop(node, exporter, local, observations, updates).await;
             });
         }
 
@@ -153,16 +150,14 @@ async fn poll_loop(
     node: NodeConfig,
     exporter: Arc<NodeExporterCollector>,
     local: Arc<LocalCollector>,
-    stats: Arc<RwLock<HashMap<String, NodeStats>>>,
-    scrape_failures: Arc<RwLock<HashSet<String>>>,
+    observations: Arc<RwLock<HashMap<String, NodeObservation>>>,
     updates: broadcast::Sender<(String, Option<NodeStats>)>,
 ) {
     let mut ticker = tokio::time::interval(node.interval());
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let local = &local;
     let exporter = &exporter;
-    let stats = &stats;
-    let scrape_failures = &scrape_failures;
+    let observations = &observations;
     loop {
         ticker.tick().await;
         let result = if node.is_local() {
@@ -177,17 +172,18 @@ async fn poll_loop(
 
         match result {
             Ok(new_stats) => {
-                stats
+                observations
                     .write()
                     .await
-                    .insert(node.id.clone(), new_stats.clone());
-                scrape_failures.write().await.remove(&node.id);
+                    .insert(node.id.clone(), NodeObservation::Stats(new_stats.clone()));
                 let _ = updates.send((node.id.clone(), Some(new_stats)));
             }
             Err(e) => {
                 tracing::warn!(node = %node.id, error = %e, "node poll failed");
-                scrape_failures.write().await.insert(node.id.clone());
-                stats.write().await.remove(&node.id);
+                observations
+                    .write()
+                    .await
+                    .insert(node.id.clone(), NodeObservation::Failed);
                 let _ = updates.send((node.id.clone(), None));
                 continue;
             }
@@ -265,7 +261,10 @@ mod tests {
 
         assert_eq!(id, "offline");
         assert!(stats.is_none());
-        assert!(service.scrape_failed("offline").await);
+        assert!(matches!(
+            service.observation("offline").await,
+            Some(NodeObservation::Failed)
+        ));
         service.shutdown();
     }
 }

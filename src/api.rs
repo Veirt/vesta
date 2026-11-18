@@ -16,8 +16,8 @@ use axum::{
 use serde_json::json;
 
 use crate::{
-    AppState, error::VestaError, error::VestaResult, response::jsend,
-    services::ping_service::PingKey, widget_system::WidgetQuery,
+    AppState, error::VestaError, error::VestaResult, metrics::service::NodeObservation,
+    response::jsend, services::ping_service::PingKey, widget_system::WidgetQuery,
 };
 
 #[derive(serde::Deserialize)]
@@ -74,8 +74,11 @@ async fn dashboard_payload(state: &AppState) -> serde_json::Value {
     let config = state.config.snapshot();
     let mut nodes = Vec::with_capacity(config.nodes.len());
     for node in &config.nodes {
-        let stats = state.nodes.stats_for(&node.id).await.ok();
-        let scrape_failed = state.nodes.scrape_failed(&node.id).await;
+        let (stats, scrape_failed) = match state.nodes.observation(&node.id).await {
+            Some(NodeObservation::Stats(stats)) => (Some(stats), false),
+            Some(NodeObservation::Failed) => (None, true),
+            None => (None, false),
+        };
         let source = if node.is_local() {
             "Local system metrics".to_string()
         } else {
@@ -90,11 +93,7 @@ async fn dashboard_payload(state: &AppState) -> serde_json::Value {
             "source": source,
             "interval_secs": node.interval_secs,
             "scrape_failed": scrape_failed,
-            "stats": if scrape_failed {
-                None
-            } else {
-                stats.as_ref().map(stats_payload)
-            },
+            "stats": stats.as_ref().map(stats_payload),
         }));
     }
 
@@ -230,7 +229,10 @@ pub async fn ping_handler(
         ))
     })?;
 
-    let key = PingKey { id: params.id };
+    let key = PingKey {
+        id: params.id,
+        url: ping_config.url.clone(),
+    };
     let is_up = state.ping.check(&key, ping_config).await;
     Ok(jsend::success(json!({ "up": is_up })))
 }
