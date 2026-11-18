@@ -32,7 +32,8 @@ import {
   type TileResizeState,
   type TileSize,
 } from "@/shared/lib/layout";
-import { ServiceCard, WidgetCard } from "@/features/dashboard/tile-renderers";
+import { ServiceCard } from "@/features/widgets/service-card";
+import { WidgetCard } from "@/features/widgets/widget-card";
 import type { LayoutEntry } from "@/features/dashboard/use-dashboard-editor";
 import type { EditableDashboardItem } from "@/shared/lib/draft-models";
 

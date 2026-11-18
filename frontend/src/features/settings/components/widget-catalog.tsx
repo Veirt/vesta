@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { WidgetPreview } from "@/features/dashboard/tile-renderers";
+import { WidgetPreview } from "@/features/widgets/widget-preview";
 import type { WidgetDescriptor } from "@/shared/schemas/core";
 
 function WidgetCatalog({
