@@ -6,48 +6,29 @@ use async_stream::stream;
 use axum::{
     Extension,
     extract::{Path, Query},
+    http::header::{CACHE_CONTROL, CONTENT_TYPE},
+    http::{HeaderValue, StatusCode},
     response::{
-        IntoResponse,
+        IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
     },
 };
 use serde_json::json;
 
-use crate::{AppState, error::VestaError, response::jsend, widget_system::WidgetQuery};
+use crate::{
+    AppState, error::VestaError, error::VestaResult, response::jsend,
+    services::ping_service::PingKey, widget_system::WidgetQuery,
+};
 
 #[derive(serde::Deserialize)]
-pub struct ServiceQuery {
-    pub id: String,
+pub struct PingQuery {
+    id: String,
 }
 
 #[derive(serde::Deserialize)]
 pub struct HealthQuery {
     #[serde(default)]
     pub detailed: bool,
-}
-
-/// Body of `POST /api/widgets/{name}/options`: the edited widget's field key
-/// and its unsaved options map.
-#[derive(serde::Deserialize)]
-pub struct WidgetOptionsRequest {
-    pub field: String,
-    #[serde(default)]
-    pub config: serde_json::Value,
-}
-
-/// Options for a widget's dynamic select field, resolved from unsaved form
-/// values against the external system the widget talks to.
-pub async fn widget_options(
-    Path(widget_name): Path<String>,
-    Extension(state): Extension<Arc<AppState>>,
-    axum::Json(request): axum::Json<WidgetOptionsRequest>,
-) -> Result<impl IntoResponse, VestaError> {
-    let options = state
-        .widget_registry
-        .current()
-        .field_options(&widget_name, &request.field, &request.config)
-        .await?;
-    Ok(jsend::success(json!({ "options": options })))
 }
 
 fn stats_payload(stats: &crate::metrics::node::NodeStats) -> serde_json::Value {
@@ -230,35 +211,33 @@ pub async fn node_stats(
     Ok(jsend::success(payload))
 }
 
-/// List configured nodes: `GET /api/nodes`.
-pub async fn list_nodes(
+/// Check cached service reachability: `GET /api/ping`.
+pub async fn ping_handler(
     Extension(state): Extension<Arc<AppState>>,
-) -> Result<impl IntoResponse, VestaError> {
-    let config = state.config.snapshot();
-    let nodes: Vec<_> = config
-        .nodes
-        .iter()
-        .map(|n| json!({"id": n.id, "name": n.name, "endpoint": n.endpoint}))
-        .collect();
-    Ok(jsend::success(json!({ "nodes": nodes })))
-}
-
-/// Get service information.
-pub async fn get_service(
-    Query(query): Query<ServiceQuery>,
-    Extension(state): Extension<Arc<AppState>>,
+    Query(params): Query<PingQuery>,
 ) -> Result<impl IntoResponse, VestaError> {
     let config = state.config.snapshot();
     let service = config
-        .service(&query.id)
+        .service(&params.id)
         .ok_or_else(|| VestaError::ServiceNotFound {
-            id: query.id.clone(),
+            id: params.id.clone(),
         })?;
-    Ok(jsend::success(json!({ "service": service })))
+
+    let ping_config = service.ping.as_ref().ok_or_else(|| {
+        VestaError::InvalidDashboard(format!(
+            "service '{}' has no availability check configured",
+            service.id
+        ))
+    })?;
+
+    let key = PingKey { id: params.id };
+    let is_up = state.ping.check(&key, ping_config).await;
+    Ok(jsend::success(json!({ "up": is_up })))
 }
 
-/// Get widget information.
-pub async fn get_widget(
+/// Live data for a dashboard widget: `GET /api/widgets/{widget_name}`.
+pub async fn widget_handler(
+    Path(widget_name): Path<String>,
     Query(query): Query<WidgetQuery>,
     Extension(state): Extension<Arc<AppState>>,
 ) -> Result<impl IntoResponse, VestaError> {
@@ -268,7 +247,74 @@ pub async fn get_widget(
         .ok_or_else(|| VestaError::WidgetNotFound {
             id: query.id.clone(),
         })?;
-    Ok(jsend::success(json!({ "widget": widget })))
+    let data = state
+        .widget_registry
+        .current()
+        .handle_request(&widget_name, &widget, state.widget_ctx.clone(), query)
+        .await?;
+    Ok(jsend::success(data))
+}
+
+/// Serves a plugin's static widget assets. Public like the dashboard itself;
+/// path resolution rejects traversal and symlink escapes.
+pub async fn plugin_asset(
+    Extension(state): Extension<Arc<AppState>>,
+    Path((plugin_id, path)): Path<(String, String)>,
+) -> Result<Response, VestaError> {
+    let root = state.plugins.plugin_dir(&plugin_id)?;
+    let file = crate::plugins::assets::resolve_asset_path(&root, &path).ok_or(
+        VestaError::PluginNotFound {
+            id: format!("{}/{}", plugin_id, path),
+        },
+    )?;
+    let content_type = crate::plugins::assets::content_type(&file)
+        .ok_or(VestaError::PluginNotFound {
+            id: format!("{}/{}", plugin_id, path),
+        })?
+        .to_string();
+    let bytes = tokio::fs::read(&file).await.map_err(VestaError::Io)?;
+    let headers = [
+        (CONTENT_TYPE, content_type),
+        (CACHE_CONTROL, "no-cache".to_string()),
+        (
+            axum::http::header::CONTENT_SECURITY_POLICY,
+            "frame-ancestors 'self'".to_string(),
+        ),
+        (
+            axum::http::header::X_CONTENT_TYPE_OPTIONS,
+            "nosniff".to_string(),
+        ),
+    ];
+    Ok((headers, bytes).into_response())
+}
+
+/// Serves an uploaded service/group icon: `GET /api/icons/{icon_id}`.
+pub async fn get_icon(
+    Extension(state): Extension<Arc<AppState>>,
+    Path(icon_id): Path<i64>,
+) -> VestaResult<Response> {
+    let Some(icon) = state.database.load_icon(icon_id).await? else {
+        return Err(VestaError::ApiError {
+            status: StatusCode::NOT_FOUND,
+            message: "Icon not found".to_string(),
+        });
+    };
+    let mut response = (StatusCode::OK, icon.data).into_response();
+    response.headers_mut().insert(
+        CONTENT_TYPE,
+        HeaderValue::from_str(&icon.content_type).map_err(|error| {
+            VestaError::Config(format!("invalid stored icon content type: {error}"))
+        })?,
+    );
+    response.headers_mut().insert(
+        CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=300"),
+    );
+    response.headers_mut().insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+    Ok(response)
 }
 
 /// Application health; `?detailed=true` adds config statistics.

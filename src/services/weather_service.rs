@@ -4,7 +4,8 @@ use moka::future::Cache;
 use reqwest::Client;
 use serde::Deserialize;
 
-use crate::error::{VestaError, VestaResult};
+use crate::error::VestaResult;
+use crate::http_client::send_checked_json;
 
 const CACHE_TTL: Duration = Duration::from_secs(600);
 
@@ -84,15 +85,7 @@ impl WeatherService {
             query.temperature_unit()
         );
 
-        let response = self.http_client.get(&url).send().await?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(VestaError::ApiError {
-                status,
-                message: "weather provider error".to_string(),
-            });
-        }
-        Ok(response.json::<WeatherData>().await?)
+        send_checked_json(self.http_client.get(&url), "weather provider").await
     }
 }
 

@@ -1,9 +1,10 @@
 use async_trait::async_trait;
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
-use crate::error::{VestaError, VestaResult};
+use crate::error::VestaResult;
+use crate::http_client::{parse_logged, send_checked_json};
 use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetQuery};
 
 /// AdGuard Home widget.
@@ -152,43 +153,12 @@ impl AdGuardHomeWidget {
     }
 
     async fn fetch_json(&self, path: &str, username: &str, password: &str) -> VestaResult<Value> {
-        let response = self
-            .client
-            .get(path)
-            .basic_auth(username, Some(password))
-            .send()
-            .await?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(VestaError::ApiError {
-                status,
-                message: format!("AdGuard Home request to {path} failed: {status}"),
-            });
-        }
-        Ok(response.json::<Value>().await?)
+        send_checked_json(
+            self.client.get(path).basic_auth(username, Some(password)),
+            &format!("AdGuard Home {path}"),
+        )
+        .await
     }
-}
-
-/// Parse a widget payload, logging a truncated raw copy on shape mismatch:
-/// payload drift between AdGuard versions is the likely failure here, and
-/// the log removes the guesswork when a version changes shape again.
-fn parse_logged<T: DeserializeOwned>(endpoint: &str, value: &Value) -> VestaResult<T> {
-    serde_json::from_value(value.clone()).map_err(|error| {
-        let payload: String = value.to_string().chars().take(512).collect();
-        tracing::warn!(
-            target: "vesta::widgets::adguard_home",
-            endpoint,
-            %error,
-            payload,
-            "AdGuard payload did not match the expected shape"
-        );
-        VestaError::ApiError {
-            status: axum::http::StatusCode::BAD_GATEWAY,
-            message: format!(
-                "AdGuard {endpoint} payload did not match the expected shape: {error}"
-            ),
-        }
-    })
 }
 
 /// Assemble the tile payload from the three AdGuard API responses.
@@ -295,9 +265,10 @@ impl WidgetHandler for AdGuardHomeWidget {
             self.fetch_json(&status_url, &config.username, &config.password),
             self.fetch_json(&filtering_url, &config.username, &config.password),
         );
-        let stats: StatsResponse = parse_logged("/control/stats", &stats?)?;
-        let status: StatusResponse = parse_logged("/control/status", &status?)?;
-        let filtering: FilteringStatus = parse_logged("/control/filtering/status", &filtering?)?;
+        let stats: StatsResponse = parse_logged("AdGuard", "/control/stats", &stats?)?;
+        let status: StatusResponse = parse_logged("AdGuard", "/control/status", &status?)?;
+        let filtering: FilteringStatus =
+            parse_logged("AdGuard", "/control/filtering/status", &filtering?)?;
 
         Ok(tile_payload(stats, status, filtering))
     }

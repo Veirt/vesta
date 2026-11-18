@@ -40,14 +40,14 @@ impl PingService {
         }
     }
 
-    pub async fn check(&self, key: &PingKey, config: &PingConfig) -> VestaResult<bool> {
+    pub async fn check(&self, key: &PingKey, config: &PingConfig) -> bool {
         if let Some(cached) = self.cache.get(key).await {
-            return Ok(cached.is_up);
+            return cached.is_up;
         }
 
         let is_up = self.perform_ping(config).await.unwrap_or(false);
         self.cache.insert(key.clone(), PingResult { is_up }).await;
-        Ok(is_up)
+        is_up
     }
 
     pub async fn test_url(&self, url: &str) -> bool {
@@ -106,6 +106,6 @@ mod tests {
         let config = PingConfig {
             url: "http://127.0.0.1:1".to_string(), // nothing listens here
         };
-        assert!(service.check(&key, &config).await.unwrap());
+        assert!(service.check(&key, &config).await);
     }
 }

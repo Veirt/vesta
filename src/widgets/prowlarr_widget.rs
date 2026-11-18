@@ -1,9 +1,10 @@
 use async_trait::async_trait;
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
-use crate::error::{VestaError, VestaResult};
+use crate::error::VestaResult;
+use crate::http_client::{parse_logged, send_checked_json};
 use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetQuery};
 
 /// Prowlarr indexer widget.
@@ -73,26 +74,16 @@ enum IndexerStatsShape {
     Bare(Vec<IndexerStatsEntry>),
 }
 
-/// Parse a payload, logging a truncated raw copy when the shape does not
-/// match: payload drift between Prowlarr versions is diagnosable from
-/// server.log alone.
-fn parse_logged<T: DeserializeOwned>(endpoint: &str, value: &Value) -> VestaResult<T> {
-    serde_json::from_value(value.clone()).map_err(|error| {
-        let payload: String = value.to_string().chars().take(512).collect();
-        tracing::warn!(
-            target: "vesta::widgets::prowlarr",
-            endpoint,
-            %error,
-            payload,
-            "Prowlarr payload did not match the expected shape"
-        );
-        VestaError::ApiError {
-            status: axum::http::StatusCode::BAD_GATEWAY,
-            message: format!(
-                "Prowlarr {endpoint} payload did not match the expected shape: {error}"
-            ),
-        }
-    })
+#[derive(Serialize, Debug)]
+struct IndexerRow {
+    name: String,
+    enable: bool,
+    queries: u64,
+    grabs: u64,
+    rss_queries: u64,
+    failed_queries: u64,
+    failed_grabs: u64,
+    average_response_time: Option<f64>,
 }
 
 pub struct ProwlarrWidget {
@@ -105,25 +96,16 @@ impl ProwlarrWidget {
     }
 
     async fn fetch_json(&self, url: String, key: &str) -> VestaResult<Value> {
-        let response = self
-            .client
-            .get(&url)
-            .header("X-Api-Key", key)
-            .send()
-            .await?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(VestaError::ApiError {
-                status,
-                message: format!("Prowlarr request to {url} failed: {status}"),
-            });
-        }
-        Ok(response.json::<Value>().await?)
+        send_checked_json(
+            self.client.get(&url).header("X-Api-Key", key),
+            &format!("Prowlarr {url}"),
+        )
+        .await
     }
 
     /// Parse `/api/v1/indexerstats` for the per-indexer rows.
     fn parse_stats(&self, value: &Value) -> VestaResult<Vec<IndexerStatsEntry>> {
-        let shape: IndexerStatsShape = parse_logged("/api/v1/indexerstats", value)?;
+        let shape: IndexerStatsShape = parse_logged("Prowlarr", "/api/v1/indexerstats", value)?;
         Ok(match shape {
             IndexerStatsShape::Wrapped { indexers } => indexers,
             IndexerStatsShape::Bare(stats) => stats,
@@ -134,7 +116,7 @@ impl ProwlarrWidget {
 /// Merge indexer definitions with per-indexer usage stats. Stats rows are
 /// matched to indexers by id when both sides have one, otherwise by name;
 /// indexers missing from the stats response report zero usage.
-fn indexer_rows(indexers: Vec<IndexerEntry>, stats: Vec<IndexerStatsEntry>) -> Vec<Value> {
+fn indexer_rows(indexers: Vec<IndexerEntry>, stats: Vec<IndexerStatsEntry>) -> Vec<IndexerRow> {
     let mut stats_by_id: HashMap<u64, &IndexerStatsEntry> = HashMap::new();
     let mut stats_by_name: HashMap<String, &IndexerStatsEntry> = HashMap::new();
     for entry in stats.iter() {
@@ -155,30 +137,30 @@ fn indexer_rows(indexers: Vec<IndexerEntry>, stats: Vec<IndexerStatsEntry>) -> V
                 .or_else(|| stats_by_name.get(&indexer.name))
                 .copied();
             let usage = usage.cloned().unwrap_or_default();
-            json!({
-                "name": indexer.name,
-                "enable": indexer.enable,
-                "queries": usage.number_of_queries,
-                "grabs": usage.number_of_grabs,
-                "rss_queries": usage.number_of_rss_queries,
-                "failed_queries": usage.number_of_failed_queries,
-                "failed_grabs": usage.number_of_failed_grabs,
-                "average_response_time": usage.average_response_time,
-            })
+            IndexerRow {
+                name: indexer.name.clone(),
+                enable: indexer.enable,
+                queries: usage.number_of_queries,
+                grabs: usage.number_of_grabs,
+                rss_queries: usage.number_of_rss_queries,
+                failed_queries: usage.number_of_failed_queries,
+                failed_grabs: usage.number_of_failed_grabs,
+                average_response_time: usage.average_response_time,
+            }
         })
         .collect()
 }
 
 /// Roll per-indexer usage up into tile totals; `None` when no indexer
 /// reports an average response time.
-fn aggregate(rows: &[Value]) -> (u64, u64, Option<f64>) {
+fn aggregate(rows: &[IndexerRow]) -> (u64, u64, Option<f64>) {
     let mut queries = 0;
     let mut grabs = 0;
     let mut response_times = Vec::new();
     for row in rows {
-        queries += row["queries"].as_u64().unwrap_or(0);
-        grabs += row["grabs"].as_u64().unwrap_or(0);
-        if let Some(time) = row["average_response_time"].as_f64() {
+        queries += row.queries;
+        grabs += row.grabs;
+        if let Some(time) = row.average_response_time {
             response_times.push(time);
         }
     }
@@ -248,7 +230,8 @@ impl WidgetHandler for ProwlarrWidget {
         let indexers_value = indexers_value?;
         let stats_value = stats_value?;
 
-        let indexers: Vec<IndexerEntry> = parse_logged("/api/v1/indexer", &indexers_value)?;
+        let indexers: Vec<IndexerEntry> =
+            parse_logged("Prowlarr", "/api/v1/indexer", &indexers_value)?;
         let stats = self.parse_stats(&stats_value)?;
         let rows = indexer_rows(indexers, stats);
         let (queries, grabs, average_response_time) = aggregate(&rows);
@@ -377,9 +360,9 @@ mod tests {
                 average_response_time: Some(865.0),
             }],
         );
-        assert_eq!(rows[0]["name"], json!("Shana Project"));
-        assert_eq!(rows[0]["queries"], json!(4));
-        assert_eq!(rows[0]["rss_queries"], json!(1194));
+        assert_eq!(rows[0].name, "Shana Project");
+        assert_eq!(rows[0].queries, 4);
+        assert_eq!(rows[0].rss_queries, 1194);
         let (queries, grabs, avg) = aggregate(&rows);
         assert_eq!((queries, grabs), (4, 0));
         assert_eq!(avg, Some(865.0));
@@ -393,8 +376,8 @@ mod tests {
         ];
         let rows_list = indexer_rows(indexers, vec![stats(Some(1), "DifferentName", 4, 2, 0, 0)]);
         assert_eq!(rows_list.len(), 2);
-        assert_eq!(rows_list[0]["queries"], json!(4));
-        assert_eq!(rows_list[1]["queries"], json!(0));
+        assert_eq!(rows_list[0].queries, 4);
+        assert_eq!(rows_list[1].queries, 0);
     }
 
     #[test]
@@ -410,9 +393,9 @@ mod tests {
             stats(Some(3), "Flaky", 1, 1, 3, 1),
         ];
         let rows = indexer_rows(indexers, stats);
-        assert_eq!(rows[0]["name"], json!("Enabled"));
-        assert_eq!(rows[1]["enable"], json!(false));
-        assert_eq!(rows[2]["failed_queries"], json!(3));
+        assert_eq!(rows[0].name, "Enabled");
+        assert!(!rows[1].enable);
+        assert_eq!(rows[2].failed_queries, 3);
     }
 
     #[test]

@@ -8,7 +8,6 @@ mod database;
 mod error;
 mod http_client;
 mod metrics;
-mod ping;
 mod plugins;
 mod response;
 mod services;
@@ -22,9 +21,8 @@ mod widgets;
 use std::sync::Arc;
 
 use axum::Router;
-use axum::extract::{DefaultBodyLimit, Extension, Path, Query};
+use axum::extract::{DefaultBodyLimit, Extension};
 use axum::middleware;
-use axum::response::IntoResponse;
 use axum::routing::{get, post, put};
 use tower_http::compression::CompressionLayer;
 use tower_http::services::ServeDir;
@@ -35,13 +33,9 @@ use database::Database;
 use error::{VestaError, VestaResult};
 use http_client::create_default_client;
 use metrics::service::NodeService;
-use ping::ping_handler;
-use response::jsend;
 use services::ping_service::PingService;
 use templates::dashboard;
-use widget_system::{
-    SharedWidgetRegistry, WidgetContext, WidgetHandlerDyn, WidgetQuery, WidgetRegistry,
-};
+use widget_system::{SharedWidgetRegistry, WidgetContext, WidgetHandlerDyn, WidgetRegistry};
 use widgets::adguard_home_widget::AdGuardHomeWidget;
 use widgets::clock_widget::ClockWidget;
 use widgets::jellyfin_random_show_widget::JellyfinRandomShowWidget;
@@ -190,25 +184,6 @@ impl AppState {
     }
 }
 
-async fn widget_handler(
-    Path(widget_name): Path<String>,
-    Query(query): Query<WidgetQuery>,
-    Extension(state): Extension<Arc<AppState>>,
-) -> Result<impl IntoResponse, VestaError> {
-    let widget = state
-        .config
-        .widget(&query.id)
-        .ok_or_else(|| VestaError::WidgetNotFound {
-            id: query.id.clone(),
-        })?;
-    let data = state
-        .widget_registry
-        .current()
-        .handle_request(&widget_name, &widget, state.widget_ctx.clone(), query)
-        .await?;
-    Ok(jsend::success(data))
-}
-
 fn build_router(state: Arc<AppState>, static_dir: &str) -> Router {
     let settings_routes = Router::new()
         .route(
@@ -229,18 +204,18 @@ fn build_router(state: Arc<AppState>, static_dir: &str) -> Router {
             "/api/plugins/{plugin_id}",
             put(settings_api::update_plugin).delete(settings_api::uninstall_plugin),
         )
-        .route("/api/nodes", get(api::list_nodes))
-        .route("/api/services", get(api::get_service))
-        .route("/api/widget", get(api::get_widget))
+        .route("/api/nodes", get(settings_api::list_nodes))
+        .route("/api/services", get(settings_api::get_service))
+        .route("/api/widget", get(settings_api::get_widget))
         .route(
             "/api/widgets/{widget_name}/options",
-            post(api::widget_options),
+            post(settings_api::widget_options),
         )
         .route_layer(middleware::from_fn(auth::require_admin));
 
     Router::new()
-        .route("/api/widgets/{widget_name}", get(widget_handler))
-        .route("/api/ping", get(ping_handler))
+        .route("/api/widgets/{widget_name}", get(api::widget_handler))
+        .route("/api/ping", get(api::ping_handler))
         .route("/api/dashboard", get(api::dashboard))
         .route("/api/dashboard/services", get(api::dashboard_services))
         .route("/api/nodes/events", get(api::node_events))
@@ -250,13 +225,13 @@ fn build_router(state: Arc<AppState>, static_dir: &str) -> Router {
         .route("/api/auth/setup", post(auth::setup))
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/logout", post(auth::logout))
-        .route("/api/icons/{icon_id}", get(settings_api::get_icon))
+        .route("/api/icons/{icon_id}", get(api::get_icon))
         .merge(settings_routes)
         .route("/", get(dashboard))
         .route("/settings", get(dashboard))
         .route(
             "/api/plugins/{plugin_id}/assets/{*path}",
-            get(settings_api::plugin_asset),
+            get(api::plugin_asset),
         )
         .nest_service("/static", ServeDir::new(static_dir))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))

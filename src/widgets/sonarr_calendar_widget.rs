@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
-use crate::error::{VestaError, VestaResult};
+use crate::error::VestaResult;
+use crate::http_client::send_checked_json;
 use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetQuery};
 
 #[derive(Clone, Debug, Deserialize)]
@@ -79,40 +80,24 @@ impl SonarrCalendarWidget {
             ("end", &day_after_tomorrow.format("%Y-%m-%d").to_string()),
         ];
 
-        let response = self
-            .client
-            .get(format!("{}/api/v3/calendar", config.url))
-            .query(&params)
-            .header("X-Api-Key", &config.key)
-            .send()
-            .await?;
-
-        let status = response.status();
-        if !status.is_success() {
-            return Err(VestaError::ApiError {
-                status,
-                message: "Failed to fetch calendar".to_string(),
-            });
-        }
-        Ok(response.json::<Calendar>().await?)
+        send_checked_json(
+            self.client
+                .get(format!("{}/api/v3/calendar", config.url))
+                .query(&params)
+                .header("X-Api-Key", &config.key),
+            "Sonarr calendar",
+        )
+        .await
     }
 
     async fn fetch_download_queue(&self, config: &Config) -> VestaResult<DownloadQueue> {
-        let response = self
-            .client
-            .get(format!("{}/api/v3/queue", config.url))
-            .header("X-Api-Key", &config.key)
-            .send()
-            .await?;
-
-        let status = response.status();
-        if !status.is_success() {
-            return Err(VestaError::ApiError {
-                status,
-                message: "Failed to fetch download queue".to_string(),
-            });
-        }
-        Ok(response.json::<DownloadQueue>().await?)
+        send_checked_json(
+            self.client
+                .get(format!("{}/api/v3/queue", config.url))
+                .header("X-Api-Key", &config.key),
+            "Sonarr download queue",
+        )
+        .await
     }
 }
 

@@ -60,7 +60,7 @@ impl NodeService {
             .ok_or_else(|| VestaError::InvalidWidgetConfig(format!("unknown node '{id}'")))
     }
 
-    pub async fn node_ids(&self) -> Vec<String> {
+    pub fn node_ids(&self) -> Vec<String> {
         self.configuration
             .borrow()
             .iter()

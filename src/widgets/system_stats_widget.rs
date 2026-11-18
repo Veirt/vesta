@@ -93,7 +93,7 @@ impl WidgetHandler for SystemStatsWidget {
         config: Config,
     ) -> VestaResult<Value> {
         let node_id = if config.node.is_empty() {
-            ctx.nodes.node_ids().await.first().cloned().ok_or_else(|| {
+            ctx.nodes.node_ids().first().cloned().ok_or_else(|| {
                 crate::error::VestaError::InvalidWidgetConfig(
                     "no nodes configured; add a server in Settings".to_string(),
                 )

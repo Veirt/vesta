@@ -1,9 +1,9 @@
 use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Extension, Path, Query};
-use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::http::header::CONTENT_TYPE;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -12,6 +12,7 @@ use crate::config::{AppSettings, Dashboard, DashboardGroup, DashboardItem};
 use crate::error::{VestaError, VestaResult};
 use crate::metrics::node::NodeConfig;
 use crate::response::jsend;
+use crate::widget_system::WidgetQuery;
 
 #[derive(Deserialize)]
 pub struct DashboardInput {
@@ -46,6 +47,76 @@ pub struct DashboardItemsInput {
 #[derive(Deserialize)]
 pub struct PluginInstallInput {
     url: String,
+}
+
+#[derive(Deserialize)]
+pub struct ServiceQuery {
+    pub id: String,
+}
+
+/// Body of `POST /api/widgets/{name}/options`: the edited widget's field key
+/// and its unsaved options map.
+#[derive(Deserialize)]
+pub struct WidgetOptionsRequest {
+    pub field: String,
+    #[serde(default)]
+    pub config: serde_json::Value,
+}
+
+/// Lists configured nodes: `GET /api/nodes`.
+pub async fn list_nodes(
+    Extension(state): Extension<std::sync::Arc<AppState>>,
+) -> Result<impl IntoResponse, VestaError> {
+    let config = state.config.snapshot();
+    let nodes: Vec<_> = config
+        .nodes
+        .iter()
+        .map(|n| json!({"id": n.id, "name": n.name, "endpoint": n.endpoint}))
+        .collect();
+    Ok(jsend::success(json!({ "nodes": nodes })))
+}
+
+/// Gets service configuration details: `GET /api/services`.
+pub async fn get_service(
+    Query(query): Query<ServiceQuery>,
+    Extension(state): Extension<std::sync::Arc<AppState>>,
+) -> Result<impl IntoResponse, VestaError> {
+    let config = state.config.snapshot();
+    let service = config
+        .service(&query.id)
+        .ok_or_else(|| VestaError::ServiceNotFound {
+            id: query.id.clone(),
+        })?;
+    Ok(jsend::success(json!({ "service": service })))
+}
+
+/// Gets widget configuration details: `GET /api/widget`.
+pub async fn get_widget(
+    Query(query): Query<WidgetQuery>,
+    Extension(state): Extension<std::sync::Arc<AppState>>,
+) -> Result<impl IntoResponse, VestaError> {
+    let widget = state
+        .config
+        .widget(&query.id)
+        .ok_or_else(|| VestaError::WidgetNotFound {
+            id: query.id.clone(),
+        })?;
+    Ok(jsend::success(json!({ "widget": widget })))
+}
+
+/// Resolves options for a widget's dynamic select field from unsaved form
+/// values: `POST /api/widgets/{widget_name}/options`.
+pub async fn widget_options(
+    Path(widget_name): Path<String>,
+    Extension(state): Extension<std::sync::Arc<AppState>>,
+    Json(request): Json<WidgetOptionsRequest>,
+) -> Result<impl IntoResponse, VestaError> {
+    let options = state
+        .widget_registry
+        .current()
+        .field_options(&widget_name, &request.field, &request.config)
+        .await?;
+    Ok(jsend::success(json!({ "options": options })))
 }
 
 pub async fn get_settings(
@@ -160,34 +231,6 @@ pub async fn upload_icon(
     })))
 }
 
-pub async fn get_icon(
-    Extension(state): Extension<std::sync::Arc<AppState>>,
-    Path(icon_id): Path<i64>,
-) -> VestaResult<Response> {
-    let Some(icon) = state.database.load_icon(icon_id).await? else {
-        return Err(VestaError::ApiError {
-            status: StatusCode::NOT_FOUND,
-            message: "Icon not found".to_string(),
-        });
-    };
-    let mut response = (StatusCode::OK, icon.data).into_response();
-    response.headers_mut().insert(
-        CONTENT_TYPE,
-        HeaderValue::from_str(&icon.content_type).map_err(|error| {
-            VestaError::Config(format!("invalid stored icon content type: {error}"))
-        })?,
-    );
-    response.headers_mut().insert(
-        CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=300"),
-    );
-    response.headers_mut().insert(
-        "x-content-type-options",
-        HeaderValue::from_static("nosniff"),
-    );
-    Ok(response)
-}
-
 fn valid_icon_data(content_type: &str, bytes: &[u8]) -> bool {
     match content_type {
         "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
@@ -255,39 +298,6 @@ pub async fn uninstall_plugin(
 ) -> Result<impl IntoResponse, VestaError> {
     state.uninstall_plugin(&plugin_id).await?;
     Ok(jsend::success(json!({ "removed": plugin_id })))
-}
-
-/// Serves a plugin's static widget assets. Public like the dashboard itself;
-/// path resolution rejects traversal and symlink escapes.
-pub async fn plugin_asset(
-    Extension(state): Extension<std::sync::Arc<AppState>>,
-    Path((plugin_id, path)): Path<(String, String)>,
-) -> Result<Response, VestaError> {
-    let root = state.plugins.plugin_dir(&plugin_id)?;
-    let file = crate::plugins::assets::resolve_asset_path(&root, &path).ok_or(
-        VestaError::PluginNotFound {
-            id: format!("{}/{}", plugin_id, path),
-        },
-    )?;
-    let content_type = crate::plugins::assets::content_type(&file)
-        .ok_or(VestaError::PluginNotFound {
-            id: format!("{}/{}", plugin_id, path),
-        })?
-        .to_string();
-    let bytes = tokio::fs::read(&file).await.map_err(VestaError::Io)?;
-    let headers = [
-        (CONTENT_TYPE, content_type),
-        (CACHE_CONTROL, "no-cache".to_string()),
-        (
-            axum::http::header::CONTENT_SECURITY_POLICY,
-            "frame-ancestors 'self'".to_string(),
-        ),
-        (
-            axum::http::header::X_CONTENT_TYPE_OPTIONS,
-            "nosniff".to_string(),
-        ),
-    ];
-    Ok((headers, bytes).into_response())
 }
 
 #[derive(Serialize)]
