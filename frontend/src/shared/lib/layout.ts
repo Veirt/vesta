@@ -8,6 +8,9 @@ export const DEFAULT_GROUP_SPAN = 6;
 export const MIN_GROUP_SPAN = 3;
 
 const UNKNOWN_WIDGET_MIN_SIZE: TileSize = { width: 3, height: 2 };
+const HIDDEN_WIDGET_MIN_SIZES: Record<string, TileSize> = {
+  SystemStats: { width: 4, height: 4 },
+};
 export const MAX_GRID_SIZE = 12;
 
 /**
@@ -28,9 +31,10 @@ export function serviceMinSize(groupSpan: number | null | undefined): TileSize {
 
 export function widgetMinSize(widgets: WidgetDescriptor[], name: string): TileSize {
   const descriptor = widgets.find((widget) => widget.name === name);
+  const fallback = HIDDEN_WIDGET_MIN_SIZES[name] ?? UNKNOWN_WIDGET_MIN_SIZE;
   return {
-    width: Math.max(1, Math.floor(descriptor?.min_width ?? UNKNOWN_WIDGET_MIN_SIZE.width)),
-    height: Math.max(1, Math.floor(descriptor?.min_height ?? UNKNOWN_WIDGET_MIN_SIZE.height)),
+    width: Math.max(1, Math.floor(descriptor?.min_width ?? fallback.width)),
+    height: Math.max(1, Math.floor(descriptor?.min_height ?? fallback.height)),
   };
 }
 

@@ -137,10 +137,13 @@ export function serializeDashboardItems(
       };
     }
     const descriptor = widgetDescriptors.find(({ name }) => name === item.name);
-    const acceptedKeys = new Set(descriptor?.fields.map(({ key }) => key) ?? []);
-    const config = Object.fromEntries(
-      Object.entries(item.config).filter(([key]) => acceptedKeys.has(key)),
-    );
+    const config = descriptor
+      ? Object.fromEntries(
+          Object.entries(item.config).filter(([key]) =>
+            descriptor.fields.some((field) => field.key === key),
+          ),
+        )
+      : item.config;
     return {
       kind: "widget",
       id: item.id.trim(),

@@ -31,22 +31,31 @@ export function occupies(
  * gaps and the rendered grid agrees with the stored baseline.
  */
 export function compactY(items: EditableDashboardItem[]) {
-  const placed: EditableDashboardItem[] = [];
-  const sorted = [...items].sort((left, right) => left.y - right.y || left.x - right.x);
-  for (const item of sorted) {
-    let y = item.y;
-    const candidate = { ...item, y };
-    while (y > 0 && !placed.some((other) => occupies({ ...candidate, y: y - 1 }, other))) {
-      y -= 1;
-    }
-    for (;;) {
-      const hit = placed.find((other) => occupies({ ...candidate, y }, other));
-      if (!hit) break;
-      y = hit.y + hit.height;
-    }
-    placed.push({ ...item, y });
+  const byGroup = new Map<string, EditableDashboardItem[]>();
+  for (const item of items) {
+    const key = item.group ?? "";
+    byGroup.set(key, [...(byGroup.get(key) ?? []), item]);
   }
-  const positions = new Map(placed.map((item) => [item.editor_id, item]));
+  const positions = new Map<string, EditableDashboardItem>();
+  for (const groupItems of byGroup.values()) {
+    const placed: EditableDashboardItem[] = [];
+    const sorted = [...groupItems].sort((left, right) => left.y - right.y || left.x - right.x);
+    for (const item of sorted) {
+      let y = item.y;
+      const candidate = { ...item, y };
+      while (y > 0 && !placed.some((other) => occupies({ ...candidate, y: y - 1 }, other))) {
+        y -= 1;
+      }
+      for (;;) {
+        const hit = placed.find((other) => occupies({ ...candidate, y }, other));
+        if (!hit) break;
+        y = hit.y + hit.height;
+      }
+      const settled = { ...item, y };
+      placed.push(settled);
+      positions.set(item.editor_id, settled);
+    }
+  }
   return items.map((item) => positions.get(item.editor_id) ?? item);
 }
 
@@ -228,7 +237,7 @@ export function removeGroupFromItems(
   const remaining = current.filter((item) => item.group !== id);
   const ungrouped = reflowGroup(sortItems([...remaining.filter((item) => !item.group), ...moving]));
   const positions = new Map(ungrouped.map((item) => [item.editor_id, item]));
-  return remaining.map((item) => positions.get(item.editor_id) ?? item);
+  return [...remaining, ...moving].map((item) => positions.get(item.editor_id) ?? item);
 }
 
 export function moveItemDraft(

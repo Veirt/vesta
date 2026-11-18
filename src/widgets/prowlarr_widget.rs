@@ -208,6 +208,15 @@ impl WidgetHandler for ProwlarrWidget {
                 true,
                 "Stored in config.toml; protect that file as a secret.",
             ),
+            WidgetField::builtin(
+                "refresh_interval",
+                "Refresh every (seconds)",
+                "number",
+                true,
+                "How often this widget requests updated values (1–3600 seconds).",
+            )
+            .with_default(serde_json::json!(300))
+            .with_range(1.0, 3600.0),
         ]
     }
 
