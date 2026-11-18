@@ -41,7 +41,8 @@ export function WidgetConfigFields({
               key={field.key}
               widgetName={descriptor.name}
               field={field}
-              config={widget.config}
+              sourceUrl={typeof widget.config.url === "string" ? widget.config.url : ""}
+              apiKey={typeof widget.config.key === "string" ? widget.config.key : ""}
               value={value}
               required={field.required}
               onChange={(next) => updateField(field, next)}
@@ -52,6 +53,7 @@ export function WidgetConfigFields({
           return (
             <div className="sm:col-span-2" key={field.key}>
               <QuickLinksField
+                key={`${widget.id}:${descriptor.name}`}
                 value={value}
                 uploading={uploading}
                 onChange={(links) => updateField(field, links)}

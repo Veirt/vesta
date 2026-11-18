@@ -16,14 +16,16 @@ function isAbortError(cause: unknown): boolean {
 export function RemoteOptionsField({
   widgetName,
   field,
-  config,
+  sourceUrl,
+  apiKey,
   value,
   required,
   onChange,
 }: {
   widgetName: string;
   field: WidgetField;
-  config: Record<string, unknown>;
+  sourceUrl: string;
+  apiKey: string;
   value: unknown;
   required: boolean;
   onChange: (value: string) => void;
@@ -33,11 +35,8 @@ export function RemoteOptionsField({
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
 
-  const keyValue = typeof config.key === "string" ? config.key : "";
-  const urlValue = typeof config.url === "string" ? config.url : "";
-
   useEffect(() => {
-    if (!urlValue.trim() || !keyValue.trim()) {
+    if (!sourceUrl.trim() || !apiKey.trim()) {
       setOptions([]);
       setError("");
       return;
@@ -46,7 +45,7 @@ export function RemoteOptionsField({
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setLoading(true);
-      loadRemoteOptions(widgetName, field.key, config, controller.signal)
+      loadRemoteOptions(widgetName, field.key, { url: sourceUrl, key: apiKey }, controller.signal)
         .then((loaded) => {
           if (!active) return;
           setOptions(loaded);
@@ -67,10 +66,7 @@ export function RemoteOptionsField({
       controller.abort();
       window.clearTimeout(timer);
     };
-    // `config` is intentionally read at fetch time only; the trigger
-    // dependencies are the values the option list is derived from.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlValue, keyValue, widgetName, field.key, attempt]);
+  }, [sourceUrl, apiKey, widgetName, field.key, attempt]);
 
   const currentValue = typeof value === "string" ? value : "";
   const known = currentValue === "" || options.some((option) => option.value === currentValue);

@@ -1,5 +1,5 @@
 import { IconPlus, IconTrash } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/shared/components/form-field";
 import { IconField } from "@/shared/components/icon-field";
@@ -34,21 +34,30 @@ export function QuickLinksField({
   onUpload: (file: File) => Promise<string | null>;
 }) {
   const links = parseLinks(value);
-  // Rows are edited and removed by position, so identity is positional:
-  // hand each row a stable id instead of the array index.
+  const nextIdRef = useRef(links.length + 1);
+  // Hand each link row a monotonically increasing id so removing a row does
+  // not shift keys onto surviving rows or reuse an old key on re-add.
   const [rowIds, setRowIds] = useState<Array<string>>(() =>
     links.map((_, index) => `link-row-${index + 1}`),
   );
-  useEffect(() => {
-    setRowIds((current) => {
-      if (current.length >= links.length) return current;
-      const added = Array.from(
-        { length: links.length - current.length },
-        (_, offset) => `link-row-${current.length + offset + 1}`,
-      );
-      return [...current, ...added];
-    });
-  }, [links.length]);
+
+  function addLink() {
+    const id = `link-row-${nextIdRef.current}`;
+    nextIdRef.current += 1;
+    setRowIds((current) => [...current, id]);
+    onChange([...links, { title: "", url: "", icon: "" }]);
+  }
+
+  function removeLink(index: number) {
+    setRowIds((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    onChange(links.filter((_, itemIndex) => itemIndex !== index));
+  }
+
+  const rows = links.map((link, index) => ({
+    link,
+    index,
+    rowKey: rowIds[index] ?? link.url,
+  }));
 
   return (
     <fieldset className="grid gap-3 rounded-md border border-border/70 p-3 sm:p-4">
@@ -58,10 +67,10 @@ export function QuickLinksField({
           No links yet. Add one with a title and destination.
         </p>
       )}
-      {links.map((link, index) => (
+      {rows.map(({ link, index, rowKey }) => (
         <article
           className="grid gap-3 rounded-md border border-border/70 bg-background/50 p-3 sm:grid-cols-2"
-          key={rowIds[index]}
+          key={rowKey}
         >
           <Field label={`Link ${index + 1} title`} required>
             <Input
@@ -107,7 +116,7 @@ export function QuickLinksField({
             <button
               className={destructiveButtonClass}
               type="button"
-              onClick={() => onChange(links.filter((_, itemIndex) => itemIndex !== index))}
+              onClick={() => removeLink(index)}
               aria-label={`Remove link ${link.title || index + 1}`}
             >
               <IconTrash size={16} aria-hidden="true" /> Remove link
@@ -115,11 +124,7 @@ export function QuickLinksField({
           </div>
         </article>
       ))}
-      <button
-        className={`${buttonClass} justify-self-start`}
-        type="button"
-        onClick={() => onChange([...links, { title: "", url: "", icon: "" }])}
-      >
+      <button className={`${buttonClass} justify-self-start`} type="button" onClick={addLink}>
         <IconPlus size={16} aria-hidden="true" /> Add link
       </button>
     </fieldset>
