@@ -1,7 +1,6 @@
 import { IconMenu2, IconSearch, IconX } from "@tabler/icons-react";
 import { Input } from "@/components/ui/input";
 
-/** Sticky top bar: mobile menu toggle plus the dashboard search box. */
 function DashboardHeader({
   mobileMenuOpen,
   query,

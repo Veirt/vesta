@@ -3,14 +3,9 @@ use std::collections::{HashMap, HashSet};
 use crate::config::{Dashboard, DashboardGroup, DashboardItem};
 use crate::widget_system::WidgetRegistry;
 
-/// Default column span (of 12) for groups without an explicit width; matches
-/// `DEFAULT_GROUP_SPAN` in frontend layout helpers.
 const DEFAULT_GROUP_SPAN: u8 = 6;
 const UNKNOWN_WIDGET_MIN_SIZE: (u8, u8) = (3, 2);
 
-/// Service links can shrink as their group grows: a tile of width `w` spans
-/// `w`/12 of the group's box, so wider groups may host narrower tiles while
-/// staying usable. Keep in sync with frontend `serviceMinSize`.
 pub(crate) fn service_min_size(group_span: u8) -> (u8, u8) {
     match group_span {
         10..=12 => (1, 1),
@@ -37,8 +32,8 @@ pub(crate) fn item_min_size(
     registry: &WidgetRegistry,
 ) -> (u8, u8) {
     match item {
-        DashboardItem::Service(service) => {
-            service_min_size(group_span(spans, service.group.as_deref().unwrap_or("")))
+        DashboardItem::Service(_) => {
+            service_min_size(group_span(spans, item.group().unwrap_or("")))
         }
         DashboardItem::Widget(widget) => registry
             .min_size(&widget.name)
@@ -50,10 +45,7 @@ pub(crate) fn normalize_layout(dashboard: &mut Dashboard, registry: &WidgetRegis
     let spans = group_span_map(dashboard);
     let mut occupied = HashMap::<String, HashSet<(u16, u8)>>::new();
     for item in &mut dashboard.items {
-        let group = match item {
-            DashboardItem::Service(service) => service.group.as_deref().unwrap_or(""),
-            DashboardItem::Widget(widget) => widget.group.as_deref().unwrap_or(""),
-        };
+        let group = item.group().unwrap_or("");
         let occupied = occupied.entry(group.to_string()).or_default();
         let (x, y, width, height) = item.layout();
         let (default_width, default_height) = match item {
@@ -99,11 +91,7 @@ pub(crate) fn normalize_groups(dashboard: &mut Dashboard) {
         .map(|group| group.id.clone())
         .collect::<HashSet<_>>();
     for item in &dashboard.items {
-        let id = match item {
-            DashboardItem::Service(service) => service.group.as_deref(),
-            DashboardItem::Widget(widget) => widget.group.as_deref(),
-        };
-        let Some(id) = id.filter(|id| known.insert((*id).to_string())) else {
+        let Some(id) = item.group().filter(|id| known.insert((*id).to_string())) else {
             continue;
         };
         dashboard.groups.push(DashboardGroup {

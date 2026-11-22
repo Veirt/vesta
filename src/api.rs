@@ -32,41 +32,22 @@ pub struct HealthQuery {
 }
 
 fn stats_payload(stats: &crate::metrics::node::NodeStats) -> serde_json::Value {
-    json!({
-        "cpu_usage_percent": stats.cpu_usage_percent,
-        "memory": {
-            "used_bytes": stats.memory_used_bytes,
-            "total_bytes": stats.memory_total_bytes,
-            "usage_percent": stats.memory_usage_percent(),
-        },
-        "disk": {
-            "mount": stats.disk_mount,
-            "used_bytes": stats.disk_used_bytes,
-            "total_bytes": stats.disk_total_bytes,
-            "usage_percent": stats.disk_usage_percent(),
-        },
-        "load": stats.load.map(|load| json!({
-            "one": load.one, "five": load.five, "fifteen": load.fifteen,
-        })),
-        "uptime_secs": stats.uptime_secs,
-        "collected_age_secs": stats.collected_at.elapsed().as_secs(),
-    })
+    stats.to_json(true)
 }
 
 fn safe_source_label(endpoint: &str) -> String {
-    let Some(authority) = endpoint
-        .strip_prefix("https://")
-        .or_else(|| endpoint.strip_prefix("http://"))
-        .and_then(|rest| rest.split(['/', '?', '#']).next())
-    else {
+    let Ok(url) = reqwest::Url::parse(endpoint) else {
         return "Remote node exporter".to_string();
     };
-
-    let host = authority.rsplit('@').next().unwrap_or_default();
-    if host.is_empty() {
-        "Remote node exporter".to_string()
-    } else {
-        host.to_string()
+    if !matches!(url.scheme(), "http" | "https") {
+        return "Remote node exporter".to_string();
+    }
+    let Some(host) = url.host_str() else {
+        return "Remote node exporter".to_string();
+    };
+    match url.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_string(),
     }
 }
 
@@ -141,19 +122,15 @@ fn dashboard_items_payload(
         .collect()
 }
 
-/// Initial dashboard state: `GET /api/dashboard`.
 pub async fn dashboard(Extension(state): Extension<Arc<AppState>>) -> impl IntoResponse {
     jsend::success(dashboard_payload(&state).await)
 }
 
-/// Configured service layout without server-side markup or widget secrets.
 pub async fn dashboard_services(Extension(state): Extension<Arc<AppState>>) -> impl IntoResponse {
     let config = state.config.snapshot();
     jsend::success(json!({ "items": dashboard_items_payload(&state, &config) }))
 }
 
-/// Live node scrape updates: `GET /api/nodes/events`.
-/// Each connection receives a full snapshot before incremental node events.
 pub async fn node_events(Extension(state): Extension<Arc<AppState>>) -> impl IntoResponse {
     let mut updates = state.nodes.subscribe_updates();
     let mut config_updates = state.config.subscribe_updates();
@@ -197,7 +174,6 @@ pub async fn node_events(Extension(state): Extension<Arc<AppState>>) -> impl Int
     )
 }
 
-/// One node's current stats: `GET /api/nodes/{id}/stats`.
 pub async fn node_stats(
     Extension(state): Extension<Arc<AppState>>,
     axum::extract::Path(id): axum::extract::Path<String>,
@@ -210,7 +186,6 @@ pub async fn node_stats(
     Ok(jsend::success(payload))
 }
 
-/// Check cached service reachability: `GET /api/ping`.
 pub async fn ping_handler(
     Extension(state): Extension<Arc<AppState>>,
     Query(params): Query<PingQuery>,
@@ -237,7 +212,6 @@ pub async fn ping_handler(
     Ok(jsend::success(json!({ "up": is_up })))
 }
 
-/// Live data for a dashboard widget: `GET /api/widgets/{widget_name}`.
 pub async fn widget_handler(
     Path(widget_name): Path<String>,
     Query(query): Query<WidgetQuery>,
@@ -257,8 +231,6 @@ pub async fn widget_handler(
     Ok(jsend::success(data))
 }
 
-/// Serves a plugin's static widget assets. Public like the dashboard itself;
-/// path resolution rejects traversal and symlink escapes.
 pub async fn plugin_asset(
     Extension(state): Extension<Arc<AppState>>,
     Path((plugin_id, path)): Path<(String, String)>,
@@ -290,7 +262,6 @@ pub async fn plugin_asset(
     Ok((headers, bytes).into_response())
 }
 
-/// Serves an uploaded service/group icon: `GET /api/icons/{icon_id}`.
 pub async fn get_icon(
     Extension(state): Extension<Arc<AppState>>,
     Path(icon_id): Path<i64>,
@@ -319,7 +290,6 @@ pub async fn get_icon(
     Ok(response)
 }
 
-/// Application health; `?detailed=true` adds config statistics.
 pub async fn health(
     Query(query): Query<HealthQuery>,
     Extension(state): Extension<Arc<AppState>>,

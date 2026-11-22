@@ -6,14 +6,12 @@ use serde_json::{Value, json};
 use std::collections::HashSet;
 
 use crate::error::VestaResult;
-use crate::http_client::send_checked_json;
+use crate::http_client::{join_url, send_checked_json};
 use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetQuery};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
-    /// Sonarr base URL, e.g. `https://sonarr.example.com`.
     pub url: String,
-    /// Sonarr API key.
     pub key: String,
 }
 
@@ -80,10 +78,9 @@ impl SonarrCalendarWidget {
             ("end", &day_after_tomorrow.format("%Y-%m-%d").to_string()),
         ];
 
-        let base = config.url.trim_end_matches('/');
         send_checked_json(
             self.client
-                .get(format!("{base}/api/v3/calendar"))
+                .get(join_url(&config.url, "/api/v3/calendar"))
                 .query(&params)
                 .header("X-Api-Key", &config.key),
             |_| "Failed to fetch calendar".to_string(),
@@ -92,10 +89,9 @@ impl SonarrCalendarWidget {
     }
 
     async fn fetch_download_queue(&self, config: &Config) -> VestaResult<DownloadQueue> {
-        let base = config.url.trim_end_matches('/');
         send_checked_json(
             self.client
-                .get(format!("{base}/api/v3/queue"))
+                .get(join_url(&config.url, "/api/v3/queue"))
                 .header("X-Api-Key", &config.key),
             |_| "Failed to fetch download queue".to_string(),
         )
@@ -187,14 +183,13 @@ impl WidgetHandler for SonarrCalendarWidget {
             entry.is_downloading = downloading.contains(&entry.series_id);
         }
 
-        let base = config.url.trim_end_matches('/');
         let now = Utc::now();
         let entries = calendar
             .iter()
             .map(|entry| {
                 json!({
                     "date": entry.air_date_utc.with_timezone(&Local).format("%Y-%m-%d").to_string(),
-                    "series_url": format!("{base}/series/{}", entry.series.title_slug),
+                    "series_url": join_url(&config.url, &format!("/series/{}", entry.series.title_slug)),
                     "title": entry.series.title,
                     "season_number": entry.season_number,
                     "episode_number": entry.episode_number,
@@ -205,12 +200,8 @@ impl WidgetHandler for SonarrCalendarWidget {
             .collect::<Vec<_>>();
 
         Ok(json!({
-            "calendar_url": format!("{base}/calendar"),
+            "calendar_url": join_url(&config.url, "/calendar"),
             "entries": entries,
         }))
     }
 }
-
-// CalendarEntry carries series_id from the API but matches on the nested
-// series.id is unnecessary: the API's seriesId equals series.id, so the field
-// is kept deserialized for the queue join above.

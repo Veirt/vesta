@@ -1,6 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { Field } from "@/shared/components/form-field";
-import { inputClass } from "@/shared/components/styles";
+import { inputClass, selectClass } from "@/shared/components/styles";
 import type { EditableWidget } from "@/shared/lib/draft-models";
 import type { WidgetDescriptor, WidgetField } from "@/shared/schemas/core";
 import { QuickLinksField } from "@/features/widgets/quick-links-field";
@@ -72,7 +72,7 @@ export function WidgetConfigFields({
               required={field.required}
             >
               <select
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className={selectClass}
                 value={String(value)}
                 required={field.required}
                 onChange={(event) => updateField(field, event.target.value)}
@@ -96,7 +96,7 @@ export function WidgetConfigFields({
               required={field.required}
             >
               <select
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className={selectClass}
                 value={String(value)}
                 required={field.required}
                 onChange={(event) => updateField(field, event.target.value)}

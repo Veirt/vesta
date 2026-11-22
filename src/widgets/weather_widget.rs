@@ -3,28 +3,24 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::error::VestaResult;
-use crate::services::weather_service::{WeatherQuery, WeatherService};
-use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetOption, WidgetQuery};
+use crate::services::weather_service::{WeatherQuery, WeatherService, default_units};
+use crate::widget_system::{
+    WidgetContext, WidgetField, WidgetHandler, WidgetOption, WidgetQuery, refresh_interval_field,
+};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
-    #[serde(deserialize_with = "crate::widget_config::debounced_f64")]
+    #[serde(deserialize_with = "crate::widget_system::debounced_f64")]
     pub latitude: f64,
-    #[serde(deserialize_with = "crate::widget_config::debounced_f64")]
+    #[serde(deserialize_with = "crate::widget_system::debounced_f64")]
     pub longitude: f64,
-    /// "celsius" (default) or "fahrenheit".
     #[serde(default = "default_units")]
     pub units: String,
-    /// Refresh cadence in seconds (60–3600).
     #[serde(
         default = "default_refresh",
-        deserialize_with = "crate::widget_config::debounced_u64"
+        deserialize_with = "crate::widget_system::debounced_u64"
     )]
     pub refresh_interval: u64,
-}
-
-fn default_units() -> String {
-    "celsius".to_string()
 }
 
 fn default_refresh() -> u64 {
@@ -121,6 +117,8 @@ impl WidgetHandler for WeatherWidget {
     }
 
     fn fields(&self) -> Vec<WidgetField> {
+        let mut refresh = refresh_interval_field(600).with_range(60.0, 3600.0);
+        refresh.description = std::borrow::Cow::Borrowed("Choose a value from 60 to 3600 seconds.");
         vec![
             WidgetField::builtin(
                 "latitude",
@@ -150,15 +148,7 @@ impl WidgetHandler for WeatherWidget {
                 WidgetOption::builtin("celsius", "Celsius"),
                 WidgetOption::builtin("fahrenheit", "Fahrenheit"),
             ]),
-            WidgetField::builtin(
-                "refresh_interval",
-                "Refresh every (seconds)",
-                "number",
-                true,
-                "Choose a value from 60 to 3600 seconds.",
-            )
-            .with_default(serde_json::json!(600))
-            .with_range(60.0, 3600.0),
+            refresh,
         ]
     }
 

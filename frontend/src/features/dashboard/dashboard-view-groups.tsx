@@ -4,7 +4,6 @@ import { ServiceCard } from "@/features/widgets/service-card";
 import { WidgetCard } from "@/features/widgets/widget-card";
 import type { DashboardGroupSection } from "@/shared/lib/layout";
 
-/** Read-only dashboard sections: group heading plus a grid of tiles. */
 function DashboardViewGroups({
   sections,
   query,

@@ -1,8 +1,5 @@
 use std::path::{Path, PathBuf};
 
-/// Resolve a request path against a plugin directory, refusing anything that
-/// escapes it. Request paths arrive percent-decoded by axum, so encoded
-/// traversal (`%2e%2e`) is caught here too.
 pub fn resolve_asset_path(plugin_root: &Path, requested: &str) -> Option<PathBuf> {
     if requested.is_empty() {
         return None;
@@ -23,8 +20,6 @@ pub fn resolve_asset_path(plugin_root: &Path, requested: &str) -> Option<PathBuf
     if !resolved.is_file() {
         return None;
     }
-    // Final containment check: symlinks inside a cloned repository could
-    // otherwise point outside the plugin directory.
     let canonical = resolved.canonicalize().ok()?;
     let canonical_root = plugin_root.canonicalize().ok()?;
     if canonical.starts_with(&canonical_root) {
@@ -34,8 +29,6 @@ pub fn resolve_asset_path(plugin_root: &Path, requested: &str) -> Option<PathBuf
     }
 }
 
-/// Content type for a served file, by extension. Unknown extensions are
-/// rejected instead of guessed: plugin pages only need the common web types.
 pub fn content_type(path: &Path) -> Option<&'static str> {
     let extension = path.extension()?.to_str()?.to_ascii_lowercase();
     Some(match extension.as_str() {
@@ -93,7 +86,6 @@ mod tests {
                     .unwrap()
             )
         );
-        // CurDir components are tolerated and normalized.
         assert!(resolve_asset_path(&root, "./index.html").is_some());
     }
 

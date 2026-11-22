@@ -4,21 +4,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::error::{VestaError, VestaResult};
+use crate::http_client::{join_url, send_checked_with};
 use crate::widget_system::{
     DynamicOption, WidgetContext, WidgetField, WidgetHandler, WidgetOption, WidgetQuery,
 };
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
-    /// Jellyfin base URL, e.g. `https://jellyfin.example.com`.
     pub url: String,
-    /// Jellyfin API key stored in config.toml; protect that file.
     pub key: String,
-    /// Media library to draw the random series from; empty selects all.
     #[serde(default)]
     pub library: Option<String>,
-    /// How the artwork fills the tile: `backdrop` (wide art) or `poster`
-    /// (portrait art with the title revealed on hover).
     #[serde(default)]
     pub display: Option<String>,
 }
@@ -51,7 +47,6 @@ struct ItemsPage {
     items: Vec<Series>,
 }
 
-/// Shape consumed by the frontend tile renderer.
 #[derive(Serialize, Debug)]
 struct RandomShow {
     display: &'static str,
@@ -68,13 +63,9 @@ fn display_mode(config: &Config) -> &'static str {
     }
 }
 
-fn image_url(base: &str, path: &str) -> String {
-    format!("{}{}", base.trim_end_matches('/'), path)
-}
-
 fn to_show(base: &str, series: Series, display: &'static str) -> RandomShow {
     let poster_url = series.image_tags.primary.as_ref().map(|_| {
-        image_url(
+        join_url(
             base,
             &format!(
                 "/Items/{}/Images/Primary?maxWidth=600&quality=90",
@@ -85,7 +76,7 @@ fn to_show(base: &str, series: Series, display: &'static str) -> RandomShow {
     let backdrop_url = if series.backdrop_image_tags.is_empty() {
         None
     } else {
-        Some(image_url(
+        Some(join_url(
             base,
             &format!(
                 "/Items/{}/Images/Backdrop/0?maxWidth=1280&quality=80",
@@ -96,7 +87,7 @@ fn to_show(base: &str, series: Series, display: &'static str) -> RandomShow {
     RandomShow {
         display,
         title: series.name,
-        series_url: image_url(base, &format!("/web/index.html#!/details?id={}", series.id)),
+        series_url: join_url(base, &format!("/web/index.html#!/details?id={}", series.id)),
         poster_url,
         backdrop_url,
     }
@@ -111,15 +102,9 @@ impl JellyfinRandomShowWidget {
         Self { client }
     }
 
-    /// Newer Jellyfin releases reject a bare `X-Api-Key`, so authenticate
-    /// with the classic `Authorization: MediaBrowser Token="..."` header.
     fn authorized(&self, config: &Config, path: &str) -> reqwest::RequestBuilder {
         self.client
-            .get(format!(
-                "{}{}",
-                config.url.trim_end_matches('/'),
-                path
-            ))
+            .get(join_url(&config.url, path))
             .header(
                 "Authorization",
                 format!(
@@ -129,7 +114,6 @@ impl JellyfinRandomShowWidget {
             )
     }
 
-    /// Status-specific failures so the tile names what actually went wrong.
     fn api_error(status: StatusCode, context: &str) -> VestaError {
         let message = match status {
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => format!(
@@ -149,23 +133,20 @@ impl JellyfinRandomShowWidget {
         context: &str,
         request: reqwest::RequestBuilder,
     ) -> VestaResult<reqwest::Response> {
-        let response = request.send().await.map_err(|error| VestaError::ApiError {
-            status: StatusCode::BAD_GATEWAY,
-            message: format!(
-                "Could not reach the Jellyfin server at {} for {context}: {error}",
-                config.url.trim_end_matches('/')
-            ),
-        })?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(Self::api_error(status, context));
-        }
-        Ok(response)
+        let base = config.url.trim_end_matches('/');
+        send_checked_with(
+            request,
+            |error| VestaError::ApiError {
+                status: StatusCode::BAD_GATEWAY,
+                message: format!(
+                    "Could not reach the Jellyfin server at {base} for {context}: {error}"
+                ),
+            },
+            |status| Self::api_error(status, context),
+        )
+        .await
     }
 
-    /// Random items guaranteed to carry a primary image. The larger limit
-    /// lets poster/backdrop preferences pick a series that actually fits the
-    /// configured display mode instead of landing on a cover-less special.
     async fn fetch_random_series(&self, config: &Config) -> VestaResult<ItemsPage> {
         let mut params = vec![
             ("SortBy", "Random"),
@@ -201,7 +182,6 @@ impl JellyfinRandomShowWidget {
         Ok(response.json::<Value>().await?)
     }
 
-    /// Options for the unsaved editor values; both fields must be filled.
     fn draft_config(config_json: &Value) -> VestaResult<Config> {
         serde_json::from_value(config_json.clone()).map_err(|_| {
             VestaError::InvalidWidgetConfig(
@@ -295,11 +275,7 @@ impl WidgetHandler for JellyfinRandomShowWidget {
         config: Config,
     ) -> VestaResult<Value> {
         let page = self.fetch_random_series(&config).await?;
-        let base = config.url.trim_end_matches('/');
         let display = display_mode(&config);
-        // The server already guarantees every item has a primary image; in
-        // backdrop mode prefer a series that also has backdrop art so wide
-        // tiles never fall back to the portrait primary image.
         let series = match display {
             "backdrop" => page
                 .items
@@ -310,7 +286,7 @@ impl WidgetHandler for JellyfinRandomShowWidget {
         };
         match series {
             Some(series) => {
-                let show = to_show(base, series.clone(), display);
+                let show = to_show(&config.url, series.clone(), display);
                 Ok(serde_json::to_value(&show)?)
             }
             None => Ok(json!({ "empty": true })),

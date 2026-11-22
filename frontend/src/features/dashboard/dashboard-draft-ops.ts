@@ -1,16 +1,17 @@
 import {
   createItemId,
+  uniqueId,
   type EditableDashboardGroup,
   type EditableDashboardItem,
   type EditableService,
   type EditableWidget,
 } from "@/shared/lib/draft-models";
 import {
+  clampGroupSpan,
   clampTileSize,
   DEFAULT_GROUP_SPAN,
   groupSpanOf,
   MAX_GRID_SIZE,
-  MIN_GROUP_SPAN,
   minSizeFor,
   widgetMinSize,
 } from "@/shared/lib/layout";
@@ -18,18 +19,13 @@ import type { WidgetDescriptor } from "@/shared/schemas/core";
 
 export type LayoutEntry = { i: string; x: number; y: number; w: number; h: number };
 
-export function occupies(
+function occupies(
   a: { x: number; y: number; width: number; height: number },
   b: { x: number; y: number; width: number; height: number },
 ) {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
 }
 
-/**
- * Matches react-grid-layout's `verticalCompactor`: keeps each tile's column but
- * pulls it up into the topmost free row, so saved layouts never carry empty
- * gaps and the rendered grid agrees with the stored baseline.
- */
 export function compactY(items: EditableDashboardItem[]) {
   const byGroup = new Map<string, EditableDashboardItem[]>();
   for (const item of items) {
@@ -59,16 +55,16 @@ export function compactY(items: EditableDashboardItem[]) {
   return items.map((item) => positions.get(item.editor_id) ?? item);
 }
 
-export function sortItems(items: EditableDashboardItem[]) {
+function sortItems(items: EditableDashboardItem[]) {
   return [...items].sort((left, right) => left.y - right.y || left.x - right.x);
 }
 
-export function reflowGroup(items: EditableDashboardItem[]) {
+function reflowGroup(items: EditableDashboardItem[]) {
   let x = 0;
   let y = 0;
   let rowHeight = 0;
   return items.map((item) => {
-    if (x + item.width > 12) {
+    if (x + item.width > MAX_GRID_SIZE) {
       x = 0;
       y += rowHeight;
       rowHeight = 0;
@@ -85,12 +81,10 @@ function sameGroup(left: EditableDashboardItem, right: EditableDashboardItem) {
 }
 
 function nextId(base: string, items: EditableDashboardItem[]) {
-  const candidate = createItemId(base, "tile");
-  const ids = new Set(items.map((item) => item.id));
-  if (!ids.has(candidate)) return candidate;
-  let suffix = 2;
-  while (ids.has(`${candidate}-${suffix}`)) suffix += 1;
-  return `${candidate}-${suffix}`;
+  return uniqueId(
+    createItemId(base, "tile"),
+    items.map((item) => item.id),
+  );
 }
 
 function defaultConfig(descriptor: WidgetDescriptor) {
@@ -108,12 +102,6 @@ function nextPosition(items: EditableDashboardItem[], group: string | null) {
   return { x: 0, y: bottom };
 }
 
-/**
- * Largest size the tile can grow to at its current position without touching a
- * neighbour. Growing further would force react-grid-layout's vertical
- * compactor to evict the blocking tile into a lower row (and shuffle the rest
- * of the group), so resizes stop at this boundary instead.
- */
 function maxFreeSize(
   item: EditableDashboardItem,
   neighbours: EditableDashboardItem[],
@@ -280,7 +268,7 @@ export function resizeItemDraft(
           ...item,
           width: fixed.width,
           height: fixed.height,
-          x: Math.min(item.x, 12 - fixed.width),
+          x: Math.min(item.x, MAX_GRID_SIZE - fixed.width),
         }
       : item,
   );
@@ -345,7 +333,7 @@ export function applyLayoutDraft(
   cols: number,
 ): EditableDashboardItem[] {
   if (cols === 1) return current;
-  const factor = 12 / cols;
+  const factor = MAX_GRID_SIZE / cols;
   const byId = new Map(layout.map((entry) => [entry.i, entry]));
   let changed = false;
   const next = current.map((item) => {
@@ -364,5 +352,5 @@ export function applyLayoutDraft(
 }
 
 export function clampGroupSpanUpdate(width: number): number {
-  return Math.max(MIN_GROUP_SPAN, Math.min(12, Math.round(width)));
+  return clampGroupSpan(width);
 }

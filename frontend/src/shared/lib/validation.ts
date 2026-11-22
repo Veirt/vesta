@@ -17,11 +17,11 @@ export function validHttpUrl(value: string) {
   }
 }
 
-export function validLink(value: string) {
+function validLink(value: string) {
   return (value.startsWith("/") && !value.startsWith("//")) || validHttpUrl(value);
 }
 
-export function validImage(value: string) {
+function validImage(value: string) {
   return /^\/api\/icons\/\d+$/.test(value) || validHttpUrl(value);
 }
 
@@ -139,7 +139,6 @@ export function validateDashboardGroups(groups: EditableDashboardGroup[]): Valid
   const issues: ValidationIssue[] = [];
   const titles = new Set<string>();
   for (const group of groups) {
-    // The id-less entry is the implicit Ungrouped section's order/width slot.
     if (group.id === "") continue;
     const title = group.title.trim();
     const normalized = title.toLocaleLowerCase();

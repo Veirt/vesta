@@ -20,8 +20,6 @@ pub struct PingKey {
     pub url: String,
 }
 
-/// HEAD-then-GET availability checks with a short-lived negative/positive
-/// cache so a dashboard full of indicators doesn't hammer the services.
 pub struct PingService {
     cache: Cache<PingKey, PingResult>,
     http_client: Client,
@@ -70,11 +68,9 @@ impl PingService {
             .send()
             .await;
         if let Ok(response) = &head {
-            // Some servers reject HEAD; only trust a definite success.
             if response.status().is_success() {
                 return Ok(true);
             }
-            // 405 means HEAD unsupported — fall back to GET below.
             if response.status() != reqwest::StatusCode::METHOD_NOT_ALLOWED {
                 return Ok(false);
             }
@@ -106,7 +102,7 @@ mod tests {
             .insert(cached_key.clone(), PingResult { is_up: true })
             .await;
         let config = PingConfig {
-            url: "http://127.0.0.1:1".to_string(), // nothing listens here
+            url: "http://127.0.0.1:1".to_string(),
         };
         assert!(service.check(&cached_key, &config).await);
 

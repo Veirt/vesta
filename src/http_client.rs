@@ -13,32 +13,45 @@ pub fn create_default_client() -> VestaResult<Client> {
         .connect_timeout(Duration::from_secs(10))
         .pool_idle_timeout(Duration::from_secs(30))
         .pool_max_idle_per_host(10)
-        // Home-server endpoints regularly use self-signed certificates.
         .danger_accept_invalid_certs(true)
         .build()
         .map_err(|e| VestaError::Config(format!("Failed to create HTTP client: {e}")))
 }
 
-/// Send an upstream HTTP request, map non-2xx statuses to `VestaError::ApiError`,
-/// and decode the JSON body into `T`.
+pub fn join_url(base: &str, path: &str) -> String {
+    format!("{}{}", base.trim_end_matches('/'), path)
+}
+
+pub async fn send_checked_with<E, F>(
+    request: RequestBuilder,
+    on_transport: E,
+    on_status: F,
+) -> VestaResult<reqwest::Response>
+where
+    E: FnOnce(reqwest::Error) -> VestaError + Send,
+    F: FnOnce(StatusCode) -> VestaError + Send,
+{
+    let response = request.send().await.map_err(on_transport)?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(on_status(status));
+    }
+    Ok(response)
+}
+
 pub async fn send_checked_json<T, F>(request: RequestBuilder, error_message: F) -> VestaResult<T>
 where
     T: DeserializeOwned,
     F: FnOnce(StatusCode) -> String + Send,
 {
-    let response = request.send().await?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(VestaError::ApiError {
-            status,
-            message: error_message(status),
-        });
-    }
+    let response = send_checked_with(request, VestaError::from, |status| VestaError::ApiError {
+        status,
+        message: error_message(status),
+    })
+    .await?;
     Ok(response.json::<T>().await?)
 }
 
-/// Parse a JSON value into `T`, logging a truncated raw copy on shape
-/// mismatch so upstream API drift is diagnosable from server logs.
 pub fn parse_logged<T: DeserializeOwned>(
     widget_name: &str,
     endpoint: &str,

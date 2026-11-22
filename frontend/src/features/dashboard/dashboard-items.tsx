@@ -5,7 +5,8 @@ import {
 } from "@/features/dashboard/dashboard-edit-chrome";
 import { DashboardEditDialogs } from "@/features/dashboard/dashboard-edit-dialogs";
 import { DashboardTilesArea } from "@/features/dashboard/dashboard-tiles-area";
-import { useDashboardEditor, type LayoutEntry } from "@/features/dashboard/use-dashboard-editor";
+import type { LayoutEntry } from "@/features/dashboard/dashboard-draft-ops";
+import { useDashboardEditor } from "@/features/dashboard/use-dashboard-editor";
 import { useWindowEdgeScroll } from "@/features/dashboard/use-window-edge-scroll";
 import { fetchAuthStatus } from "@/shared/api/client";
 import type { EditableDashboardItem } from "@/shared/lib/draft-models";
@@ -20,10 +21,6 @@ type EditorMode =
       modal: null | { kind: "tile"; editorId: string } | { kind: "group"; groupId: string };
     };
 
-/**
- * Locate the currently edited tile/group within the draft sections, plus its
- * position among its group siblings for the move earlier/later controls.
- */
 function locateSelection(
   editor: ReturnType<typeof useDashboardEditor>,
   mode: EditorMode,
@@ -52,7 +49,6 @@ function locateSelection(
   return { selected, selectedGroup, selectedGroupItems, selectedIndex };
 }
 
-/** Load/save error details for the editor alert banner, null when healthy. */
 function editorAlert(editor: ReturnType<typeof useDashboardEditor>) {
   const message = editor.error || editor.loadError;
   if (!message) return null;

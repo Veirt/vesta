@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchSettings, saveDashboardItems, uploadIcon } from "@/shared/api/client";
+import { fetchSettings, saveDashboardItems } from "@/shared/api/client";
 import {
   serializeDashboardGroups,
   serializeDashboardItems,
@@ -9,6 +9,7 @@ import {
   type EditableDashboardItem,
 } from "@/shared/lib/draft-models";
 import { DEFAULT_GROUP_SPAN } from "@/shared/lib/layout";
+import { useEditorFeedback, type LoadState } from "@/shared/lib/use-editor-feedback";
 import type { NodeSettings, WidgetDescriptor } from "@/shared/schemas/core";
 import {
   applyLayoutDraft,
@@ -27,27 +28,14 @@ import {
   type LayoutEntry,
 } from "@/features/dashboard/dashboard-draft-ops";
 
-type LoadState =
-  | { kind: "idle" }
-  | { kind: "loading" }
-  | { kind: "ready"; baseline: string }
-  | { kind: "error"; message: string };
-
-type ActionState = { kind: "idle" } | { kind: "saving" } | { kind: "uploading" };
-type FeedbackBanner =
-  | { kind: "none" }
-  | { kind: "error"; message: string }
-  | { kind: "notice"; message: string };
-
 export function useDashboardEditor(enabled: boolean) {
   const [items, setItems] = useState<EditableDashboardItem[]>([]);
   const [groups, setGroups] = useState<EditableDashboardGroup[]>([]);
   const [nodes, setNodes] = useState<NodeSettings[]>([]);
   const [widgets, setWidgets] = useState<WidgetDescriptor[]>([]);
   const [loadState, setLoadState] = useState<LoadState>({ kind: "idle" });
-  const [loadRevision, setLoadRevision] = useState(0);
-  const [action, setAction] = useState<ActionState>({ kind: "idle" });
-  const [banner, setBanner] = useState<FeedbackBanner>({ kind: "none" });
+  const feedback = useEditorFeedback();
+  const { loadRevision, setAction, setBanner, clearNotice, retryLoad } = feedback;
 
   useEffect(() => {
     if (!enabled) {
@@ -96,10 +84,6 @@ export function useDashboardEditor(enabled: boolean) {
   const serializedDraft = JSON.stringify({ items: serializedItems, groups: serializedGroups });
   const baseline = loadState.kind === "ready" ? loadState.baseline : "";
   const dirty = loadState.kind === "ready" && serializedDraft !== baseline;
-
-  function clearNotice() {
-    setBanner((current) => (current.kind === "notice" ? { kind: "none" } : current));
-  }
 
   function addGroup(requestedTitle?: string) {
     const { id, nextGroups } = createGroupEntry(groups, requestedTitle);
@@ -207,24 +191,7 @@ export function useDashboardEditor(enabled: boolean) {
   }
 
   async function uploadImage(file: File): Promise<string | null> {
-    setAction({ kind: "uploading" });
-    setBanner({ kind: "none" });
-    try {
-      const uploaded = await uploadIcon(file);
-      setBanner({
-        kind: "notice",
-        message: `${uploaded.name} uploaded. Save the dashboard to use it.`,
-      });
-      return uploaded.url;
-    } catch (cause) {
-      setBanner({
-        kind: "error",
-        message: cause instanceof Error ? cause.message : "The image could not be uploaded.",
-      });
-      return null;
-    } finally {
-      setAction({ kind: "idle" });
-    }
+    return feedback.uploadImage(file, "Save the dashboard to use it.");
   }
 
   async function save() {
@@ -246,22 +213,18 @@ export function useDashboardEditor(enabled: boolean) {
     }
   }
 
-  function retryLoad() {
-    setLoadRevision((revision) => revision + 1);
-  }
-
   return {
     dirty,
-    error: banner.kind === "error" ? banner.message : "",
+    error: feedback.error,
     items,
     groups,
     loadError: loadState.kind === "error" ? loadState.message : "",
     loading: loadState.kind === "loading",
     ready: loadState.kind === "ready",
     nodes,
-    notice: banner.kind === "notice" ? banner.message : "",
-    saving: action.kind === "saving",
-    uploading: action.kind === "uploading",
+    notice: feedback.notice,
+    saving: feedback.saving,
+    uploading: feedback.uploading,
     widgets,
     addService,
     addGroup,
@@ -283,5 +246,3 @@ export function useDashboardEditor(enabled: boolean) {
     uploadImage,
   };
 }
-
-export type { LayoutEntry };

@@ -3,13 +3,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 use crate::config::Widget;
 use crate::error::{VestaError, VestaResult};
 
-/// Query parameters for widget data requests.
 #[derive(serde::Deserialize, Debug, Clone)]
 pub struct WidgetQuery {
     pub id: String,
@@ -88,6 +87,45 @@ impl WidgetField {
     }
 }
 
+pub fn refresh_interval_field(default: u64) -> WidgetField {
+    WidgetField::builtin(
+        "refresh_interval",
+        "Refresh every (seconds)",
+        "number",
+        true,
+        "How often this widget requests updated values (1–3600 seconds).",
+    )
+    .with_default(serde_json::json!(default))
+    .with_range(1.0, 3600.0)
+}
+
+fn number_from<'de, T: DeserializeOwned, D>(
+    deserializer: D,
+    parse: fn(&str) -> Option<T>,
+) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    match &value {
+        Value::Number(_) => T::deserialize(value).map_err(serde::de::Error::custom),
+        Value::String(s) => {
+            parse(s).ok_or_else(|| serde::de::Error::custom(format!("'{s}' is not a valid number")))
+        }
+        other => Err(serde::de::Error::custom(format!(
+            "expected a number, got {other}"
+        ))),
+    }
+}
+
+pub fn debounced_u64<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    number_from(deserializer, |s| s.parse().ok())
+}
+
+pub fn debounced_f64<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
+    number_from(deserializer, |s| s.parse().ok())
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct WidgetOption {
     pub value: Cow<'static, str>,
@@ -103,31 +141,21 @@ impl WidgetOption {
     }
 }
 
-/// A select option resolved at edit time from an external system, for
-/// fields whose choices depend on the widget's own configuration (the
-/// values are not known at startup).
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct DynamicOption {
     pub value: String,
     pub label: String,
 }
 
-/// Services a widget may use, passed explicitly instead of global state.
 #[derive(Clone)]
 pub struct WidgetContext {
     pub nodes: Arc<crate::metrics::service::NodeService>,
 }
 
-/// What a widget provides. `Config` is the widget's typed options schema,
-/// deserialized from its JSON settings map; validation happens by construction
-/// (bad config = typed error at load, not surprises at request time).
 #[async_trait]
 pub trait WidgetHandler: Send + Sync {
-    /// Registry key, matching `widget.name` in the config (e.g. "SystemStats").
     fn name(&self) -> &str;
 
-    /// Human-readable label for menus and catalogs; defaults to the key split
-    /// at inner uppercase letters ("SonarrCalendar" -> "Sonarr Calendar").
     fn title(&self) -> String {
         let name = self.name();
         let mut title = String::with_capacity(name.len() + 4);
@@ -147,9 +175,6 @@ pub trait WidgetHandler: Send + Sync {
         "Configure this built-in widget."
     }
 
-    /// Whether this widget should appear in the Settings new-tile catalog.
-    /// Legacy-only widgets override this to return `false` while continuing
-    /// to render and validate existing tiles.
     fn catalog_visible(&self) -> bool {
         true
     }
@@ -158,30 +183,24 @@ pub trait WidgetHandler: Send + Sync {
         Vec::new()
     }
 
-    /// Default dashboard dimensions in grid columns and rows.
     fn default_size(&self) -> (u8, u8) {
         (4, 2)
     }
 
-    /// Smallest usable dimensions in grid columns and rows.
     fn min_size(&self) -> (u8, u8) {
         (3, 2)
     }
 
-    /// The widget's typed configuration.
     type Config: DeserializeOwned + Send;
 
-    /// Parse and validate the widget's options. Errors name the offending key.
     fn parse_config(&self, raw: Option<&crate::config::WidgetConfig>) -> VestaResult<Self::Config> {
         parse_widget_options(raw)
     }
 
-    /// Optional refresh cadence exposed to the client as safe metadata.
     fn refresh_interval_secs(&self, _config: &Self::Config) -> Option<u64> {
         None
     }
 
-    /// Widget data serialized as JSON for the React renderer.
     async fn handle_request(
         &self,
         ctx: WidgetContext,
@@ -189,9 +208,6 @@ pub trait WidgetHandler: Send + Sync {
         config: Self::Config,
     ) -> VestaResult<Value>;
 
-    /// Options for a dynamic select field, resolved from the widget's
-    /// unsaved form values (`config_json` is the raw options map as typed
-    /// in the editor). Widgets with only static selects need no override.
     async fn field_options(
         &self,
         field: &str,
@@ -203,8 +219,6 @@ pub trait WidgetHandler: Send + Sync {
     }
 }
 
-/// Typed config plumbing: widget config structs deserialize from the raw
-/// JSON options map.
 pub fn parse_widget_options<T: DeserializeOwned>(
     raw: Option<&crate::config::WidgetConfig>,
 ) -> VestaResult<T> {
@@ -215,10 +229,6 @@ pub fn parse_widget_options<T: DeserializeOwned>(
     serde_json::from_value(value).map_err(|e| VestaError::InvalidWidgetConfig(format!("{e}")))
 }
 
-/// The widget registry is rebuilt when plugins are installed or removed, so
-/// both request handling (`AppState`) and dashboard validation
-/// (`ConfigManager`) hold a shared handle and always observe the current
-/// snapshot.
 #[derive(Clone)]
 pub struct SharedWidgetRegistry {
     inner: Arc<RwLock<Arc<WidgetRegistry>>>,
@@ -243,9 +253,6 @@ impl SharedWidgetRegistry {
     }
 }
 
-/// Registry mapping widget names to handlers. Rebuilt atomically on startup and
-/// plugin mutation; all lookups (render, validate, request handling) go
-/// through it.
 pub struct WidgetRegistry {
     widgets: HashMap<String, Arc<dyn WidgetHandlerDyn>>,
 }
@@ -304,7 +311,6 @@ impl WidgetRegistry {
         self.get(name).map(|handler| handler.min_size_erased())
     }
 
-    /// Validate every widget config in the dashboard against its handler.
     pub fn validate_dashboard(&self, config: &crate::config::Dashboard) -> VestaResult<()> {
         for widget in config.widgets() {
             let handler = self.get(&widget.name).ok_or_else(|| {
@@ -340,8 +346,6 @@ impl WidgetRegistry {
         handler.handle_erased(widget, ctx, query).await
     }
 
-    /// Resolve the dynamic options of one widget field from unsaved form
-    /// values (see `WidgetHandler::field_options`).
     pub async fn field_options(
         &self,
         widget_name: &str,
@@ -364,8 +368,6 @@ impl Default for WidgetRegistry {
     }
 }
 
-/// Type-erased view of a handler so the registry can store widgets with
-/// different `Config` associated types behind one map.
 #[async_trait]
 pub trait WidgetHandlerDyn: Send + Sync {
     fn name(&self) -> &str;
@@ -478,7 +480,7 @@ mod tests {
     struct FakeConfig {
         #[serde(default = "default_name")]
         node: String,
-        #[serde(deserialize_with = "crate::widget_config::debounced_u64")]
+        #[serde(deserialize_with = "debounced_u64")]
         refresh_interval: u64,
     }
 
@@ -538,7 +540,6 @@ mod tests {
     #[test]
     fn registry_rejects_invalid_widget_config_at_load() {
         let registry = WidgetRegistry::new().register(FakeWidget);
-        // refresh_interval as a non-numeric string must fail validation.
         let widget = Widget {
             id: "fake".to_string(),
             title: "Fake".to_string(),
@@ -581,5 +582,41 @@ mod tests {
             .validate_erased(&widget)
             .unwrap();
         assert_eq!(registry.refresh_interval_secs(&widget), Some(42));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct DebouncedSample {
+        #[serde(deserialize_with = "debounced_u64")]
+        count: u64,
+        #[serde(deserialize_with = "debounced_f64")]
+        ratio: f64,
+    }
+
+    #[test]
+    fn debounced_numbers_accept_native_numbers() {
+        let sample: DebouncedSample = serde_json::from_value(serde_json::json!({
+            "count": 5, "ratio": 0.5
+        }))
+        .unwrap();
+        assert_eq!(sample.count, 5);
+        assert_eq!(sample.ratio, 0.5);
+    }
+
+    #[test]
+    fn debounced_numbers_accept_strings_that_parse() {
+        let sample: DebouncedSample = serde_json::from_value(serde_json::json!({
+            "count": "5", "ratio": "0.5"
+        }))
+        .unwrap();
+        assert_eq!(sample.count, 5);
+        assert_eq!(sample.ratio, 0.5);
+    }
+
+    #[test]
+    fn debounced_numbers_reject_non_numeric_strings() {
+        let result = serde_json::from_value::<DebouncedSample>(serde_json::json!({
+            "count": "five", "ratio": 1.0
+        }));
+        assert!(result.is_err());
     }
 }

@@ -3,7 +3,7 @@ import { AppearanceSection } from "@/features/settings/components/appearance-sec
 import { NodesSection } from "@/features/settings/components/nodes-section";
 import { PluginsSection } from "@/features/settings/components/plugins-section";
 import { WidgetCatalog } from "@/features/settings/components/widget-catalog";
-import { buttonClass, primaryButtonClass } from "@/shared/components/styles";
+import { buttonClass, primaryButtonClass, selectClass } from "@/shared/components/styles";
 import { useSettingsEditor } from "@/features/settings/use-settings-editor";
 
 const sections = [
@@ -109,7 +109,7 @@ function SettingsEditor() {
               </label>
               <select
                 id="settings-section-select"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className={`${selectClass} h-10`}
                 value={activeSection}
                 onChange={(event) => selectSection(event.target.value as SectionId)}
               >

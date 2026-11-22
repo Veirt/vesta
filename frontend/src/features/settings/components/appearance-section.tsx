@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/shared/components/form-field";
-import { inputClass } from "@/shared/components/styles";
+import { inputClass, selectClass } from "@/shared/components/styles";
 import type { AppSettings, Theme } from "@/shared/schemas/core";
 
 function AppearanceSection({
@@ -31,7 +31,7 @@ function AppearanceSection({
         </Field>
         <Field label="Theme">
           <select
-            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={selectClass}
             value={settings.theme}
             onChange={(event) => onChange({ theme: event.target.value as Theme })}
           >

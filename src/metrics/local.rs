@@ -10,9 +10,6 @@ struct LocalState {
     disks: Disks,
 }
 
-/// Collects host stats in-process via sysinfo. Holding one shared mutex-guarded
-/// `System` and `Disks` state across `spawn_blocking` calls ensures CPU deltas
-/// always span consecutive polls instead of varying with thread-pool scheduling.
 pub struct LocalCollector {
     state: Mutex<Option<LocalState>>,
 }

@@ -1,17 +1,9 @@
 import { IconPencil, IconPlus } from "@tabler/icons-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { AddTileMenu } from "@/features/dashboard/add-tile-menu";
 import type { ValidationIssue } from "@/shared/lib/validation";
 import { useDashboardEditor } from "@/features/dashboard/use-dashboard-editor";
 import { buttonClass, primaryButtonClass } from "@/shared/components/styles";
 
-/** Section heading for the Apps-and-widgets block, with the edit-mode buttons. */
 function DashboardItemsHeader({
   authenticated,
   editing,
@@ -68,7 +60,6 @@ function DashboardItemsHeader({
   );
 }
 
-/** Toolbar shown while editing: add-tile dropdown plus add-group button. */
 function DashboardEditToolbar({
   editor,
   onSelectEditor,
@@ -83,40 +74,23 @@ function DashboardEditToolbar({
   const loading = editor.loading;
   return (
     <div className="dashboard-edit-toolbar">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+      <AddTileMenu
+        widgets={widgets}
+        align="start"
+        trigger={
           <button className={buttonClass} type="button" disabled={!ready || loading}>
             <IconPlus size={16} aria-hidden="true" /> Add tile
           </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuItem
-            onSelect={() => {
-              const editorId = editor.addService();
-              if (editorId) onSelectEditor(editorId);
-            }}
-          >
-            Add service
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel>Widgets</DropdownMenuLabel>
-          {widgets.length === 0 ? (
-            <DropdownMenuItem disabled>No widgets available</DropdownMenuItem>
-          ) : (
-            widgets.map((widget) => (
-              <DropdownMenuItem
-                key={widget.name}
-                onSelect={() => {
-                  const editorId = editor.addWidget(widget.name);
-                  if (editorId) onSelectEditor(editorId);
-                }}
-              >
-                {widget.title}
-              </DropdownMenuItem>
-            ))
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+        }
+        onAddService={() => {
+          const editorId = editor.addService();
+          if (editorId) onSelectEditor(editorId);
+        }}
+        onAddWidget={(name) => {
+          const editorId = editor.addWidget(name);
+          if (editorId) onSelectEditor(editorId);
+        }}
+      />
       <button
         className={buttonClass}
         type="button"
@@ -134,7 +108,6 @@ function DashboardEditToolbar({
   );
 }
 
-/** Editor validation issues surfaced above the tiles while editing. */
 function DashboardValidationIssues({ issues }: { issues: ValidationIssue[] }) {
   return (
     <div
@@ -154,7 +127,6 @@ function DashboardValidationIssues({ issues }: { issues: ValidationIssue[] }) {
   );
 }
 
-/** Editor load/save errors surfaced above the tiles while editing. */
 function DashboardEditorAlert({
   message,
   showRetry,
@@ -186,12 +158,6 @@ function DashboardEditorAlert({
   );
 }
 
-export { DashboardEditToolbar, DashboardEditorAlert, DashboardValidationIssues };
-
-/**
- * Everything the edit mode surfaces above the tiles: toolbar, validation
- * list, load/save error and status notice. Renders nothing outside edit mode.
- */
 function DashboardEditBanners({
   editing,
   editor,

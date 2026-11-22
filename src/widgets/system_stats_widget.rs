@@ -3,17 +3,17 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::error::VestaResult;
-use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetQuery};
+use crate::widget_system::{
+    WidgetContext, WidgetField, WidgetHandler, WidgetQuery, refresh_interval_field,
+};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
-    /// Node id from `[nodes]` to display; empty picks the first configured node.
     #[serde(default)]
     pub node: String,
-    /// Refresh cadence in seconds (1–3600).
     #[serde(
         default = "default_refresh",
-        deserialize_with = "crate::widget_config::debounced_u64"
+        deserialize_with = "crate::widget_system::debounced_u64"
     )]
     pub refresh_interval: u64,
 }
@@ -68,15 +68,7 @@ impl WidgetHandler for SystemStatsWidget {
                 "Leave on the first server to follow the configured order.",
             )
             .with_default(serde_json::json!("")),
-            WidgetField::builtin(
-                "refresh_interval",
-                "Refresh every (seconds)",
-                "number",
-                true,
-                "How often this widget requests updated values (1–3600 seconds).",
-            )
-            .with_default(serde_json::json!(5))
-            .with_range(1.0, 3600.0),
+            refresh_interval_field(5),
         ]
     }
 
@@ -110,26 +102,7 @@ impl WidgetHandler for SystemStatsWidget {
 
         Ok(json!({
             "name": node_name,
-            "stats": {
-                "cpu_usage_percent": stats.cpu_usage_percent,
-                "memory": {
-                    "used_bytes": stats.memory_used_bytes,
-                    "total_bytes": stats.memory_total_bytes,
-                    "usage_percent": stats.memory_usage_percent(),
-                },
-                "disk": {
-                    "mount": stats.disk_mount,
-                    "used_bytes": stats.disk_used_bytes,
-                    "total_bytes": stats.disk_total_bytes,
-                    "usage_percent": stats.disk_usage_percent(),
-                },
-                "load": stats.load.map(|load| json!({
-                    "one": load.one,
-                    "five": load.five,
-                    "fifteen": load.fifteen,
-                })),
-                "uptime_secs": stats.uptime_secs,
-            },
+            "stats": stats.to_json(false),
         }))
     }
 }

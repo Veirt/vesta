@@ -8,14 +8,8 @@ use crate::error::MetricsError;
 use crate::metrics::node::{LoadAvg, NodeStats};
 use prometheus_parse::{Sample, Scrape, Value};
 
-/// Builds host stats from node_exporter Prometheus text exposition.
-/// CPU percent requires two consecutive scrapes of the `node_cpu_seconds_total`
-/// counter (idle seconds are differenced and divided by wall time); memory,
-/// disk, load and uptime come straight from gauges.
 pub struct NodeExporterCollector {
     client: Client,
-    /// Last scrape's (idle, total) CPU seconds per endpoint, with wall-clock
-    /// time. A Mutex is fine: one writer per endpoint, held for microseconds.
     cpu_state: Mutex<CpuState>,
 }
 
@@ -85,10 +79,6 @@ impl NodeExporterCollector {
         })
     }
 
-    /// CPU% = 1 - delta(idle) / delta(total) across scrapes, where `total`
-    /// sums every mode of every core. Using both counters removes the wall
-    /// clock and core count from the math, so multi-core hosts are exact.
-    /// The first scrape records the baseline and reports 0.
     fn cpu_percent(&self, endpoint: &str, samples: &[Sample]) -> Result<f64, MetricsError> {
         let (idle_now, total_now) = cpu_counters(samples)?;
 
@@ -151,7 +141,6 @@ fn missing(metric: &str) -> MetricsError {
     MetricsError(format!("node_exporter response missing {metric}"))
 }
 
-/// Prometheus values are f64; byte gauges fit u64 up to 2^53 exactly.
 fn bytes(value: f64) -> u64 {
     value.max(0.0) as u64
 }

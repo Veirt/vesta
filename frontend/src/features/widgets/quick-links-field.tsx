@@ -35,8 +35,6 @@ export function QuickLinksField({
 }) {
   const links = parseLinks(value);
   const nextIdRef = useRef(links.length + 1);
-  // Hand each link row a monotonically increasing id so removing a row does
-  // not shift keys onto surviving rows or reuse an old key on re-add.
   const [rowIds, setRowIds] = useState<Array<string>>(() =>
     links.map((_, index) => `link-row-${index + 1}`),
   );

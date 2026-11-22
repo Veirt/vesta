@@ -15,6 +15,7 @@ import {
   destructiveButtonClass,
   inputClass,
   primaryButtonClass,
+  selectClass,
 } from "@/shared/components/styles";
 import type { EditableDashboardGroup } from "@/shared/lib/draft-models";
 
@@ -98,7 +99,7 @@ export function GroupEditorDialog({
               description="How wide the section is in the dashboard grid. You can also drag its edge handle on the canvas."
             >
               <select
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className={selectClass}
                 value={group.width}
                 onChange={(event) => onWidthChange(Number(event.target.value))}
               >

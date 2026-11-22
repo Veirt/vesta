@@ -3,9 +3,8 @@ import type { WidgetDescriptor } from "@/shared/schemas/core";
 
 export type TileSize = { width: number; height: number };
 
-/** Keep in sync with the group span clamps in `src/config_layout.rs`. */
 export const DEFAULT_GROUP_SPAN = 6;
-export const MIN_GROUP_SPAN = 3;
+const MIN_GROUP_SPAN = 3;
 
 const UNKNOWN_WIDGET_MIN_SIZE: TileSize = { width: 3, height: 2 };
 const HIDDEN_WIDGET_MIN_SIZES: Record<string, TileSize> = {
@@ -13,17 +12,8 @@ const HIDDEN_WIDGET_MIN_SIZES: Record<string, TileSize> = {
 };
 export const MAX_GRID_SIZE = 12;
 
-/**
- * Service links can shrink as their group grows: a tile of width w always
- * spans w/12 of the group's box, so in a small group 3 units keeps tiles
- * usable while a full-width group can host narrow link tiles.
- * Keep in sync with `service_min_size` in `src/config_layout.rs`.
- */
 export function serviceMinSize(groupSpan: number | null | undefined): TileSize {
-  const span = Math.max(
-    MIN_GROUP_SPAN,
-    Math.min(MAX_GRID_SIZE, Math.round(groupSpan ?? DEFAULT_GROUP_SPAN)),
-  );
+  const span = clampGroupSpan(groupSpan);
   if (span >= 10) return { width: 1, height: 1 };
   if (span >= 7) return { width: 2, height: 1 };
   return { width: 3, height: 1 };
@@ -38,7 +28,6 @@ export function widgetMinSize(widgets: WidgetDescriptor[], name: string): TileSi
   };
 }
 
-/** Column span of the group an item belongs to; ungrouped falls back to the default. */
 export function groupSpanOf(
   groups: ReadonlyArray<{ id: string; width?: number | null }>,
   groupId: string | null | undefined,
@@ -80,13 +69,9 @@ export type DashboardGroupSection<T> = {
 export type EditSection = DashboardGroupSection<EditableDashboardItem>;
 
 export function clampGroupSpan(width: number | null | undefined): number {
-  return Math.max(MIN_GROUP_SPAN, Math.min(12, Math.round(width ?? DEFAULT_GROUP_SPAN)));
+  return Math.max(MIN_GROUP_SPAN, Math.min(MAX_GRID_SIZE, Math.round(width ?? DEFAULT_GROUP_SPAN)));
 }
 
-/**
- * Grid metrics mirror the `gridConfig` passed to ReactGridLayout (12 columns,
- * 72px rows, 12px gap) so pointer deltas can be snapped to whole cells live.
- */
 export const TILE_GRID_GAP = 12;
 export const TILE_ROW_HEIGHT = 72;
 export const TILE_MAX_SPAN = 12;
@@ -127,8 +112,6 @@ export function groupDashboardItems<T extends GroupableItem>(
     const key = item.group?.trim() ?? "";
     grouped.set(key, [...(grouped.get(key) ?? []), item]);
   }
-  // The id-less Ungrouped section keeps its metadata position when one exists,
-  // otherwise it stays first for legacy saved groups.
   const sectionOrder: string[] = metadata.has("") ? [] : [""];
   const orderedIds = new Set(sectionOrder);
   for (const group of groups) {

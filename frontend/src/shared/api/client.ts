@@ -7,7 +7,6 @@ import {
   InstalledPluginResponseSchema,
   MessageResponseSchema,
   PingStatusResponseSchema,
-  PingTestResponseSchema,
   PluginsResponseSchema,
   RemovedPluginResponseSchema,
   SettingsResponseSchema,
@@ -46,7 +45,7 @@ export async function decode<TSchema extends v.GenericSchema>(
   return parsed.output;
 }
 
-export async function requestJson<TSchema extends v.GenericSchema>(
+async function requestJson<TSchema extends v.GenericSchema>(
   url: string,
   schema: TSchema,
   init?: RequestInit,
@@ -104,7 +103,7 @@ export async function saveDashboardItems(
 
 export async function testPingUrl(url: string, signal?: AbortSignal): Promise<boolean> {
   return (
-    await requestJson("/api/settings/ping-test", PingTestResponseSchema, {
+    await requestJson("/api/settings/ping-test", PingStatusResponseSchema, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ url }),

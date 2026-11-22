@@ -1,4 +1,3 @@
-/// Identifier, link, and URL validation primitives shared across the crate.
 pub fn valid_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 64

@@ -1,37 +1,20 @@
 import { useEffect, useState } from "react";
-import { fetchSettings, saveSettings, uploadIcon } from "@/shared/api/client";
+import { fetchSettings, saveSettings } from "@/shared/api/client";
 import {
   createEditorId,
   createSettingsPayload,
   slug,
+  uniqueId,
   type EditableNode,
 } from "@/shared/lib/draft-models";
 import { useTheme } from "@/shared/lib/theme";
+import { useEditorFeedback, type LoadState } from "@/shared/lib/use-editor-feedback";
 import type { AppSettings, SettingsPayload, WidgetDescriptor } from "@/shared/schemas/core";
 
 type SavedDraft = {
   app: AppSettings;
   nodes: EditableNode[];
 };
-
-type LoadState =
-  | { kind: "loading" }
-  | { kind: "ready"; draft: SavedDraft; fingerprint: string }
-  | { kind: "error"; message: string };
-
-type ActionState = { kind: "idle" } | { kind: "saving" } | { kind: "uploading" };
-type FeedbackBanner =
-  | { kind: "none" }
-  | { kind: "error"; message: string }
-  | { kind: "notice"; message: string };
-
-function uniqueId(base: string, existing: string[]) {
-  const used = new Set(existing);
-  let candidate = base;
-  let suffix = 2;
-  while (used.has(candidate)) candidate = `${base}-${suffix++}`;
-  return candidate;
-}
 
 export function useSettingsEditor() {
   const [app, setApp] = useState<AppSettings>({
@@ -40,10 +23,11 @@ export function useSettingsEditor() {
   });
   const [nodes, setNodes] = useState<EditableNode[]>([]);
   const [widgets, setWidgets] = useState<WidgetDescriptor[]>([]);
-  const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
-  const [loadRevision, setLoadRevision] = useState(0);
-  const [action, setAction] = useState<ActionState>({ kind: "idle" });
-  const [banner, setBanner] = useState<FeedbackBanner>({ kind: "none" });
+  const [loadState, setLoadState] = useState<LoadState<{ draft: SavedDraft; fingerprint: string }>>(
+    { kind: "loading" },
+  );
+  const feedback = useEditorFeedback();
+  const { loadRevision, setAction, setBanner, clearNotice, retryLoad } = feedback;
   useTheme(app.theme);
 
   useEffect(() => {
@@ -93,10 +77,6 @@ export function useSettingsEditor() {
   const currentPayload = createSettingsPayload(nodes, app);
   const dirty =
     loadState.kind === "ready" && JSON.stringify(currentPayload) !== loadState.fingerprint;
-
-  function clearNotice() {
-    setBanner((current) => (current.kind === "notice" ? { kind: "none" } : current));
-  }
 
   function updateApp(update: Partial<AppSettings>) {
     setApp((current) => ({ ...current, ...update }));
@@ -160,24 +140,7 @@ export function useSettingsEditor() {
   }
 
   async function uploadImage(file: File): Promise<string | null> {
-    setAction({ kind: "uploading" });
-    setBanner({ kind: "none" });
-    try {
-      const uploaded = await uploadIcon(file);
-      setBanner({
-        kind: "notice",
-        message: `${uploaded.name} uploaded. Save changes to use it.`,
-      });
-      return uploaded.url;
-    } catch (cause) {
-      setBanner({
-        kind: "error",
-        message: cause instanceof Error ? cause.message : "The image could not be uploaded.",
-      });
-      return null;
-    } finally {
-      setAction({ kind: "idle" });
-    }
+    return feedback.uploadImage(file, "Save changes to use it.");
   }
 
   async function save() {
@@ -210,29 +173,23 @@ export function useSettingsEditor() {
     setBanner({ kind: "notice", message: "Unsaved changes discarded." });
   }
 
-  function retryLoad() {
-    setLoadRevision((revision) => revision + 1);
-  }
-
   async function refreshWidgets() {
     try {
       const data = await fetchSettings();
       setWidgets(data.widgets);
-    } catch {
-      // Widget catalog refresh is best-effort; explicit load errors surface via settings load.
-    }
+    } catch {}
   }
 
   return {
     app,
     dirty,
-    error: banner.kind === "error" ? banner.message : "",
+    error: feedback.error,
     loadError: loadState.kind === "error" ? loadState.message : "",
     loading: loadState.kind === "loading",
-    notice: banner.kind === "notice" ? banner.message : "",
+    notice: feedback.notice,
     nodes,
-    saving: action.kind === "saving",
-    uploading: action.kind === "uploading",
+    saving: feedback.saving,
+    uploading: feedback.uploading,
     widgets,
     addNode,
     discardChanges,

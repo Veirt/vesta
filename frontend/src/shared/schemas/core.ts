@@ -137,8 +137,6 @@ export const DashboardItemSettingsSchema = v.union([
   WidgetInstanceSettingsSchema,
 ]);
 
-export const DashboardGroupSettingsSchema = DashboardGroupSchema;
-
 export const UploadedIconSchema = v.object({
   id: v.number(),
   name: v.string(),
@@ -175,7 +173,7 @@ export const SettingsDataSchema = v.object({
   dashboard: v.object({
     nodes: v.array(NodeSettingsSchema),
     items: v.array(DashboardItemSettingsSchema),
-    groups: v.optional(v.array(DashboardGroupSettingsSchema), []),
+    groups: v.optional(v.array(DashboardGroupSchema), []),
   }),
   app: AppSettingsSchema,
   widgets: v.array(WidgetDescriptorSchema),
@@ -228,7 +226,7 @@ export type NodeEvent = v.InferOutput<typeof NodeEventSchema>;
 export type ServiceSettings = v.InferOutput<typeof ServiceSettingsSchema>;
 export type WidgetInstanceSettings = v.InferOutput<typeof WidgetInstanceSettingsSchema>;
 export type DashboardItemSettings = v.InferOutput<typeof DashboardItemSettingsSchema>;
-export type DashboardGroupSettings = v.InferOutput<typeof DashboardGroupSettingsSchema>;
+export type DashboardGroupSettings = DashboardGroup;
 export type WidgetOption = v.InferOutput<typeof WidgetOptionSchema>;
 export type WidgetField = v.InferOutput<typeof WidgetFieldSchema>;
 export type WidgetDescriptor = v.InferOutput<typeof WidgetDescriptorSchema>;

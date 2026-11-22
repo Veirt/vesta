@@ -7,12 +7,7 @@ import {
   type WidgetData,
 } from "@/features/widgets/widget-schemas";
 
-/**
- * Embeds a plugin's static asset bundle in a sandboxed iframe (opaque origin)
- * and publishes the tile's configuration through the postMessage contract:
- * `{ type: "vesta:config", title, config }`.
- */
-export function PluginIframe({
+function PluginIframe({
   pluginId,
   entry,
   title,

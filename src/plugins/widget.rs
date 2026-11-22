@@ -8,14 +8,8 @@ use crate::plugins::manifest::{PluginFieldSpec, PluginOptionSpec, PluginWidgetSp
 use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetOption, WidgetQuery};
 use serde_json::{Value, json};
 
-/// Registry name prefix for plugin widgets:
-/// `Plugin:<plugin_id>:<widget_id>`.
 pub const PLUGIN_NAME_PREFIX: &str = "Plugin:";
 
-/// A plugin widget registered at process start (and whenever plugins are
-/// installed or removed). The handler carries no backend behavior: its data
-/// response is a pointer to the static asset bundle the frontend embeds in a
-/// sandboxed iframe.
 #[derive(Clone)]
 pub struct PluginWidgetHandler {
     plugin_id: String,
@@ -83,9 +77,6 @@ impl WidgetHandler for PluginWidgetHandler {
 
     type Config = WidgetConfig;
 
-    /// Validate the raw options map against the manifest: required fields must
-    /// be present and non-empty. Everything else passes through untouched —
-    /// interpretation belongs to the trusted plugin code.
     fn parse_config(&self, raw: Option<&WidgetConfig>) -> VestaResult<Self::Config> {
         let config = raw.cloned().unwrap_or_default();
         for field in &self.spec.fields {

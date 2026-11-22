@@ -1,18 +1,10 @@
 import { useEffect, useState } from "react";
 import { loadRemoteOptions, type RemoteOption } from "@/shared/api/client";
 import { Field } from "@/shared/components/form-field";
-import { buttonClass } from "@/shared/components/styles";
+import { buttonClass, selectClass } from "@/shared/components/styles";
+import { isAbortError } from "@/shared/lib/errors";
 import type { WidgetField } from "@/shared/schemas/core";
 
-function isAbortError(cause: unknown): boolean {
-  return cause instanceof DOMException && cause.name === "AbortError";
-}
-
-/**
- * A select whose options come from the widget's own external system, resolved
- * against the URL/API key currently typed in the editor; refetches when those
- * change and clears a saved selection that the server lost.
- */
 export function RemoteOptionsField({
   widgetName,
   field,
@@ -84,7 +76,7 @@ export function RemoteOptionsField({
       <div className="flex items-center gap-2">
         <span className="relative grow">
           <select
-            className="h-9 w-full rounded-md border border-input bg-background px-3 pr-8 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={`${selectClass} pr-8`}
             value={currentValue}
             required={required}
             onChange={(event) => onChange(event.target.value)}

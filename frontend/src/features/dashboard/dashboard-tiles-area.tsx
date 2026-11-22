@@ -2,13 +2,10 @@ import type { DashboardItem as DashboardItemData } from "@/shared/schemas/core";
 import { DashboardDrafts } from "@/features/dashboard/dashboard-drafts";
 import { DashboardViewGroups } from "@/features/dashboard/dashboard-view-groups";
 import type { DashboardGroupSection } from "@/shared/lib/layout";
-import { useDashboardEditor, type LayoutEntry } from "@/features/dashboard/use-dashboard-editor";
+import type { LayoutEntry } from "@/features/dashboard/dashboard-draft-ops";
+import { useDashboardEditor } from "@/features/dashboard/use-dashboard-editor";
 import type { EditableDashboardItem } from "@/shared/lib/draft-models";
 
-/**
- * The body of the Apps-and-widgets section: loading placeholder, edit-mode
- * drafts, or the read-only tile grid, depending on dashboard state.
- */
 function DashboardTilesArea({
   loading,
   editing,

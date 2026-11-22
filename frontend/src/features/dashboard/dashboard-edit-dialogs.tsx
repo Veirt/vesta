@@ -3,7 +3,6 @@ import { TileEditorDialog } from "@/features/dashboard/tile-editor-dialog";
 import { useDashboardEditor } from "@/features/dashboard/use-dashboard-editor";
 import type { EditableDashboardGroup, EditableDashboardItem } from "@/shared/lib/draft-models";
 
-/** The two edit-mode dialogs, wired to the dashboard editor. */
 export function DashboardEditDialogs({
   selected,
   selectedGroup,

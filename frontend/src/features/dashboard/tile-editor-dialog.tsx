@@ -18,9 +18,12 @@ import {
   destructiveButtonClass,
   inputClass,
   primaryButtonClass,
+  selectClass,
 } from "@/shared/components/styles";
 import type { EditableDashboardGroup, EditableDashboardItem } from "@/shared/lib/draft-models";
+import { isAbortError } from "@/shared/lib/errors";
 import { groupSpanOf, minSizeFor, type TileSize } from "@/shared/lib/layout";
+import { validHttpUrl } from "@/shared/lib/validation";
 import type { WidgetDescriptor } from "@/shared/schemas/core";
 
 const sizeOptions = [
@@ -42,13 +45,7 @@ function PingUrlFeedback({ url }: { url: string }) {
       setState("idle");
       return;
     }
-    try {
-      const parsed = new URL(url);
-      if (!(["http:", "https:"].includes(parsed.protocol) && parsed.hostname)) {
-        setState("invalid");
-        return;
-      }
-    } catch {
+    if (!validHttpUrl(url)) {
       setState("invalid");
       return;
     }
@@ -59,7 +56,7 @@ function PingUrlFeedback({ url }: { url: string }) {
       void testPingUrl(url, controller.signal)
         .then((up) => setState(up ? "up" : "down"))
         .catch((cause: unknown) => {
-          if (!(cause instanceof DOMException && cause.name === "AbortError")) setState("error");
+          if (!isAbortError(cause)) setState("error");
         });
     }, 500);
     return () => {
@@ -110,7 +107,7 @@ function TileSizeField({
       description={`Compatible sizes start at ${min.width}×${min.height}. Resize the tile directly on the canvas, or choose a preset here.`}
     >
       <select
-        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={selectClass}
         value={current}
         onChange={(event) => {
           const option = sizeOptions.find(({ value }) => value === event.target.value);

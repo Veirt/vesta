@@ -4,19 +4,18 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 
 use crate::error::VestaResult;
-use crate::http_client::{parse_logged, send_checked_json};
-use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetQuery};
+use crate::http_client::{join_url, parse_logged, send_checked_json};
+use crate::widget_system::{
+    WidgetContext, WidgetField, WidgetHandler, WidgetQuery, refresh_interval_field,
+};
 
-/// Prowlarr indexer widget.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
-    /// Prowlarr base URL, e.g. `https://prowlarr.example.com`.
     pub url: String,
-    /// Prowlarr API key.
     pub key: String,
     #[serde(
         default = "default_refresh",
-        deserialize_with = "crate::widget_config::debounced_u64"
+        deserialize_with = "crate::widget_system::debounced_u64"
     )]
     pub refresh_interval: u64,
 }
@@ -38,9 +37,6 @@ fn default_true() -> bool {
     true
 }
 
-/// Response row of `/api/v1/indexerstats`. Current Prowlarr names the
-/// counters `numberOfQueries`/`numberOfGrabs`; older generations used
-/// `queries`/`grabs` — both are accepted.
 #[derive(Clone, Deserialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 struct IndexerStatsEntry {
@@ -62,8 +58,6 @@ struct IndexerStatsEntry {
     average_response_time: Option<f64>,
 }
 
-/// `/api/v1/indexerstats` wraps the rows in an object; a bare list from
-/// older builds is also accepted.
 #[derive(Deserialize, Debug)]
 #[serde(untagged)]
 enum IndexerStatsShape {
@@ -104,7 +98,6 @@ impl ProwlarrWidget {
         .await
     }
 
-    /// Parse `/api/v1/indexerstats` for the per-indexer rows.
     fn parse_stats(&self, value: &Value) -> VestaResult<Vec<IndexerStatsEntry>> {
         let shape: IndexerStatsShape = parse_logged("Prowlarr", "/api/v1/indexerstats", value)?;
         Ok(match shape {
@@ -114,9 +107,6 @@ impl ProwlarrWidget {
     }
 }
 
-/// Merge indexer definitions with per-indexer usage stats. Stats rows are
-/// matched to indexers by id when both sides have one, otherwise by name;
-/// indexers missing from the stats response report zero usage.
 fn indexer_rows(indexers: Vec<IndexerEntry>, stats: Vec<IndexerStatsEntry>) -> Vec<IndexerRow> {
     let mut stats_by_id: HashMap<u64, &IndexerStatsEntry> = HashMap::new();
     let mut stats_by_name: HashMap<String, &IndexerStatsEntry> = HashMap::new();
@@ -152,8 +142,6 @@ fn indexer_rows(indexers: Vec<IndexerEntry>, stats: Vec<IndexerStatsEntry>) -> V
         .collect()
 }
 
-/// Roll per-indexer usage up into tile totals; `None` when no indexer
-/// reports an average response time.
 fn aggregate(rows: &[IndexerRow]) -> (u64, u64, Option<f64>) {
     let mut queries = 0;
     let mut grabs = 0;
@@ -209,15 +197,7 @@ impl WidgetHandler for ProwlarrWidget {
                 true,
                 "Stored in config.toml; protect that file as a secret.",
             ),
-            WidgetField::builtin(
-                "refresh_interval",
-                "Refresh every (seconds)",
-                "number",
-                true,
-                "How often this widget requests updated values (1–3600 seconds).",
-            )
-            .with_default(serde_json::json!(300))
-            .with_range(1.0, 3600.0),
+            refresh_interval_field(300),
         ]
     }
 
@@ -231,11 +211,10 @@ impl WidgetHandler for ProwlarrWidget {
         _query: WidgetQuery,
         config: Config,
     ) -> VestaResult<Value> {
-        let base = config.url.trim_end_matches('/');
         let key = config.key;
         let (indexers_value, stats_value) = tokio::join!(
-            self.fetch_json(format!("{base}/api/v1/indexer"), &key),
-            self.fetch_json(format!("{base}/api/v1/indexerstats"), &key),
+            self.fetch_json(join_url(&config.url, "/api/v1/indexer"), &key),
+            self.fetch_json(join_url(&config.url, "/api/v1/indexerstats"), &key),
         );
         let indexers_value = indexers_value?;
         let stats_value = stats_value?;
@@ -291,9 +270,6 @@ mod tests {
         }
     }
 
-    /// The real `/api/v1/indexerstats` payload (captured live from Prowlarr
-    /// 3.x): a wrapper object whose `indexers` key holds rows using the
-    /// `numberOf*` counter names.
     #[test]
     fn parses_the_live_wrapped_payload() {
         let shape: super::IndexerStatsShape = serde_json::from_value(json!({
@@ -326,8 +302,6 @@ mod tests {
         assert_eq!(indexers[0].average_response_time, Some(865.0));
     }
 
-    /// Older Prowlarr generations served a bare array with `queries` /
-    /// `failedQueries`-style names.
     #[test]
     fn parses_legacy_bare_arrays() {
         let stats: Vec<IndexerStatsEntry> = serde_json::from_value(json!([

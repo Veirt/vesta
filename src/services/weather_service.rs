@@ -11,16 +11,15 @@ const CACHE_TTL: Duration = Duration::from_secs(600);
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct WeatherQuery {
-    #[serde(deserialize_with = "crate::widget_config::debounced_f64")]
+    #[serde(deserialize_with = "crate::widget_system::debounced_f64")]
     pub latitude: f64,
-    #[serde(deserialize_with = "crate::widget_config::debounced_f64")]
+    #[serde(deserialize_with = "crate::widget_system::debounced_f64")]
     pub longitude: f64,
-    /// "celsius" (default) or "fahrenheit".
     #[serde(default = "default_units")]
     pub units: String,
 }
 
-fn default_units() -> String {
+pub fn default_units() -> String {
     "celsius".to_string()
 }
 

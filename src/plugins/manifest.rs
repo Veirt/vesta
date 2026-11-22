@@ -4,15 +4,11 @@ use serde::Deserialize;
 
 use crate::error::{VestaError, VestaResult};
 
-/// Maximum manifest size guard: a maliciously large manifest is rejected
-/// before parsing rather than read into memory unchecked.
 const MAX_MANIFEST_BYTES: u64 = 256 * 1024;
 
 pub const MANIFEST_FILE: &str = "vesta-plugin.toml";
 pub const SOURCE_FILE: &str = "vesta-plugin-source.toml";
 
-/// Static widget contributed by a plugin. Rendered by the dashboard as a
-/// sandboxed iframe pointing at `entry`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct PluginWidgetSpec {
     pub id: String,
@@ -76,8 +72,6 @@ pub struct PluginOptionSpec {
     pub label: String,
 }
 
-/// Metadata persisted next to each installed plugin recording where it came
-/// from and what was installed.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PluginSource {
     pub source_url: String,
@@ -244,8 +238,6 @@ fn manifest_error(message: String) -> VestaError {
     VestaError::InvalidWidgetConfig(format!("plugin manifest: {message}"))
 }
 
-/// Entry paths must stay inside the plugin directory: relative, no parent
-/// components, and end with `.html` (the iframe host page kind).
 fn is_safe_entry(entry: &str) -> bool {
     if entry.is_empty() || !entry.ends_with(".html") {
         return false;
@@ -263,8 +255,6 @@ fn is_safe_entry(entry: &str) -> bool {
 }
 
 impl PluginManifest {
-    /// Parse and fully validate a manifest text against the cloned plugin
-    /// directory (entry files must exist).
     pub fn parse(text: &str, plugin_root: &Path) -> VestaResult<Self> {
         let manifest: PluginManifest = toml::from_str(text).map_err(|error| {
             manifest_error(format!("{MANIFEST_FILE} could not be parsed: {error}"))
@@ -314,7 +304,6 @@ impl PluginSource {
     }
 }
 
-/// Read and validate `vesta-plugin.toml` from a checked-out plugin tree.
 pub fn load_manifest(plugin_root: &Path) -> VestaResult<PluginManifest> {
     use std::io::Read;
 

@@ -10,7 +10,6 @@ mod primitives;
 
 pub use primitives::{valid_http_url, valid_id, valid_image_url, valid_link};
 
-/// Dashboard validation composed from shared primitives and node validation.
 pub(crate) fn validate_dashboard_config(
     dashboard: &Dashboard,
     app: &AppSettings,
@@ -32,8 +31,6 @@ fn validate_groups(groups: &[DashboardGroup]) -> VestaResult<()> {
     let mut group_titles = HashSet::new();
     let mut ungrouped_slot = false;
     for group in groups {
-        // An id-less entry carries the implicit Ungrouped section's order and
-        // width; tiles never reference it because ungrouped means `group: null`.
         if group.id.is_empty() {
             if ungrouped_slot {
                 return Err(VestaError::InvalidDashboard(
@@ -125,10 +122,8 @@ fn validate_items(
                 "dashboard tile '{id}' is smaller than its minimum size of {min_width}×{min_height}"
             )));
         }
-        let group = match item {
-            DashboardItem::Service(service) => service.group.as_deref().unwrap_or(""),
-            DashboardItem::Widget(widget) => widget.group.as_deref().unwrap_or(""),
-        };
+        let item_group = item.group();
+        let group = item_group.unwrap_or("");
         let group_occupied = occupied.entry(group.to_string()).or_default();
         for row in y..y + height as u16 {
             for column in x..x + width {
@@ -140,10 +135,6 @@ fn validate_items(
             }
         }
 
-        let item_group = match item {
-            DashboardItem::Service(service) => service.group.as_deref(),
-            DashboardItem::Widget(widget) => widget.group.as_deref(),
-        };
         if let Some(group) = item_group
             && (group.trim().is_empty() || group.trim() != group || group.chars().count() > 64)
         {

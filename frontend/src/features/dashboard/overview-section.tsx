@@ -10,6 +10,7 @@ import {
   nodeStatus,
 } from "@/features/servers/node-health";
 import { Status } from "@/features/servers/status";
+import { selectClass } from "@/shared/components/styles";
 
 type Sample = { time: number; value: number };
 type MetricName = "cpu" | "memory" | "disk" | "load";
@@ -74,7 +75,6 @@ type MetricCardData = {
   Icon: typeof IconCpu;
 };
 
-/** Metric card content for the featured server's latest scrape. */
 function buildMetricCards(
   stats: DashboardNode["stats"],
   selectedNode: DashboardNode | undefined,
@@ -111,7 +111,6 @@ function buildMetricCards(
   ];
 }
 
-/** Overview section: title, server picker, metric cards, uptime and collection health. */
 function OverviewSection({
   title,
   error,
@@ -158,7 +157,7 @@ function OverviewSection({
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>Overview for</span>
             <select
-              className="h-9 max-w-52 rounded-md border border-input bg-card px-3 text-sm text-foreground shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className={`${selectClass} w-auto max-w-52 bg-card text-foreground shadow-xs`}
               value={selectedNode?.id ?? ""}
               aria-label="Choose server for metric cards"
               onChange={(event) => onSelectNode(event.target.value)}
@@ -260,4 +259,3 @@ function OverviewSection({
 }
 
 export { OverviewSection };
-export type { MetricName, Sample };

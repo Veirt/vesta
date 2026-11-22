@@ -1,4 +1,6 @@
 const inputClass = "bg-background";
+const selectClass =
+  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const buttonClass =
   "inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50";
 const primaryButtonClass =
@@ -6,4 +8,4 @@ const primaryButtonClass =
 const destructiveButtonClass =
   "inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-destructive/40 px-3 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
-export { buttonClass, destructiveButtonClass, inputClass, primaryButtonClass };
+export { buttonClass, destructiveButtonClass, inputClass, primaryButtonClass, selectClass };

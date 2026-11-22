@@ -128,8 +128,6 @@ a.service-card:hover {
   flex-direction: column;
   gap: 0.625rem;
   overflow: hidden;
-  /* "size" (not inline-size) so widgets can size with cqh and fit even at
-     their shortest allowed tile height, regardless of tile width. */
   container-type: size;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -359,8 +357,6 @@ a.service-card:hover {
   scale: 1;
 }
 
-/* Live resize updates item sizes directly, so the 200ms layout transitions
-   would make tiles trail the pointer. */
 .dashboard-edit-group[data-tile-resize] .react-grid-item,
 .dashboard-edit-group[data-tile-resize] .react-grid-layout {
   transition: none;
@@ -581,8 +577,6 @@ a.service-card:hover {
   align-items: baseline;
   justify-content: center;
   gap: 0.125rem;
-  /* Bound by height (25cqh) as well as width so a wide, short tile never
-     clips the clock face: 2 rows must always fit the full face. */
   font-size: clamp(2rem, min(11cqw, 25cqh), 3.5rem);
   font-weight: 560;
   letter-spacing: -0.065em;
@@ -712,7 +706,6 @@ a.service-card:hover {
   font-weight: 550;
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* Gradient behind the text so it stays readable over any poster art. */
   background: linear-gradient(to top, color-mix(in oklab, black 60%, transparent), transparent);
   text-shadow: 0 1px 3px color-mix(in oklab, black 70%, transparent);
   opacity: 0;

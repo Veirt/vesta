@@ -19,8 +19,6 @@ pub enum NodeObservation {
     Failed,
 }
 
-/// Owns every node poller. Each configured node runs one supervised task with
-/// a fixed interval; shutting down aborts them all (every task is owned).
 pub struct NodeService {
     exporter: Arc<NodeExporterCollector>,
     observations: Arc<RwLock<HashMap<String, NodeObservation>>>,
@@ -30,7 +28,6 @@ pub struct NodeService {
 }
 
 impl NodeService {
-    /// Spawns one poller per node. Call `shutdown` to cancel them.
     pub fn start(nodes: &[NodeConfig], client: reqwest::Client) -> Arc<Self> {
         let exporter = Arc::new(NodeExporterCollector::new(client));
         exporter.set_active_endpoints(&remote_exporter_endpoints(nodes));
@@ -90,15 +87,12 @@ impl NodeService {
         self.updates.subscribe()
     }
 
-    pub fn reconfigure(&self, nodes: &[NodeConfig]) -> Result<(), MetricsError> {
-        crate::validation::nodes::validate_nodes(nodes).map_err(MetricsError)?;
+    pub fn reconfigure(&self, nodes: &[NodeConfig]) {
         self.exporter
             .set_active_endpoints(&remote_exporter_endpoints(nodes));
         self.configuration.send_replace(nodes.to_vec());
-        Ok(())
     }
 
-    /// Aborts every poller; called on shutdown so no task outlives the service.
     pub fn shutdown(&self) {
         self.supervisor.abort();
     }
@@ -204,7 +198,6 @@ async fn poll_loop(
     }
 }
 
-/// Validates that node ids are unique before persistence and poller updates.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,13 +212,6 @@ mod tests {
             endpoint: "local".to_string(),
             interval_secs: 15,
         }
-    }
-
-    #[test]
-    fn rejects_duplicate_node_ids() {
-        assert!(crate::validation::nodes::validate_nodes(&[node("a"), node("b")]).is_ok());
-        let err = crate::validation::nodes::validate_nodes(&[node("a"), node("a")]).unwrap_err();
-        assert!(err.contains("duplicate node id 'a'"));
     }
 
     #[test]

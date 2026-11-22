@@ -6,7 +6,6 @@ use serde_json::{Value, json};
 use crate::error::VestaResult;
 use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetOption, WidgetQuery};
 
-/// The React client owns the ticking display and formats it in this IANA zone.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     #[serde(default = "default_time_zone")]

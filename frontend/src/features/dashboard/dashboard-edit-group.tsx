@@ -7,19 +7,13 @@ import {
   type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { AddTileMenu } from "@/features/dashboard/add-tile-menu";
+import type { LayoutEntry } from "@/features/dashboard/dashboard-draft-ops";
 import { EditTile } from "@/features/dashboard/edit-tile";
 import { GroupResizeHandle } from "@/features/dashboard/group-resize-handle";
-import type { LayoutEntry } from "@/features/dashboard/use-dashboard-editor";
 import type { EditableDashboardItem } from "@/shared/lib/draft-models";
 import {
+  MAX_GRID_SIZE,
   TILE_GRID_GAP,
   TILE_MAX_SPAN,
   TILE_ROW_HEIGHT,
@@ -70,13 +64,11 @@ export function DashboardEditGroup({
   onDragStop: () => void;
   widgets: WidgetDescriptor[];
 }) {
-  // measureBeforeMount so the grid never renders at the initialWidth and then
-  // animates every tile to the measured width on entering edit mode.
   const { width, containerRef, mounted } = useContainerWidth({
     initialWidth: 640,
     measureBeforeMount: true,
   });
-  const cols = width < 440 ? 1 : 12;
+  const cols = width < 440 ? 1 : MAX_GRID_SIZE;
   const tileResize = useRef<TileResizeState | null>(null);
   const [tileResizing, setTileResizing] = useState(false);
   const headingLabel = section.id ? (section.label ?? section.id) : "Ungrouped";
@@ -184,8 +176,10 @@ export function DashboardEditGroup({
             )}
           </div>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <AddTileMenu
+          widgets={widgets}
+          align="end"
+          trigger={
             <button
               className="dashboard-group-edit-button"
               type="button"
@@ -193,22 +187,10 @@ export function DashboardEditGroup({
             >
               <IconPlus size={15} aria-hidden="true" />
             </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={onAddService}>Add service</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>Widgets</DropdownMenuLabel>
-            {widgets.length === 0 ? (
-              <DropdownMenuItem disabled>No widgets available</DropdownMenuItem>
-            ) : (
-              widgets.map((widget) => (
-                <DropdownMenuItem key={widget.name} onSelect={() => onAddWidget(widget.name)}>
-                  {widget.title}
-                </DropdownMenuItem>
-              ))
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          }
+          onAddService={onAddService}
+          onAddWidget={onAddWidget}
+        />
         {section.id && (
           <button
             className="dashboard-group-edit-button"
@@ -231,7 +213,9 @@ export function DashboardEditGroup({
             <div
               className="dashboard-mobile-item"
               key={item.editor_id}
-              style={{ height: `${item.height * 72 + Math.max(0, item.height - 1) * 12}px` }}
+              style={{
+                height: `${item.height * TILE_ROW_HEIGHT + Math.max(0, item.height - 1) * TILE_GRID_GAP}px`,
+              }}
             >
               <EditTile item={item} onEdit={() => onEdit(item.editor_id)} />
             </div>
@@ -252,8 +236,8 @@ export function DashboardEditGroup({
             }))}
             gridConfig={{
               cols,
-              rowHeight: 72,
-              margin: [12, 12],
+              rowHeight: TILE_ROW_HEIGHT,
+              margin: [TILE_GRID_GAP, TILE_GRID_GAP],
               containerPadding: [0, 0],
             }}
             compactor={verticalCompactor}
@@ -278,7 +262,7 @@ export function DashboardEditGroup({
                   role="slider"
                   aria-label={`Resize ${item.title} tile`}
                   aria-valuemin={minSizeFor(item).width}
-                  aria-valuemax={12 - item.x}
+                  aria-valuemax={MAX_GRID_SIZE - item.x}
                   aria-valuenow={item.width}
                   aria-valuetext={`Width ${item.width} columns, height ${item.height} rows`}
                   tabIndex={0}

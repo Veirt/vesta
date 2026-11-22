@@ -19,7 +19,6 @@ pub struct Link {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
-    /// One entry per link, declared as `widget.config.links = [{...}, ...]`.
     #[serde(default)]
     pub links: Vec<Link>,
 }

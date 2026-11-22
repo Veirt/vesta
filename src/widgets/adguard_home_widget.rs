@@ -4,22 +4,19 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 
 use crate::error::VestaResult;
-use crate::http_client::{parse_logged, send_checked_json};
-use crate::widget_system::{WidgetContext, WidgetField, WidgetHandler, WidgetQuery};
+use crate::http_client::{join_url, parse_logged, send_checked_json};
+use crate::widget_system::{
+    WidgetContext, WidgetField, WidgetHandler, WidgetQuery, refresh_interval_field,
+};
 
-/// AdGuard Home widget.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
-    /// AdGuard Home base URL, e.g. `http://adguard.example.com`.
     pub url: String,
-    /// Basic-auth username shown on the AdGuard Home login.
     pub username: String,
-    /// Basic-auth password. Stored in config.toml; protect that file as a
-    /// secret.
     pub password: String,
     #[serde(
         default = "default_refresh",
-        deserialize_with = "crate::widget_config::debounced_u64"
+        deserialize_with = "crate::widget_system::debounced_u64"
     )]
     pub refresh_interval: u64,
 }
@@ -28,8 +25,6 @@ fn default_refresh() -> u64 {
     300
 }
 
-/// `top_*_domains` entries: newer AdGuard versions expose objects with
-/// `domain` and `count` fields; older versions return `[count, domain]`.
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
 enum TopEntry {
@@ -39,13 +34,9 @@ enum TopEntry {
         count: u64,
     },
     Pair(u64, String),
-    /// Single-key `{domain: count}` entries, the shape AdGuard Home 0.107.x
-    /// actually serves for `top_blocked_domains`.
     Map(HashMap<String, u64>),
 }
 
-/// The `top_blocked_domains` collections returned by `/control/stats`:
-/// a list of entries (either shape) or a map keyed by domain.
 #[derive(Deserialize, Debug, Clone, Default)]
 #[serde(untagged)]
 enum TopDomains {
@@ -56,7 +47,6 @@ enum TopDomains {
 }
 
 impl TopDomains {
-    /// Normalise every accepted shape into `(domain, count)` rows.
     fn rows(&self) -> Vec<(String, u64)> {
         match self {
             TopDomains::List(entries) => entries
@@ -79,7 +69,6 @@ impl TopDomains {
     }
 }
 
-/// Top blocked domains, highest count first, capped at `limit` rows.
 fn top_blocked_domains(domains: &TopDomains, limit: usize) -> Vec<Value> {
     let mut rows = domains.rows();
     rows.sort_by_key(|row| (std::cmp::Reverse(row.1), row.0.clone()));
@@ -89,8 +78,6 @@ fn top_blocked_domains(domains: &TopDomains, limit: usize) -> Vec<Value> {
         .collect()
 }
 
-/// Percentage of DNS queries blocked by filtering; `0.0` when no queries
-/// were seen to avoid dividing by zero.
 fn blocked_percent(blocked: u64, queries: u64) -> f64 {
     if queries == 0 {
         0.0
@@ -99,8 +86,6 @@ fn blocked_percent(blocked: u64, queries: u64) -> f64 {
     }
 }
 
-/// Shape of `/control/stats`. Unknown fields are ignored; counters that
-/// AdGuard omits report zero so one odd field never fails the tile.
 #[derive(Deserialize, Debug, Default)]
 struct StatsResponse {
     #[serde(default)]
@@ -117,7 +102,6 @@ struct StatsResponse {
     top_blocked_domains: TopDomains,
 }
 
-/// Shape of `/control/status`.
 #[derive(Deserialize, Debug, Default)]
 struct StatusResponse {
     #[serde(default)]
@@ -128,7 +112,6 @@ struct StatusResponse {
     running: bool,
 }
 
-/// Shape of `/control/filtering/status`.
 #[derive(Deserialize, Debug, Default)]
 struct FilteringStatus {
     #[serde(default)]
@@ -162,7 +145,6 @@ impl AdGuardHomeWidget {
     }
 }
 
-/// Assemble the tile payload from the three AdGuard API responses.
 fn tile_payload(stats: StatsResponse, status: StatusResponse, filtering: FilteringStatus) -> Value {
     let filters_count = filtering.filters.len();
     let rules_count: u64 = filtering
@@ -235,15 +217,7 @@ impl WidgetHandler for AdGuardHomeWidget {
                 true,
                 "Stored in config.toml; protect that file as a secret.",
             ),
-            WidgetField::builtin(
-                "refresh_interval",
-                "Refresh every (seconds)",
-                "number",
-                true,
-                "How often this widget requests updated values (1–3600 seconds).",
-            )
-            .with_default(serde_json::json!(300))
-            .with_range(1.0, 3600.0),
+            refresh_interval_field(300),
         ]
     }
 
@@ -257,10 +231,9 @@ impl WidgetHandler for AdGuardHomeWidget {
         _query: WidgetQuery,
         config: Config,
     ) -> VestaResult<Value> {
-        let base = config.url.trim_end_matches('/');
-        let stats_url = format!("{base}/control/stats");
-        let status_url = format!("{base}/control/status");
-        let filtering_url = format!("{base}/control/filtering/status");
+        let stats_url = join_url(&config.url, "/control/stats");
+        let status_url = join_url(&config.url, "/control/status");
+        let filtering_url = join_url(&config.url, "/control/filtering/status");
         let (stats, status, filtering) = tokio::join!(
             self.fetch_json(&stats_url, &config.username, &config.password),
             self.fetch_json(&status_url, &config.username, &config.password),
@@ -330,8 +303,6 @@ mod tests {
 
     #[test]
     fn top_blocked_domains_ranks_and_caps() {
-        // The real /control/stats payload (AdGuard Home 0.107.x) carries
-        // top_blocked_domains as a list of single-key {domain: count} maps.
         let real_stats: StatsResponse = serde_json::from_value(json!({
             "time_units": "hours",
             "num_dns_queries": 116497,

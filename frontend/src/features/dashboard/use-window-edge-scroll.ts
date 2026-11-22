@@ -1,10 +1,6 @@
 import { useEffect, useRef } from "react";
 import { eventClientY } from "@/shared/lib/layout";
 
-/**
- * While a tile drag is in progress, auto-scroll the window when the pointer
- * nears the top or bottom edge. The animation frame loop is stopped on unmount.
- */
 function useWindowEdgeScroll() {
   const direction = useRef(0);
   const step = useRef(0);

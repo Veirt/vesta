@@ -2,27 +2,17 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-/// A monitoring target polled on a fixed interval. Each instance is a
-/// standalone stats source: node_exporter URLs expose the Prometheus text
-/// format; the special value `local` reads the host through sysinfo.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NodeConfig {
-    /// Stable identifier used in the API (`/api/nodes/{id}/stats`).
     pub id: String,
-    /// Display name shown in the widget.
     pub name: String,
-    /// Optional host name shown alongside the configured display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
-    /// Optional device label, such as "Proxmox host" or "Synology NAS".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_name: Option<String>,
-    /// Remote URL or local uploaded-image path rendered as the server icon.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
-    /// `local`, or an http(s) URL of a node_exporter / metrics endpoint.
     pub endpoint: String,
-    /// Scrape interval in seconds (default 15).
     #[serde(default = "default_interval")]
     pub interval_secs: u64,
 }
@@ -48,8 +38,6 @@ pub struct LoadAvg {
     pub fifteen: f64,
 }
 
-/// Aggregated host stats, normalized between the local sysinfo source and
-/// remote node_exporter sources so widgets render either identically.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NodeStats {
     pub cpu_usage_percent: f64,
@@ -70,6 +58,36 @@ impl NodeStats {
 
     pub fn disk_usage_percent(&self) -> f64 {
         ratio_percent(self.disk_used_bytes, self.disk_total_bytes)
+    }
+
+    pub fn to_json(&self, include_age: bool) -> serde_json::Value {
+        let mut value = serde_json::json!({
+            "cpu_usage_percent": self.cpu_usage_percent,
+            "memory": {
+                "used_bytes": self.memory_used_bytes,
+                "total_bytes": self.memory_total_bytes,
+                "usage_percent": self.memory_usage_percent(),
+            },
+            "disk": {
+                "mount": self.disk_mount,
+                "used_bytes": self.disk_used_bytes,
+                "total_bytes": self.disk_total_bytes,
+                "usage_percent": self.disk_usage_percent(),
+            },
+            "load": self.load.map(|load| serde_json::json!({
+                "one": load.one,
+                "five": load.five,
+                "fifteen": load.fifteen,
+            })),
+            "uptime_secs": self.uptime_secs,
+        });
+        if include_age && let Some(obj) = value.as_object_mut() {
+            obj.insert(
+                "collected_age_secs".to_string(),
+                serde_json::json!(self.collected_at.elapsed().as_secs()),
+            );
+        }
+        value
     }
 }
 

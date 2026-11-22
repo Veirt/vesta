@@ -10,8 +10,6 @@ use crate::widget_system::{WidgetHandlerDyn, WidgetRegistry};
 
 pub use crate::plugins::widget::PLUGIN_NAME_PREFIX;
 
-/// The registry snapshot for one rebuild: the shared built-in handlers plus
-/// one handler per widget declared by each installed plugin.
 pub fn build_registry(
     builtins: &[Arc<dyn WidgetHandlerDyn>],
     plugins: &PluginManager,
@@ -69,8 +67,6 @@ pub(crate) mod test_fixtures {
             .join(name)
     }
 
-    /// Create a local git repository from fixture files (only tests build the
-    /// fixture with the git CLI; runtime cloning is pure gix).
     pub(crate) fn git_fixture_repo(fixture: &Path, name: &str) -> TempDir {
         let repo = temp_dir(&format!("vesta-plugin-fixture-{name}"));
         copy_tree(fixture, repo.path());
@@ -164,7 +160,6 @@ mod tests {
             "names: {names:?}"
         );
 
-        // The plugin descriptor exposes the manifest metadata.
         let descriptor = registry
             .catalog_descriptors()
             .into_iter()
@@ -188,8 +183,6 @@ mod tests {
             vec!["start_value", "label", "theme"]
         );
 
-        // The dashboard validator accepts a plugin tile with valid config and
-        // rejects a required field left empty.
         let valid = Dashboard {
             nodes: vec![],
             items: vec![DashboardItem::Widget(Widget {

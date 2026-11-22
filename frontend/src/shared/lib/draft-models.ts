@@ -1,3 +1,4 @@
+import { clampGroupSpan } from "@/shared/lib/layout";
 import type {
   DashboardGroupSettings,
   DashboardItemSettings,
@@ -58,6 +59,14 @@ export function createEditorId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+export function uniqueId(base: string, existing: Iterable<string>) {
+  const used = existing instanceof Set ? existing : new Set(existing);
+  let candidate = base;
+  let suffix = 2;
+  while (used.has(candidate)) candidate = `${base}-${suffix++}`;
+  return candidate;
+}
+
 export function createItemId(value: string, fallback: string) {
   const normalized = value
     .trim()
@@ -102,16 +111,13 @@ export function toEditableItem(item: DashboardItemSettings): EditableDashboardIt
   };
 }
 
-const DEFAULT_GROUP_WIDTH = 6;
-
 export function toEditableGroup(group: DashboardGroupSettings): EditableDashboardGroup {
-  const width = group.width ?? DEFAULT_GROUP_WIDTH;
   return {
     id: group.id,
     title: group.title,
     description: group.description ?? "",
     icon: group.icon ?? "",
-    width: Math.max(1, Math.min(12, Math.round(width))),
+    width: clampGroupSpan(group.width),
   };
 }
 
@@ -167,7 +173,7 @@ export function serializeDashboardGroups(
     title: group.title.trim(),
     description: group.description.trim() || null,
     icon: group.icon.trim() || null,
-    width: Math.max(1, Math.min(12, Math.round(group.width))),
+    width: clampGroupSpan(group.width),
   }));
 }
 

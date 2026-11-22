@@ -9,7 +9,7 @@ import {
 
 export const ApiErrorSchema = v.object({ message: v.string() });
 
-export function successEnvelope<TSchema extends v.GenericSchema>(data: TSchema) {
+function successEnvelope<TSchema extends v.GenericSchema>(data: TSchema) {
   return v.object({
     status: v.literal("success"),
     data,
@@ -26,7 +26,6 @@ export const AuthStatusResponseSchema = successEnvelope(
 );
 export const MessageResponseSchema = successEnvelope(v.object({ message: v.string() }));
 export const PingStatusResponseSchema = successEnvelope(v.object({ up: v.boolean() }));
-export const PingTestResponseSchema = PingStatusResponseSchema;
 export const IconUploadResponseSchema = successEnvelope(UploadedIconSchema);
 export const PluginsResponseSchema = successEnvelope(v.object({ plugins: v.array(PluginSchema) }));
 export const InstalledPluginResponseSchema = successEnvelope(PluginSchema);

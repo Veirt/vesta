@@ -1,13 +1,9 @@
 import type { EditableDashboardItem } from "@/shared/lib/draft-models";
 import { minSizeFor, type DashboardGroupSection } from "@/shared/lib/layout";
-import type { LayoutEntry } from "@/features/dashboard/use-dashboard-editor";
+import type { LayoutEntry } from "@/features/dashboard/dashboard-draft-ops";
 import { useDashboardEditor } from "@/features/dashboard/use-dashboard-editor";
 import { DashboardEditGroup } from "@/features/dashboard/dashboard-edit-group";
 
-/**
- * Edit-mode view of the dashboard: one resizable section per group, plus the
- * invisible scroll runway shown while a tile is being dragged.
- */
 function DashboardDrafts({
   editor,
   draftSections,
@@ -47,15 +43,12 @@ function DashboardDrafts({
             minSizeFor={(item) => minSizeFor(item, editor.widgets, section.width)}
             widgets={editor.widgets}
             onGroupDragStart={() => {
-              // The Ungrouped section needs its metadata slot before any
-              // reorder or width change can find it in the groups array.
               if (section.id === "") editor.ensureUngroupedGroup();
               onGroupDragStart(section.id);
             }}
             onGroupDragEnd={onGroupDragEnd}
             onGroupDragEnter={(placement) => {
               if (draggingGroupId === null) return;
-              // Dropping onto/near Ungrouped requires its metadata slot to exist.
               if (section.id === "") editor.ensureUngroupedGroup();
               editor.moveGroupTo(draggingGroupId, section.id, placement);
             }}
@@ -87,4 +80,3 @@ function DashboardDrafts({
 }
 
 export { DashboardDrafts };
-export type { LayoutEntry };

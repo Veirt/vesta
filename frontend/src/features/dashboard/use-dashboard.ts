@@ -38,8 +38,6 @@ function addSamples(history: History, id: string, stats: Stats, time: number): H
   return { ...history, [id]: { ...previous, ...sampled } };
 }
 
-// Pure: builds and returns a new series instead of mutating the old one, so
-// it is safe to call from a React state updater.
 function extendSeries(series: Sample[], value: number, time: number): Sample[] {
   return [...series, { time, value }].slice(-48);
 }

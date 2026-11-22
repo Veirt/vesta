@@ -20,7 +20,6 @@ pub struct SettingsSnapshot {
     pub app: AppSettings,
 }
 
-/// Validates, writes, and atomically publishes the active TOML configuration.
 pub struct ConfigManager {
     path: PathBuf,
     snapshot: Arc<RwLock<Arc<SettingsSnapshot>>>,
@@ -89,7 +88,6 @@ impl ConfigManager {
     }
 
     #[cfg(test)]
-    /// Applies one validated config update with disk and snapshot publication serialized.
     pub async fn update<F>(&self, mutate: F) -> VestaResult<Arc<SettingsSnapshot>>
     where
         F: FnOnce(&SettingsSnapshot) -> VestaResult<(Dashboard, AppSettings)> + Send + 'static,
@@ -97,7 +95,6 @@ impl ConfigManager {
         self.update_inner(None, mutate, |_| Ok(())).await
     }
 
-    /// Also retains an external owned guard through the config transaction.
     pub async fn update_with_guard<F>(
         &self,
         guard: OwnedMutexGuard<()>,
@@ -109,7 +106,6 @@ impl ConfigManager {
         self.update_inner(Some(guard), mutate, |_| Ok(())).await
     }
 
-    /// Runs a synchronous side effect in the owned writer after publishing the new snapshot.
     pub async fn update_with_post_publish<F, P>(
         &self,
         mutate: F,
@@ -140,7 +136,6 @@ impl ConfigManager {
         #[cfg(test)]
         let after_write_before_publish = Arc::clone(&self.after_write_before_publish);
 
-        // The owned worker retains both gates through publication and side effects.
         tokio::task::spawn_blocking(move || {
             let _write_guard = write_guard;
             let _lifecycle_guard = lifecycle_guard;
@@ -283,8 +278,6 @@ mod tests {
         assert!(matches!(update.await, Err(error) if error.is_cancelled()));
         publish_tx.send(()).unwrap();
 
-        // This update cannot acquire the writer gate until the cancelled
-        // transaction has published its snapshot and revision.
         manager
             .update(|current| {
                 let mut app = current.app.clone();

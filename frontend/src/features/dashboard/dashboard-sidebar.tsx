@@ -6,7 +6,6 @@ const navItems = [
   { href: "#dashboard-items", label: "Apps and widgets", Icon: IconLayoutGrid },
 ];
 
-/** Fixed left rail with section navigation and the settings link. */
 function AppSidebar({ mobileMenuOpen, onClose }: { mobileMenuOpen: boolean; onClose: () => void }) {
   return (
     <aside

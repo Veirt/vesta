@@ -1,10 +1,6 @@
 import { IconArrowsHorizontal } from "@tabler/icons-react";
 import { useRef, type PointerEvent as ReactPointerEvent } from "react";
 
-/**
- * Pointer + keyboard resize control for a group's column span. Self-contained:
- * owns its drag-start bookkeeping, so the parent needs no resize state.
- */
 export function GroupResizeHandle({
   label,
   width,

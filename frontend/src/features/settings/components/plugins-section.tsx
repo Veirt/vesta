@@ -57,8 +57,6 @@ export function PluginsSection({ onPluginsChanged }: { onPluginsChanged?: () => 
     }
   }
 
-  // SettingsEditor wraps the sections in `<form>`; HTML forbids nested forms,
-  // so install controls are a div with a button click handler.
   function handleInstall() {
     if (!url.trim()) return;
     return runMutation(

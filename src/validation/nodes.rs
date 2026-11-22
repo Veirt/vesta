@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::metrics::node::NodeConfig;
 
-use super::primitives::{valid_id, valid_image_url};
+use super::primitives::{valid_http_url, valid_id, valid_image_url};
 
 pub(crate) fn validate_nodes(nodes: &[NodeConfig]) -> Result<(), String> {
     let mut ids = HashSet::new();
@@ -36,19 +36,11 @@ pub(crate) fn validate_nodes(nodes: &[NodeConfig]) -> Result<(), String> {
                 node.id
             ));
         }
-        if !node.is_local() {
-            let endpoint = reqwest::Url::parse(&node.endpoint).map_err(|_| {
-                format!(
-                    "node '{}' endpoint must be `local` or a valid http(s) URL",
-                    node.id
-                )
-            })?;
-            if !matches!(endpoint.scheme(), "http" | "https") || endpoint.host_str().is_none() {
-                return Err(format!(
-                    "node '{}' endpoint must use http or https",
-                    node.id
-                ));
-            }
+        if !node.is_local() && !valid_http_url(&node.endpoint) {
+            return Err(format!(
+                "node '{}' endpoint must be `local` or a valid http(s) URL",
+                node.id
+            ));
         }
     }
     Ok(())

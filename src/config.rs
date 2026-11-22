@@ -6,8 +6,6 @@ pub struct PingConfig {
     pub url: String,
 }
 
-/// Widget-specific JSON settings are opaque to the dashboard and interpreted
-/// by the widget implementation that owns them.
 pub type WidgetConfig = HashMap<String, serde_json::Value>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -37,7 +35,6 @@ fn default_show_destination() -> bool {
     true
 }
 
-/// Presentation settings for a dashboard section; tile identity and layout stay independent.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DashboardGroup {
     pub id: String,
@@ -46,7 +43,6 @@ pub struct DashboardGroup {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
-    /// Column span (of 12) the section occupies in the dashboard grid.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<u8>,
 }
@@ -70,8 +66,6 @@ pub struct Widget {
     pub height: Option<u8>,
 }
 
-/// A dashboard tile is either a service link or a widget instance. Both have
-/// their own identity and layout; neither is owned by the other.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DashboardItem {
@@ -84,6 +78,13 @@ impl DashboardItem {
         match self {
             Self::Service(service) => &service.id,
             Self::Widget(widget) => &widget.id,
+        }
+    }
+
+    pub fn group(&self) -> Option<&str> {
+        match self {
+            Self::Service(service) => service.group.as_deref(),
+            Self::Widget(widget) => widget.group.as_deref(),
         }
     }
 
@@ -112,7 +113,6 @@ impl DashboardItem {
     }
 }
 
-/// Dashboard configuration normalized for runtime services and APIs.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Dashboard {
     #[serde(default)]
@@ -123,7 +123,6 @@ pub struct Dashboard {
     pub groups: Vec<DashboardGroup>,
 }
 
-/// One human-editable TOML document contains all dashboard and app settings.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct AppConfig {
     #[serde(default)]

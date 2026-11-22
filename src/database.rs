@@ -155,9 +155,6 @@ mod tests {
         MIGRATOR.run_to(1, &initial_pool).await.unwrap();
         drop(initial_pool);
 
-        // This is the upgrade path for databases that applied 0001 before 0002
-        // was introduced. Opening verifies the original checksum, then cleans
-        // up the obsolete tables with the new migration.
         let database = Database::open(&path).await.unwrap();
         let remaining: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' \

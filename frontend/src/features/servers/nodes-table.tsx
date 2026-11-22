@@ -12,7 +12,6 @@ import type { DashboardNode } from "@/shared/schemas/core";
 import { formatAge, formatUptime, nodeAge, nodeStatus } from "@/features/servers/node-health";
 import { Status } from "@/features/servers/status";
 
-/** Servers table section; click a row to feature it in the overview cards. */
 function NodesTable({
   nodes,
   visibleNodes,

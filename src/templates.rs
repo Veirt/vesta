@@ -1,6 +1,5 @@
 use axum::response::Html;
 
-/// The only HTML served by Vesta: the document that boots the React app.
 pub async fn dashboard() -> Html<&'static str> {
     Html(
         r##"<!doctype html>

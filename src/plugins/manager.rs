@@ -13,17 +13,11 @@ use crate::plugins::manifest::{
     PluginRecord, PluginSource, SOURCE_FILE, is_valid_slug, load_manifest,
 };
 
-/// Timeout for the whole clone+validate step. The blocking worker polls the
-/// shared interrupt flag, which is set when the timeout elapses, and its
-/// temporary directory is removed afterwards.
 const CLONE_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub struct PluginManager {
     root: PathBuf,
-    /// Serialize installs, updates, and uninstalls so simultaneous mutations
-    /// of the plugins directory cannot race.
     gate: Mutex<()>,
-    /// Owned cleanup tasks for timed-out clone workers so none outlive `self`.
     cleanup_tasks: std::sync::Mutex<JoinSet<()>>,
 }
 
@@ -79,9 +73,6 @@ impl PluginManager {
         &self.root
     }
 
-    /// All currently installed plugins, ordered by id. Unreadable or invalid
-    /// directories are skipped with a warning: one broken plugin must not take
-    /// down the widget registry.
     pub fn load_all(&self) -> Vec<PluginRecord> {
         let mut ids: Vec<String> = std::fs::read_dir(&self.root)
             .map(|entries| {
@@ -107,22 +98,14 @@ impl PluginManager {
             .collect()
     }
 
-    /// Load one plugin record from its directory. `Ok(None)` means the
-    /// directory does not exist.
     pub fn record(&self, id: &str) -> VestaResult<Option<PluginRecord>> {
         load_record_in(&self.root, id)
     }
 
-    /// Directory for one installed plugin. This is the single choke point
-    /// where a plugin id becomes a filesystem path, so non-slug ids — which
-    /// could otherwise escape the plugins root via `..` — are rejected here
-    /// for every caller.
     pub fn plugin_dir(&self, id: &str) -> VestaResult<PathBuf> {
         plugin_dir_in(&self.root, id)
     }
 
-    /// Shallow-clone `url`, validate its manifest, strip `.git`, then move the
-    /// tree into place under the manifest's plugin id.
     pub async fn install(&self, url: &str) -> VestaResult<PluginRecord> {
         if url.trim().is_empty() {
             return Err(plugin_error("a git repository URL is required"));
@@ -149,12 +132,6 @@ impl PluginManager {
         .map_err(|error| plugin_error(format!("plugin install task failed: {error}")))?
     }
 
-    /// Re-fetch an installed plugin from its recorded source URL and swap the
-    /// tree in place. The fetched manifest must declare the same plugin id:
-    /// an id change means a different plugin, which must be installed
-    /// separately. Dashboard tiles keep working — the registry rebuild after
-    /// the swap picks up the new widget specs, and old tiles fail validation
-    /// only if their fields no longer exist.
     pub async fn update(&self, id: &str) -> VestaResult<PluginRecord> {
         let _gate = self.gate.lock().await;
         let root = self.root.clone();
@@ -176,8 +153,6 @@ impl PluginManager {
             }
             let destination = plugin_dir_in(&root, &id_owned)?;
             let backup = root.join(format!(".old-{}", uuid::Uuid::new_v4().simple()));
-            // Swap with rollback: the installed tree returns if the new one
-            // cannot move into place.
             if let Err(error) = std::fs::rename(&destination, &backup)
                 .and_then(|()| std::fs::rename(&temp_dir, &destination))
             {
@@ -192,9 +167,6 @@ impl PluginManager {
         .map_err(|error| plugin_error(format!("plugin update task failed: {error}")))?
     }
 
-    /// Remove an installed plugin's directory under the mutation gate.
-    /// Checks only directory existence after slug validation so corrupt plugins
-    /// with broken manifests can still be uninstalled.
     pub async fn uninstall(&self, id: &str) -> VestaResult<()> {
         let _gate = self.gate.lock().await;
         let root = self.root.clone();
@@ -211,11 +183,6 @@ impl PluginManager {
         .map_err(|error| plugin_error(format!("plugin uninstall task failed: {error}")))?
     }
 
-    /// Clone `url` into a hidden temporary directory under the plugins root
-    /// and validate its manifest. Returns the record and the temporary path;
-    /// the caller moves the tree and owns its cleanup. The clone runs on a
-    /// blocking worker with a shared interrupt flag; on timeout the worker is
-    /// told to stop and its temporary directory cleaned up once it exits.
     async fn fetch_plugin(&self, url: &str) -> VestaResult<(PathBuf, PluginRecord)> {
         let temp_dir = self
             .root
@@ -273,8 +240,6 @@ impl PluginManager {
     }
 }
 
-/// Clone one commit from `url` into `destination` and load its manifest,
-/// returning the record (working tree stays at `destination` until moved).
 fn clone_plugin(
     url: &str,
     destination: &Path,
@@ -405,7 +370,6 @@ mod tests {
             .unwrap_err();
         assert!(error.to_string().contains("could not clone"), "{error}");
 
-        // Repository with a broken manifest must also fail and clean up.
         let broken = git_fixture_repo(&fixture_dir("broken-manifest"), "broken");
         let error = manager
             .install(&broken.path().to_string_lossy())
@@ -455,8 +419,6 @@ mod tests {
         assert!(error.to_string().contains("URL is required"), "{error}");
     }
 
-    /// `plugin_dir` is the only place a plugin id becomes a path, so it must
-    /// refuse anything that could escape the plugins root.
     #[test]
     fn plugin_dir_rejects_non_slug_ids() {
         let (_dir, manager) = test_manager();
@@ -484,7 +446,6 @@ mod tests {
             .source
             .commit;
 
-        // Bump the version in the remote repository, then update in place.
         let manifest_path = repo.path().join(crate::plugins::manifest::MANIFEST_FILE);
         let manifest = std::fs::read_to_string(&manifest_path).unwrap();
         std::fs::write(
@@ -518,7 +479,6 @@ mod tests {
         );
         assert!(manager.record("hello-world").unwrap().is_some());
 
-        // The swap left no backup or temporary trees behind.
         let leftovers: Vec<_> = std::fs::read_dir(manager.root())
             .unwrap()
             .map(Result::unwrap)
@@ -527,8 +487,6 @@ mod tests {
         assert!(leftovers.is_empty(), "swap leftovers: {leftovers:?}");
     }
 
-    /// A new manifest id is a different plugin, not an update; the installed
-    /// tree must stay untouched.
     #[tokio::test]
     async fn update_refuses_a_changed_plugin_id_and_keeps_the_installed_tree() {
         let (_dir, manager) = test_manager();
