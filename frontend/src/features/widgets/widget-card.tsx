@@ -15,13 +15,16 @@ function WidgetFrame({
   editing: boolean;
   children: ReactNode;
 }) {
+  // The Jellyfin tile overlays the series title on its artwork, so the
+  // dashboard heading would duplicate it.
+  const showTitle = widget.name !== "JellyfinRandomShow";
   return (
     <article
       className={`widget-frame${editing ? " h-full" : " service-layout-item"}`}
       style={editing ? undefined : layoutStyle(widget)}
       aria-label={`${widget.title} widget`}
     >
-      <h3 className="widget-card-title">{widget.title}</h3>
+      {showTitle && <h3 className="widget-card-title">{widget.title}</h3>}
       <div className="widget-card-content">{children}</div>
     </article>
   );

@@ -36,7 +36,7 @@ export function JellyfinTile({ data }: { data: WidgetData }) {
       ) : (
         <IconPhotoOff className="jellyfin-art-fallback" stroke={1.5} aria-hidden="true" />
       )}
-      {posterMode && show.title && <span className="jellyfin-poster-title">{show.title}</span>}
+      {show.title && <span className="jellyfin-title">{show.title}</span>}
     </a>
   );
 }

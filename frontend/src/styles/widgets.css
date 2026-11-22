@@ -696,7 +696,7 @@ a.service-card:hover {
   color: var(--muted-foreground);
 }
 
-.jellyfin-poster-title {
+.jellyfin-title {
   position: absolute;
   inset: auto 0 0 0;
   overflow: hidden;
@@ -708,13 +708,6 @@ a.service-card:hover {
   white-space: nowrap;
   background: linear-gradient(to top, color-mix(in oklab, black 60%, transparent), transparent);
   text-shadow: 0 1px 3px color-mix(in oklab, black 70%, transparent);
-  opacity: 0;
-  transition: opacity 140ms ease-out;
-}
-
-.jellyfin-widget:hover .jellyfin-poster-title,
-.jellyfin-widget:focus-visible .jellyfin-poster-title {
-  opacity: 1;
 }
 
 .widget-error {

@@ -256,7 +256,7 @@ impl WidgetHandler for JellyfinRandomShowWidget {
                 "Display",
                 "select",
                 true,
-                "Backdrop fills the tile with wide artwork. Poster fills it with the cover art and reveals the title on hover.",
+                "Backdrop fills the tile with wide artwork. Poster fills it with the cover art. The series title overlays the artwork.",
             )
             .with_default(serde_json::json!("backdrop"))
             .with_options(vec![
